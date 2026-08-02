@@ -35,6 +35,10 @@ class RobolabEnv(ManagerBasedRLEnv):
         super().__init__(cfg, **kwargs)
         self._frozen_envs = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._pre_step_frozen = self._frozen_envs.clone()  # snapshot before each step()
+        # Last commanded action, kept ONLY for num_envs > 1 so frozen envs can hold
+        # position instead of being commanded to zero (see step()). Serial runs never
+        # touch this path, so their behavior is bit-for-bit unchanged.
+        self._last_action = None
         self._env_results: dict[int, bool] = {}      # env_id -> True (success) / False (truncated)
         self._env_term_step: dict[int, int] = {}      # env_id -> episode step when terminated
         self._has_stepped = False                     # tracks whether step() has been called
@@ -63,13 +67,27 @@ class RobolabEnv(ManagerBasedRLEnv):
         self.recorder_manager = RobolabRecorderManager(self.cfg.recorders, self)
 
     def step(self, action):
-        """Step the environment. Zero out actions for frozen (terminated) envs."""
+        """Step the environment. Frozen (terminated) envs hold their last command."""
         self._has_stepped = True
         # Snapshot frozen state before step so recorder can detect newly-frozen envs
         self._pre_step_frozen = self._frozen_envs.clone()
         if self._frozen_envs.any():
             action = action.clone()
-            action[self._frozen_envs] = 0.0
+            # pi05_droid_jointpos actions are ABSOLUTE joint targets (DeltaActions is
+            # undone by AbsoluteActions on the way out), so the previous `= 0.0` did not
+            # mean "do nothing" -- it commanded joint configuration zero, slamming a
+            # finished arm toward a singular pose for the rest of the batch. Holding the
+            # last command leaves it where it stopped. Recommended as option B in
+            # docs/vec-serial-mismatch-diagnosis.md.
+            if self._last_action is not None:
+                action[self._frozen_envs] = self._last_action[self._frozen_envs]
+            else:
+                action[self._frozen_envs] = 0.0  # nothing to hold yet on the first step
+        # Serial runs (num_envs == 1) can never have a frozen env alongside a live one --
+        # the episode loop exits as soon as the sole env freezes -- so skip the bookkeeping
+        # entirely and keep their hot path untouched.
+        if self.num_envs > 1:
+            self._last_action = action.detach().clone()
         return super().step(action)
 
     def _reset_idx(self, env_ids):
