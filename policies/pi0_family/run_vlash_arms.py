@@ -14,11 +14,20 @@ Arm -> executor semantics (see vlash_executor.py for the exact mechanism):
     vlash: delay=d, rollforward=True  (obs from step T-d, state REPLACED by
            the last commanded action of the previous chunk)
 
-Results are written incrementally, one episode at a time, to ``--out`` as
+Results are written incrementally, one run at a time, to ``--out`` as
 {"task", "arm", "delay", "episodes": [{"idx", "success", "steps"}, ...],
 "success_rate"} via an atomic tmp-file-then-rename write (pattern ported from
 vlash/benchmarks/libero/eval_client.py). Re-running with the same ``--out``
 resumes from ``len(episodes)`` rather than re-running completed episodes.
+
+Vectorization: ``--num-envs N`` (from the common eval args, default 1 = exact
+prior behavior) runs N parallel Isaac envs per ``run_episode`` call; each run
+appends N episodes with sequential ``idx``. Policy queries stay one websocket
+request per env per chunk switch (the openpi server's transform pipeline is
+per-sample); the ~57 ms/request is small next to the ~15-step chunk of sim
+stepping, so episode throughput still scales ~Nx. If ``--episodes`` minus the
+resumed count is not a multiple of N, the final run may record a few extra
+episodes (kept, never discarded).
 
 Usage (inside a Slurm/local job, after the policy server reports healthy):
     python policies/pi0_family/run_vlash_arms.py \
@@ -194,7 +203,7 @@ def main() -> None:
     env, env_cfg = create_env(
         task_env,
         device=args_cli.device,
-        num_envs=1,
+        num_envs=max(1, args_cli.num_envs),
         instruction_type=args_cli.instruction_type,
         policy=f"{args_cli.policy}_{args_cli.arm}_d{args_cli.delay}",
         renderer=args_cli.renderer,
@@ -213,24 +222,31 @@ def main() -> None:
     save_videos = args_cli.video_mode != "none"
 
     try:
-        for ep_idx in range(start_ep, args_cli.episodes):
+        # Each run_episode call yields env.num_envs episodes (1 per env).
+        # `run_id` = idx of the first episode in the batch; it keys the
+        # per-run HDF5/video filenames, so it stays unique across resumes.
+        while len(episodes) < args_cli.episodes:
+            run_id = len(episodes)
             env_results, _msgs, _timing = run_episode(
                 env=env,
                 env_cfg=env_cfg,
-                episode=ep_idx,
+                episode=run_id,
                 client=client,
                 save_videos=save_videos,
                 video_mode=args_cli.video_mode,
                 headless=args_cli.headless,
             )
-            result = env_results[0]  # num_envs=1
-            success = bool(result["success"]) if result["success"] is not None else False
-            steps = int(result["step"]) if result["step"] is not None else 0
-            episodes.append({"idx": ep_idx, "success": success, "steps": steps})
+            batch = []
+            for result in sorted(env_results, key=lambda r: r["env_id"]):
+                success = bool(result["success"]) if result["success"] is not None else False
+                steps = int(result["step"]) if result["step"] is not None else 0
+                episodes.append({"idx": len(episodes), "success": success, "steps": steps})
+                batch.append(episodes[-1])
             out = _write_results(out_path, TASK_STR, args_cli.arm, args_cli.delay, episodes)
             print(
                 f"[run_vlash_arms] {TASK_STR} arm={args_cli.arm} delay={args_cli.delay} "
-                f"ep {ep_idx}: {'OK' if success else 'fail'} "
+                f"eps {batch[0]['idx']}-{batch[-1]['idx']}: "
+                f"[{', '.join('OK' if e['success'] else 'fail' for e in batch)}] "
                 f"({sum(e['success'] for e in episodes)}/{len(episodes)}, "
                 f"success_rate={out['success_rate']:.3f})",
                 flush=True,
