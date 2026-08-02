@@ -146,6 +146,9 @@ low-level RNG order") is **factually wrong** and should not be propagated.
   `ARENA_BALL_MASS=0.05`. The documented fix is not in effect, which is why
   grasp-contact luck dominates outcomes and the success rate swings hugely
   between small samples.
+  **RESOLVED 2026-08-03:** the default is now `0.3`, matching the comment. Every
+  ball-task result recorded before that date ran at 0.05 kg and measures the
+  unfixed benchmark; do not compare those numbers against later runs.
 - Minor anomaly, non-significant: 3/92 driver-run episodes command
   gripper=1.0 at step 0 (0/20 in session runs); one of them still succeeded.
   Worth one glance at executor/server state at batch boundaries if it recurs.
