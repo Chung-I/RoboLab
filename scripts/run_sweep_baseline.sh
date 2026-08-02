@@ -62,7 +62,7 @@ except Exception:
 }
 
 run_cell() {
-  local name="$1" task="$2" arm="$3" delay="$4" port="$5"
+  local name="$1" task="$2" arm="$3" delay="$4" port="$5" num_envs="${6:-4}"
   local out="$OUT_DIR/${name}.json"
   local cell_log="$LOG_DIR/sweep_${name}.log"
   local attempt n rc
@@ -73,12 +73,12 @@ run_cell() {
       log "$name already complete (n=$n), skipping."
       return 0
     fi
-    log "$name attempt $attempt/2 (resuming from n=$n) -> $cell_log"
+    log "$name attempt $attempt/2 (resuming from n=$n, num_envs=$num_envs) -> $cell_log"
     .venv/bin/python policies/pi0_family/run_vlash_arms.py \
       --arm "$arm" --delay "$delay" --task "$task" \
       --episodes 50 --host 127.0.0.1 --port "$port" \
       --out "$out" \
-      --disable-subtask --num-envs 4 --headless \
+      --disable-subtask --num-envs "$num_envs" --headless \
       >> "$cell_log" 2>&1
     rc=$?
     n=$(count_episodes "$out")
@@ -120,22 +120,28 @@ wait_if_paused() {
 
 log "=== baseline driver starting, pid=$$ ==="
 
-# format: name|TaskClass|arm|delay|port  (all baseline checkpoint = port 8000)
+# format: name|TaskClass|arm|delay|port|num_envs  (all baseline checkpoint = port 8000)
+# NOTE: rolling cells use num_envs=1 (SERIAL) -- Task 10 diagnosed a vec4 x
+# dynamics interaction (RollingBallInBowlTask's batched env.reset() draws
+# initial ball position/velocity via a different low-level RNG order than
+# serial resets, confirmed empirically: serial 8/10=80% vs vec4 17/52=33% on
+# the identical sync_d0 cell). Static cells are unaffected (nothing moves,
+# per Task 9b's passing 20v20 vec4 gate) and keep num_envs=4.
 CELLS=(
-"rolling_sync_d0|RollingBallInBowlTask|sync|0|8000"
-"rolling_naive_d1|RollingBallInBowlTask|naive|1|8000"
-"rolling_naive_d2|RollingBallInBowlTask|naive|2|8000"
-"static_sync_d0|StaticBallInBowlTask|sync|0|8000"
-"static_naive_d1|StaticBallInBowlTask|naive|1|8000"
-"static_naive_d2|StaticBallInBowlTask|naive|2|8000"
+"rolling_sync_d0|RollingBallInBowlTask|sync|0|8000|1"
+"rolling_naive_d1|RollingBallInBowlTask|naive|1|8000|1"
+"rolling_naive_d2|RollingBallInBowlTask|naive|2|8000|1"
+"static_sync_d0|StaticBallInBowlTask|sync|0|8000|4"
+"static_naive_d1|StaticBallInBowlTask|naive|1|8000|4"
+"static_naive_d2|StaticBallInBowlTask|naive|2|8000|4"
 )
 
 idx=0
 for cell in "${CELLS[@]}"; do
   idx=$((idx + 1))
   wait_if_paused
-  IFS='|' read -r name task arm delay port <<< "$cell"
-  run_cell "$name" "$task" "$arm" "$delay" "$port"
+  IFS='|' read -r name task arm delay port num_envs <<< "$cell"
+  run_cell "$name" "$task" "$arm" "$delay" "$port" "$num_envs"
   rc=$?
   record_cell "$name" "$idx"
   out="$OUT_DIR/${name}.json"
