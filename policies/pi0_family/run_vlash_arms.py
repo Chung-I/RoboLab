@@ -47,7 +47,7 @@ import cv2  # noqa: F401 -- must import this before isaaclab. Do not remove
 from isaaclab.app import AppLauncher
 
 POLICY_VARIANTS = ["pi0", "pi0_fast", "pi05", "paligemma", "paligemma_fast"]
-ARMS = ("sync", "naive", "vlash")
+ARMS = ("sync", "naive", "vlash", "rtc")
 
 parser = argparse.ArgumentParser(
     description="Emulated-delay VLASH arm evaluation for the Pi0-family DROID jointpos policy."
@@ -74,6 +74,9 @@ parser.add_argument("--remote-uri", type=str, default=None,
                      help="Full WebSocket URI for the policy server, overrides --host/--port when set.")
 parser.add_argument("--policy", choices=POLICY_VARIANTS, default="pi05",
                      help="Pi0-family variant served (selects the default chunk size k=open_loop_horizon).")
+parser.add_argument("--rtc-execute-horizon", "--rtc_execute_horizon", type=int, default=8,
+                     help="RTC arm only: env steps executed per request (reference eval_flow semantics; "
+                          "prefix_attention_horizon = chunk_size - this). Must satisfy delay <= this <= chunk.")
 parser.add_argument("--open-loop-horizon", "--open_loop_horizon", type=int, default=None,
                      help="Override chunk size k (default: from --policy). One server round trip is made per k "
                           "sim steps, so this sets the request rate too -- useful for measuring whether wall "
@@ -169,6 +172,7 @@ def make_client(args: argparse.Namespace) -> VlashPi0DroidJointposClient:
         open_loop_horizon=args.open_loop_horizon,
         arm=args.arm,
         delay=args.delay,
+        rtc_execute_horizon=args.rtc_execute_horizon,
     )
     return VlashPi0DroidJointposClient(**{k: v for k, v in kwargs.items() if v is not None})
 

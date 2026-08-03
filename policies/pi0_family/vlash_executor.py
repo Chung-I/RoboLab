@@ -44,12 +44,32 @@ class DelayedChunkExecutor:
         delay: int,
         stale_state: bool = False,
         rollforward: bool = False,
+        rtc: bool = False,
+        rtc_execute_horizon: int | None = None,
+        env_id: int = 0,
     ):
-        assert 0 <= delay < k, "delay must be in [0, k)"
+        # RTC (arXiv 2506.07339): naive-style stale inputs, but the SERVER inpaints the
+        # new chunk against the committed prefix (rtc/* request keys). The returned
+        # chunk's frame starts at the request's observation time T-d, so its first
+        # `delay` actions overlap ones already executed -- we execute [delay :
+        # delay+execute_horizon] and re-request every execute_horizon steps. Following
+        # the reference eval (eval_flow.py), prefix_attention_horizon = H - execute_horizon.
+        if rtc:
+            stale_state = True  # RTC observes at request time, like naive
+            self.rtc_execute_horizon = rtc_execute_horizon or max(k - delay, 1)
+            assert delay <= self.rtc_execute_horizon <= k
+            k_effective = self.rtc_execute_horizon
+        else:
+            self.rtc_execute_horizon = None
+            k_effective = k
+        assert 0 <= delay < k_effective or (rtc and delay <= k_effective), "delay must fit in the execute window"
         assert not (stale_state and rollforward), "stale_state and rollforward are mutually exclusive"
         self.predict_fn = predict_fn
-        self.k = k
+        self.full_k = k
+        self.k = k_effective
         self.delay = delay
+        self.rtc = rtc
+        self.env_id = env_id
         self.stale_state = stale_state
         self.rollforward = rollforward
         self.chunk = None
@@ -82,7 +102,18 @@ class DelayedChunkExecutor:
                     )
                     else self.stale_state_value
                 )
-            self.chunk = self.predict_fn(use_images, use_state, task)[: self.k]
+            if self.rtc:
+                extra = {
+                    "rtc/env_id": self.env_id,
+                    "rtc/inference_delay": self.delay,
+                    "rtc/executed": self.k,  # steps since the previous request
+                    "rtc/prefix_attention_horizon": self.full_k - self.k,
+                }
+                full = self.predict_fn(use_images, use_state, task, extra=extra)
+                # Chunk frame starts at observation time T-d; skip the overlap.
+                self.chunk = full[self.delay : self.delay + self.k]
+            else:
+                self.chunk = self.predict_fn(use_images, use_state, task)[: self.k]
             self.idx = 0
         if self.delay > 0 and self.idx == self.k - self.delay:
             self.stale_images = images
