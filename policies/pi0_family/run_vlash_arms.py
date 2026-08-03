@@ -74,6 +74,10 @@ parser.add_argument("--remote-uri", type=str, default=None,
                      help="Full WebSocket URI for the policy server, overrides --host/--port when set.")
 parser.add_argument("--policy", choices=POLICY_VARIANTS, default="pi05",
                      help="Pi0-family variant served (selects the default chunk size k=open_loop_horizon).")
+parser.add_argument("--open-loop-horizon", "--open_loop_horizon", type=int, default=None,
+                     help="Override chunk size k (default: from --policy). One server round trip is made per k "
+                          "sim steps, so this sets the request rate too -- useful for measuring whether wall "
+                          "clock is bound by round trips or by simulation. Mirrors the flag in run.py.")
 parser.add_argument("--out", type=str, default=None,
                      help="(required) Path to the incremental per-episode results JSON (schema: task/arm/delay/"
                           "episodes/success_rate). Re-running resumes from the episode count already present.")
@@ -162,6 +166,7 @@ def make_client(args: argparse.Namespace) -> VlashPi0DroidJointposClient:
         remote_port=args.remote_port,
         remote_uri=args.remote_uri,
         policy_variant=args.policy,
+        open_loop_horizon=args.open_loop_horizon,
         arm=args.arm,
         delay=args.delay,
     )
