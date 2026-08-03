@@ -64,13 +64,23 @@ BALL_RADIUS = 0.035          # r8 config (the only one with recorded successes)
 # Env-var overridable for future sweeps (never edit mid-run; drivers re-import
 # this module per block).
 #
-# The default was 0.05 until 2026-08-03, contradicting everything written above:
-# the 0.3 kg decision was documented here but never applied, and no driver ever
-# set ARENA_BALL_MASS, so EVERY ball-task result recorded before this date ran at
-# DOM's 0.05 kg -- i.e. with the knock-away problem the r11 sweep diagnosed still
-# fully present. Treat pre-2026-08-03 ball numbers as measuring the unfixed
-# benchmark; they are not comparable to runs after it.
-BALL_MASS = float(os.environ.get("ARENA_BALL_MASS", "0.3"))
+# MEASURED 2026-08-03, and the reasoning above does NOT survive contact with data.
+# The 0.3 kg default was briefly applied that morning (it had been documented here
+# since r11 but never actually shipped -- every earlier ball result ran at 0.05).
+# A same-session A/B on RollingBallInBowl sync-d0, released baseline, speed pinned
+# at 0.015, mass the only variable:
+#
+#     0.05 kg  18/52 = 35%
+#     0.30 kg  16/52 = 31%      Fisher p ~ 0.8
+#
+# Repeats of each config landed 27-46%, i.e. this task carries ~+-10 points of
+# run-to-run noise at n~50, which swamps any mass effect. So 6x the inertia buys
+# nothing measurable, and the knock-away theory is unsupported.
+#
+# Reverted to DOM's 0.05: no evidence 0.3 helps, and 0.05 keeps continuity with
+# every historical number. Corollary: since mass is neutral, pre-2026-08-03 ball
+# results ARE comparable to later ones, within that wide noise band.
+BALL_MASS = float(os.environ.get("ARENA_BALL_MASS", "0.05"))
 # angular_damping = 0: no simulation fudge at all. PhysX models no rolling
 # resistance and sliding friction cannot slow a rolling sphere, so the ball
 # rolls at CONSTANT speed. That is both more honest physics and a cleaner
@@ -92,7 +102,16 @@ BALL_START = (0.55, 0.26, 0.040)
 # Read once at import; each evaluation block is a fresh process, so a sweep
 # driver sets it per block -- never edit this file mid-run (a driver re-imports
 # the module per block, so an edit would silently change speed mid-experiment).
-BALL_SPEED = float(os.environ.get("ARENA_BALL_SPEED", "0.015"))
+# RAISED 0.015 -> 0.09 on 2026-08-03 (user-chosen), because at 0.015 the task had
+# NO measurable latency sensitivity and so could not test async inference at all:
+#   0.015 m/s at 15 Hz = 1.0 mm of ball travel per delay step, 3% of BALL_RADIUS.
+#   Measured: sync d0 14/52, naive d1 13/52, naive d2 11/52 -- flat within noise.
+#   0.09 m/s = 6.0 mm per step, 17% of BALL_RADIUS at d=1 and 34% at d=2.
+# Trade-off, deliberately accepted: 0.09 m/s crosses the arm's ~0.30 m usable
+# reach in 3.3 s, far under the 17.7 s a successful static grasp took, so absolute
+# success rates will fall sharply. A hard task with a real staleness penalty is
+# more informative than an easy one with none.
+BALL_SPEED = float(os.environ.get("ARENA_BALL_SPEED", "0.09"))
 BALL_VELOCITY = (0.0, -BALL_SPEED, 0.0)
 EPISODE_S = 25   # back to 25 s: a successful static grasp took 17.7 s
 BANANA_PARK = (5.0, 5.0, 0.05)   # out of the workspace and out of frame
