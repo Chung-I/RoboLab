@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import os
 
 import numpy as np
 from openpi_client import image_tools, websocket_client_policy
@@ -92,14 +93,26 @@ class Pi0DroidJointposClient(InferenceClient):
             "gripper_position": gripper_position,
         }
 
+    # Two 224x224x3 uint8 images msgpack to 294 KB per request, and every request
+    # crosses an SSH tunnel to the cluster -- measured ~173 ms of a ~560 ms round
+    # trip on a 16-env sweep. ROBOLAB_JPEG_QUALITY re-encodes them (95 is a good
+    # setting) for a far smaller payload; the server decodes transparently and
+    # ignores requests carrying no marker, so this is safe to leave off.
+    #
+    # Default 0 = send raw arrays, i.e. the pre-existing behaviour. That is
+    # deliberate: JPEG is lossy, so it changes model inputs and must be adopted on
+    # measured success-rate equivalence, never on assumption. 0 is the control arm.
+    JPEG_QUALITY: int = int(os.environ.get("ROBOLAB_JPEG_QUALITY", "0"))
+
     def _pack_request(self, extracted_obs: dict, instruction: str) -> dict:
+        right = image_tools.resize_with_pad(extracted_obs["right_image"], 224, 224)
+        wrist = image_tools.resize_with_pad(extracted_obs["wrist_image"], 224, 224)
+        if self.JPEG_QUALITY > 0:
+            right = image_tools.encode_jpeg(right, quality=self.JPEG_QUALITY)
+            wrist = image_tools.encode_jpeg(wrist, quality=self.JPEG_QUALITY)
         return {
-            "observation/exterior_image_1_left": image_tools.resize_with_pad(
-                extracted_obs["right_image"], 224, 224
-            ),
-            "observation/wrist_image_left": image_tools.resize_with_pad(
-                extracted_obs["wrist_image"], 224, 224
-            ),
+            "observation/exterior_image_1_left": right,
+            "observation/wrist_image_left": wrist,
             "observation/joint_position": extracted_obs["joint_position"],
             "observation/gripper_position": extracted_obs["gripper_position"],
             "prompt": instruction,
