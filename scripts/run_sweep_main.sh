@@ -32,6 +32,36 @@ CELL1_PID_FILE="/tmp/claude-1000/-home-chungyili-Codes-vlash/098bccb5-88e8-493a-
 
 mkdir -p "$OUT_DIR" "$LOG_DIR"
 
+# --- Stale-resume guard -------------------------------------------------------
+# The per-cell JSONs are resume-capable, which is right for retrying a crashed
+# cell but WRONG across a model change: on 2026-08-03 this driver "completed"
+# four cells one second after starting, silently reporting the previous day's
+# numbers from a since-fixed model. banana_vlash_d1 came back 1/52 and was taken
+# at face value as a live measurement, when the same config actually scores 6/8.
+#
+# So: fingerprint the models a run is measuring. If the sweep directory holds
+# results from a DIFFERENT fingerprint, refuse to run rather than blend two
+# models' episodes into one table. Archive or delete the directory to proceed.
+FP_FILE="$OUT_DIR/.model_fingerprint"
+FP="${SWEEP_MODEL_FINGERPRINT:-unset}"
+if [ -f "$FP_FILE" ]; then
+  OLD_FP=$(cat "$FP_FILE" 2>/dev/null)
+  if [ "$OLD_FP" != "$FP" ]; then
+    echo "FATAL: $OUT_DIR holds results for a different model." >&2
+    echo "  stored:  $OLD_FP" >&2
+    echo "  current: $FP" >&2
+    echo "  Archive or remove that directory before re-running." >&2
+    exit 1
+  fi
+elif [ -n "$(ls -A "$OUT_DIR" 2>/dev/null | grep -v '^\.')" ]; then
+  echo "FATAL: $OUT_DIR already has results but no fingerprint (pre-guard run)." >&2
+  echo "  Archive or remove that directory before re-running." >&2
+  exit 1
+else
+  printf '%s\n' "$FP" > "$FP_FILE"
+fi
+# -----------------------------------------------------------------------------
+
 export OMNI_KIT_ACCEPT_EULA=Y
 export PYTHONUNBUFFERED=1
 
