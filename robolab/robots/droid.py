@@ -27,6 +27,15 @@ from isaaclab.utils import configclass, noise
 
 from robolab.constants import ROBOTS_DIR
 
+# Benchmark v2 knob (controller-gain-diagnosis.md): the 400/80 gains are IsaacLab's
+# FRANKA_PANDA_HIGH_PD_CFG, tuned for differential IK. For absolute joint-position
+# streaming they yield a first-order lag tau=Kd/Kp=0.2s -> only 28.35% of each
+# commanded step executed per 15 Hz tick (measured 0.2833), which is what made
+# measured-state anchoring creep. ARENA_ARM_STIFFNESS=1600 gives tau=0.05s,
+# g=0.74, zeta~1.0 -- the realistic band for a Franka impedance loop. Default
+# PRESERVES the old plant exactly so results remain versioned by the env var.
+_ARM_STIFFNESS = float(os.environ.get("ARENA_ARM_STIFFNESS", "400.0"))
+
 # Offset of the end-effector control frame relative to base_link. Used by:
 #   - DroidCfg.frames "eef_frame" (FrameTransformer publishes this pose for downstream code)
 #   - examples/run_abs_ik_demo.py (converts eef_frame targets → base_link IK actions)
@@ -102,7 +111,7 @@ class DroidCfg:
                 # damping=None,
                 effort_limit=87.0,
                 velocity_limit=2.175,
-                stiffness=400.0,
+                stiffness=_ARM_STIFFNESS,
                 damping=80.0,
             ),
             "panda_forearm": ImplicitActuatorCfg(
@@ -111,7 +120,7 @@ class DroidCfg:
                 # damping=None,
                 effort_limit=12.0,
                 velocity_limit=2.61,
-                stiffness=400.0,
+                stiffness=_ARM_STIFFNESS,
                 damping=80.0,
             ),
             "gripper": ImplicitActuatorCfg(
