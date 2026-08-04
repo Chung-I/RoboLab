@@ -75,3 +75,4 @@ RoboLab bundles 3D objects, backgrounds, materials, fixtures, scenes, and robots
 | `assets/materials` | CC BY-NC-SA 4.0 | © 2026 NVIDIA Corporation. |
 | `assets/scenes` | CC BY-NC-SA 4.0 | © 2026 NVIDIA Corporation. |
 | `assets/robots` | CC BY-NC-SA 4.0 | © 2026 NVIDIA Corporation. |
+| `assets/robots/kinova_gen3_robotiq_2f85` | BSD-3-Clause | Derived from [Kinova `ros2_kortex`](https://github.com/Kinovarobotics/ros2_kortex) and [PickNik `ros2_robotiq_gripper`](https://github.com/PickNikRobotics/ros2_robotiq_gripper). See the two license files in the asset directory. |
