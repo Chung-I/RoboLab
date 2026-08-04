@@ -45,6 +45,7 @@ class DelayedChunkExecutor:
         stale_state: bool = False,
         rollforward: bool = False,
         rtc: bool = False,
+        rtc_mode: str = "rtc",
         rtc_execute_horizon: int | None = None,
         env_id: int = 0,
     ):
@@ -69,6 +70,7 @@ class DelayedChunkExecutor:
         self.k = k_effective
         self.delay = delay
         self.rtc = rtc
+        self.rtc_mode = rtc_mode
         self.env_id = env_id
         self.stale_state = stale_state
         self.rollforward = rollforward
@@ -104,6 +106,7 @@ class DelayedChunkExecutor:
                 )
             if self.rtc:
                 extra = {
+                    "rtc/mode": self.rtc_mode,
                     "rtc/env_id": self.env_id,
                     "rtc/inference_delay": self.delay,
                     "rtc/executed": self.k,  # steps since the previous request

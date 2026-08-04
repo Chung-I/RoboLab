@@ -42,6 +42,10 @@ class VlashPi0DroidJointposClient(Pi0DroidJointposClient):
         # RTC (arXiv 2506.07339): naive-style stale inputs; the SERVER inpaints the new
         # chunk against the committed prefix. Needs the RTC-capable openpi server (f91742f).
         "rtc": {"rtc": True},
+        # TT-RTC (arXiv 2512.05964): same stale inputs and prefix contract as rtc, but the
+        # server hard-conditions on the prefix (rtc/mode=ttrtc) -- needs a checkpoint
+        # TRAINED with ttrtc_delay_max and the openpi server at fa660c1+.
+        "ttrtc": {"rtc": True},
     }
 
     def __init__(self, *, arm: str, delay: int, rtc_execute_horizon: int | None = None, **kwargs) -> None:
@@ -56,9 +60,10 @@ class VlashPi0DroidJointposClient(Pi0DroidJointposClient):
     def _make_executor(self, env_id: int = 0) -> DelayedChunkExecutor:
         kwargs = dict(self.ARM_KWARGS[self.arm])
         kwargs.setdefault("delay", self.delay)
-        if self.arm == "rtc":
+        if self.arm in ("rtc", "ttrtc"):
             kwargs["rtc_execute_horizon"] = self.rtc_execute_horizon
             kwargs["env_id"] = env_id
+            kwargs["rtc_mode"] = self.arm
         return DelayedChunkExecutor(self._predict, k=self.open_loop_horizon, **kwargs)
 
     def _predict(self, images: dict, state: np.ndarray, task: str, extra: dict | None = None) -> np.ndarray:

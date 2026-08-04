@@ -47,7 +47,7 @@ import cv2  # noqa: F401 -- must import this before isaaclab. Do not remove
 from isaaclab.app import AppLauncher
 
 POLICY_VARIANTS = ["pi0", "pi0_fast", "pi05", "paligemma", "paligemma_fast"]
-ARMS = ("sync", "naive", "vlash", "rtc")
+ARMS = ("sync", "naive", "vlash", "rtc", "ttrtc")
 
 parser = argparse.ArgumentParser(
     description="Emulated-delay VLASH arm evaluation for the Pi0-family DROID jointpos policy."
