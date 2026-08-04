@@ -123,7 +123,11 @@ from robolab.eval.episode import run_episode  # noqa: E402
 from robolab.registrations.droid.auto_env_registrations_jointpos import auto_register_droid_envs  # noqa: E402
 
 robolab.constants.ENABLE_SUBTASK_PROGRESS_CHECKING = args_cli.enable_subtask
-robolab.constants.RECORD_IMAGE_DATA = False
+# ROBOLAB_RECORD_VIDEO=1 re-enables image observations so the per-episode video
+# writers actually receive frames -- with this False, unpack_image_obs returns
+# None and VideoWriter never creates a file (why --video-mode all silently
+# produced no mp4s).
+robolab.constants.RECORD_IMAGE_DATA = os.environ.get("ROBOLAB_RECORD_VIDEO", "0") == "1"
 robolab.constants.VERBOSE = False
 robolab.constants.DEBUG = False
 
