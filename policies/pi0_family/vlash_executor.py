@@ -100,10 +100,22 @@ class DelayedChunkExecutor:
                 # VALUE accuracy or CONSISTENCY with their own action history.
                 import os as _os
                 _lag = int(_os.environ.get("ROBOLAB_ROLLFORWARD_LAG", "0"))
-                if _lag > 0 and len(self._cmd_history) > _lag:
+                if _os.environ.get("ROBOLAB_ROLLFORWARD_COND") == "measured":
+                    use_state = state
+                elif _lag > 0 and len(self._cmd_history) > _lag:
                     use_state = self._cmd_history[-1 - _lag]
                 else:
                     use_state = self.last_commanded_action
+                # ROBOLAB_LAG_REANCHOR=1 decouples the state's two roles: the
+                # policy CONDITIONS on use_state, but the returned chunk is
+                # shifted client-side so its anchor is the true last command.
+                # Isolates the conditioning channel from anchor arithmetic.
+                if _os.environ.get("ROBOLAB_LAG_REANCHOR") == "1":
+                    import numpy as _np
+                    self._anchor_correction = (
+                        _np.asarray(self.last_commanded_action, dtype=_np.float64)[:7]
+                        - _np.asarray(use_state, dtype=_np.float64)[:7]
+                    )
             else:
                 use_state = (
                     state
@@ -137,6 +149,11 @@ class DelayedChunkExecutor:
                 self.chunk = full[self.delay : self.delay + self.k]
             else:
                 self.chunk = self.predict_fn(use_images, use_state, task)[: self.k]
+            if getattr(self, "_anchor_correction", None) is not None:
+                import numpy as _np
+                self.chunk = _np.asarray(self.chunk, dtype=_np.float64).copy()
+                self.chunk[:, :7] += self._anchor_correction
+                self._anchor_correction = None
             self.idx = 0
         if self.delay > 0 and self.idx == self.k - self.delay:
             self.stale_images = images
