@@ -35,6 +35,10 @@ from robolab.constants import ROBOTS_DIR
 # g=0.74, zeta~1.0 -- the realistic band for a Franka impedance loop. Default
 # PRESERVES the old plant exactly so results remain versioned by the env var.
 _ARM_STIFFNESS = float(os.environ.get("ARENA_ARM_STIFFNESS", "400.0"))
+# g~1 probe knob: ARENA_ARM_STIFFNESS=12800 ARENA_ARM_DAMPING=180 -> tau=14ms,
+# g=0.99 at 15 Hz, i.e. the measured state lands on the commanded target before
+# the next inference. Default preserves the historical 80.0 exactly.
+_ARM_DAMPING = float(os.environ.get("ARENA_ARM_DAMPING", "80.0"))
 
 # Offset of the end-effector control frame relative to base_link. Used by:
 #   - DroidCfg.frames "eef_frame" (FrameTransformer publishes this pose for downstream code)
@@ -112,7 +116,7 @@ class DroidCfg:
                 effort_limit=87.0,
                 velocity_limit=2.175,
                 stiffness=_ARM_STIFFNESS,
-                damping=80.0,
+                damping=_ARM_DAMPING,
             ),
             "panda_forearm": ImplicitActuatorCfg(
                 joint_names_expr=["panda_joint[5-7]"],
@@ -121,7 +125,7 @@ class DroidCfg:
                 effort_limit=12.0,
                 velocity_limit=2.61,
                 stiffness=_ARM_STIFFNESS,
-                damping=80.0,
+                damping=_ARM_DAMPING,
             ),
             "gripper": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
