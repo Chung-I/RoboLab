@@ -79,6 +79,7 @@ class DelayedChunkExecutor:
         self.stale_images = None
         self.stale_state_value = None
         self.last_commanded_action = None
+        self._cmd_history = []
 
     def act(self, images: dict, state, task: str):
         if self.chunk is None or self.idx == self.k:
@@ -93,7 +94,16 @@ class DelayedChunkExecutor:
                 # Not the first chunk: replace state with the last action
                 # actually commanded from the previous chunk (client-side
                 # rollforward, exact for jointpos).
-                use_state = self.last_commanded_action
+                # ROBOLAB_ROLLFORWARD_LAG=j feeds the command from j steps EARLIER
+                # instead -- value-wrong by j steps of motion but trajectory-
+                # consistent with the emitted actions. Probes whether models need
+                # VALUE accuracy or CONSISTENCY with their own action history.
+                import os as _os
+                _lag = int(_os.environ.get("ROBOLAB_ROLLFORWARD_LAG", "0"))
+                if _lag > 0 and len(self._cmd_history) > _lag:
+                    use_state = self._cmd_history[-1 - _lag]
+                else:
+                    use_state = self.last_commanded_action
             else:
                 use_state = (
                     state
@@ -105,12 +115,22 @@ class DelayedChunkExecutor:
                     else self.stale_state_value
                 )
             if self.rtc:
+                # ROBOLAB_RTC_ROLLFORWARD=1: hybrid arm -- RTC prefix conditioning AND
+                # VLASH rollforward state in the same request. Both mechanisms target the
+                # proprioceptive share, so additivity (or its absence) is informative.
+                import os as _os
+                if _os.environ.get("ROBOLAB_RTC_ROLLFORWARD") == "1" and self.last_commanded_action is not None:
+                    use_state = self.last_commanded_action
+                self.last_commanded_action = None  # set per-step below when hybrid
                 extra = {
                     "rtc/mode": self.rtc_mode,
                     "rtc/env_id": self.env_id,
                     "rtc/inference_delay": self.delay,
                     "rtc/executed": self.k,  # steps since the previous request
-                    "rtc/prefix_attention_horizon": self.full_k - self.k,
+                    # ROBOLAB_RTC_PAH=0 nulls the guidance weights entirely (weights are
+                    # zero beyond pah), isolating cadence+offset-execution from guidance
+                    # for the attribution ablation.
+                    "rtc/prefix_attention_horizon": int(__import__("os").environ.get("ROBOLAB_RTC_PAH", self.full_k - self.k)),
                 }
                 full = self.predict_fn(use_images, use_state, task, extra=extra)
                 # Chunk frame starts at observation time T-d; skip the overlap.
@@ -123,6 +143,9 @@ class DelayedChunkExecutor:
             self.stale_state_value = state
         action = self.chunk[self.idx]
         self.idx += 1
-        if self.rollforward:
+        if self.rollforward or (self.rtc and __import__("os").environ.get("ROBOLAB_RTC_ROLLFORWARD") == "1"):
             self.last_commanded_action = action
+            self._cmd_history.append(action)
+            if len(self._cmd_history) > 64:
+                self._cmd_history.pop(0)
         return action
