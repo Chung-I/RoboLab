@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Kinova Gen3 7-DoF with a Robotiq 2F-85 gripper."""
 
 import os
@@ -13,10 +16,12 @@ from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.sensors import TiledCameraCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
 from isaaclab.utils import configclass
 
 from robolab.constants import ROBOTS_DIR
+from robolab.robots.droid import BinaryJointPositionZeroToOneActionCfg
 
 
 ARM_JOINT_NAMES = [f"joint_{index}" for index in range(1, 8)]
@@ -30,6 +35,27 @@ GRIPPER_JOINT_COMMANDS = {
     "robotiq_85_right_finger_tip_joint": 0.8,
 }
 END_EFFECTOR_LINK_NAME = "robotiq_85_base_link"
+
+_WRIST_CAM = TiledCameraCfg(
+    # Keep the camera on bracelet_link so it follows the physical Kinova mount.
+    prim_path="{ENV_REGEX_NS}/robot/bracelet_link/wrist_cam",
+    height=720,
+    width=1280,
+    data_types=["rgb"],
+    spawn=sim_utils.PinholeCameraCfg(
+        # Match the 1280x720 intrinsics packaged with the Kinova description.
+        focal_length=3.895,
+        focus_distance=28.0,
+        horizontal_aperture=3.84,
+        vertical_aperture=2.16,
+    ),
+    offset=TiledCameraCfg.OffsetCfg(
+        # Kortex's simulation-camera pose expressed in the bracelet frame.
+        pos=(0.0, -0.05639, -0.074575),
+        rot=(0.5, 0.5, 0.5, -0.5),
+        convention="world",
+    ),
+)
 
 
 @configclass
@@ -97,6 +123,8 @@ class KinovaGen3Cfg:
         },
     )
 
+    wrist_cam = _WRIST_CAM
+
     frames = FrameTransformerCfg(
         prim_path="{ENV_REGEX_NS}/robot/base_link",
         debug_vis=False,
@@ -157,12 +185,24 @@ class KinovaJointPositionActionCfg:
         preserve_order=True,
         use_default_offset=False,
     )
-    gripper = mdp.BinaryJointPositionActionCfg(
+    # Match RoboLab policy inputs: 0 opens the gripper and 1 closes it.
+    gripper = BinaryJointPositionZeroToOneActionCfg(
         asset_name="robot",
         joint_names=list(GRIPPER_JOINT_COMMANDS),
         open_command_expr={name: 0.0 for name in GRIPPER_JOINT_COMMANDS},
         close_command_expr=GRIPPER_JOINT_COMMANDS,
     )
+
+
+@configclass
+class KinovaWristCameraCfg:
+    """Expose the robot-mounted camera to image observation generation.
+
+    The scene still gets this sensor from ``KinovaGen3Cfg`` so the parent robot
+    is spawned first. This wrapper only exposes the policy observation name.
+    """
+
+    wrist_cam = _WRIST_CAM
 
 
 @configclass

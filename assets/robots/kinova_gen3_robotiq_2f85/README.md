@@ -3,6 +3,10 @@
 This directory contains a self-contained, fixed-base USD asset for a Kinova
 Gen3 7-DoF arm with a Robotiq 2F-85 gripper.
 
+The arm uses Kinova's official vision-equipped bracelet geometry. The
+policy-facing `wrist_cam` uses the corresponding Kortex simulation-camera link
+transform and the packaged 1280x720 color-camera calibration.
+
 ## Provenance
 
 The robot description and geometry were derived from:

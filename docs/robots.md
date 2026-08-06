@@ -11,9 +11,6 @@ RoboLab uses IsaacLab's `ArticulationCfg` to define robots. For details, refer t
 | `FrankaCfg` (high PD) | `robolab/robots/franka_high_pd.py` | Franka Panda  | Panda fingers | High PD gains (400/80), gravity disabled |
 | `KinovaGen3Cfg` | `robolab/robots/kinova_gen3.py` | Kinova Gen3 + Robotiq 2F-85 | Robotiq binary | Fixed base, joint-position control, local USD asset |
 
-`KinovaGen3Cfg` uses Isaac Lab's binary-action convention: positive actions
-open the gripper and negative actions close it.
-
 Each robot file also defines:
 - **Action configs** — Joint position, IK, or relative IK action spaces
 - **Proprioception observations** — Joint positions, gripper state, EE pose

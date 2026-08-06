@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # isort: skip_file
 
 """Run a rendered joint-position smoke test for the fixed-base Kinova Gen3."""
@@ -25,6 +28,7 @@ from robolab.constants import PACKAGE_DIR  # noqa: E402
 from robolab.core.environments.factory import get_envs  # noqa: E402
 from robolab.core.environments.runtime import create_env  # noqa: E402
 from robolab.core.observations.observation_utils import (
+    unpack_image_obs,
     unpack_viewport_cams,
 )  # noqa: E402
 from robolab.core.utils.video_utils import VideoWriter  # noqa: E402
@@ -32,6 +36,29 @@ from robolab.robots.kinova_gen3 import GRIPPER_JOINT_COMMANDS  # noqa: E402
 from robolab.registrations.kinova.auto_env_registrations_jointpos import (  # noqa: E402
     auto_register_kinova_envs,
 )
+
+
+def compose_diagnostic_frame(policy_images, viewport):
+    views = [
+        ("AZURE KINECT", policy_images["over_shoulder_left_camera"]),
+        ("WRIST CAMERA", policy_images["wrist_cam"]),
+        ("VIEWPORT", viewport),
+    ]
+    labeled_views = []
+    for label, view in views:
+        labeled = view.copy()
+        cv2.putText(
+            labeled,
+            label,
+            (30, 55),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.2,
+            (255, 255, 255),
+            3,
+            cv2.LINE_AA,
+        )
+        labeled_views.append(labeled)
+    return cv2.hconcat(labeled_views)
 
 
 def main() -> None:
@@ -43,7 +70,12 @@ def main() -> None:
     output_dir = os.path.join(PACKAGE_DIR, "output", "kinova_jointpos_smoke")
     os.makedirs(output_dir, exist_ok=True)
     video_path = os.path.join(output_dir, "kinova_gen3_joint_position.mp4")
-    video = VideoWriter(video_path, 1 / (env_cfg.sim.render_interval * env_cfg.sim.dt))
+    diagnostic_path = os.path.join(
+        output_dir, "kinova_gen3_three_camera_diagnostic.mp4"
+    )
+    fps = 1 / (env_cfg.sim.render_interval * env_cfg.sim.dt)
+    video = VideoWriter(video_path, fps)
+    diagnostic_video = VideoWriter(diagnostic_path, fps)
 
     try:
         obs, _ = env.reset()
@@ -60,7 +92,7 @@ def main() -> None:
             arm_target = home.clone()
             arm_target[0] += 0.25 * math.sin(phase)
             arm_target[5] += 0.15 * math.sin(2.0 * phase)
-            gripper_command = -1.0 if math.sin(phase) > 0.0 else 1.0
+            gripper_command = 1.0 if math.sin(phase) > 0.0 else 0.0
             action = torch.cat(
                 [arm_target, torch.tensor([gripper_command], device=env.device)]
             ).unsqueeze(0)
@@ -73,9 +105,13 @@ def main() -> None:
                     abs(joint_positions[name] - target)
                     for name, target in GRIPPER_JOINT_COMMANDS.items()
                 )
+            policy_images = unpack_image_obs(obs)
             frame = unpack_viewport_cams(obs).get("combined_image")
             if frame is not None:
                 video.write(frame)
+                diagnostic_video.write(
+                    compose_diagnostic_frame(policy_images, frame)
+                )
 
         if gripper_error is None or gripper_error > 1.0e-3:
             raise RuntimeError(f"Gripper coupling error is {gripper_error}")
@@ -85,8 +121,10 @@ def main() -> None:
         ).item()
         print(f"Final maximum arm tracking error: {tracking_error:.6f} rad")
         print(f"Saved video: {video_path}")
+        print(f"Saved diagnostic video: {diagnostic_path}")
     finally:
         video.release()
+        diagnostic_video.release()
         env.close()
         simulation_app.close()
 
