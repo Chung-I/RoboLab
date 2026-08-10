@@ -40,7 +40,7 @@ from robolab.registrations.kinova.auto_env_registrations_jointpos import (  # no
 
 def compose_diagnostic_frame(policy_images, viewport):
     views = [
-        ("AZURE KINECT", policy_images["over_shoulder_left_camera"]),
+        ("OVER-SHOULDER", policy_images["over_shoulder_left_camera"]),
         ("WRIST CAMERA", policy_images["wrist_cam"]),
         ("VIEWPORT", viewport),
     ]
