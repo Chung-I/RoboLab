@@ -25,7 +25,7 @@ the **robot**, not the scene: at registration time the env factory deactivates
 the legacy `franka_table` prim still authored inside task scene USDs and
 spawns the fixture the robot declares, at the declared pose.
 
-A robot declares its fixture via two optional class-attribute labels, read by
+A robot declares its fixture via an optional class-attribute label, read by
 the env factory at registration time:
 
 ```python
@@ -40,11 +40,19 @@ MyRobotCfg.table_fixture = FRANKA_TABLE_FIXTURE
 
 # Robots with their own base — no fixture:
 MyRobotCfg.table_fixture = None
-
-# Floor-standing robots: rebase the robot root's init z to the scene's
-# authored /GroundPlane height. Default: False.
-MyRobotCfg.root_on_scene_ground = True
 ```
+
+Floor-standing robots declare the `root_z_above_ground` label in the robot
+cfg: the distance from the robot root to its lowest colliders (measure it
+with `debug/scripts/check_standing_contact.py`). The env factory rebases the
+root onto each scene's authored `/GroundPlane` plus that offset, so the robot
+stands exactly on the floor at any scene ground height. Grounds are per-scene
+(`tests/test_scene_ground.py` locks them): canonical scenes author −0.697
+(tabletop at the env origin); a set of legacy scenes keeps its original −0.65
+ground to preserve replay compatibility with existing recordings — the task
+table is a dynamic body resting on the floor, so the ground height sets the
+tabletop height. Because robot, table, and objects all stand on the same
+floor, their relative geometry is identical in every scene.
 
 You can also declare your own fixture directly in the robot file — any USD,
 posed relative to the env origin or the robot root:
@@ -57,6 +65,27 @@ MyRobotCfg.table_fixture = TableFixtureCfg(
     frame="robot",               # "robot" = relative to robot root, "origin" = env origin
 )
 ```
+
+### End-Effector Pose Recording
+
+Every robot cfg **must** declare the `ee_recorder_bodies` label: a dict mapping
+an HDF5 channel name to the articulation body recorded for that channel (pose
+in the robot-root frame, see [frames.md](frames.md)). There is no default —
+env generation fails with a `ValueError` naming the robot cfg if the label is
+missing. Use `{}` to explicitly disable EE-pose recording.
+
+```python
+# Single-arm (DROID: Robotiq gripper base):
+DroidCfg.ee_recorder_bodies = {"ee_pose": "base_link"}
+
+# Bimanual: one channel per arm
+MyBimanualCfg.ee_recorder_bodies = {
+    "left_ee_pose": "left_arm_link7",
+    "right_ee_pose": "right_arm_link7",
+}
+```
+
+### Label Assignment Rules
 
 Assign the labels **after the class definition — and after any subclasses**,
 not in the class body: `@configclass` converts every class member it sees at

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from collections.abc import Sequence
+from dataclasses import MISSING
 
 import torch
 from isaaclab.managers.recorder_manager import RecorderTerm, RecorderTermCfg
@@ -121,6 +122,7 @@ class PostStepEndEffectorPoseRecorder(RecorderTerm):
         super().__init__(cfg, env)
         self._robot_cfg_name = cfg.robot_cfg_name
         self._ee_body_name = cfg.ee_body_name
+        self._record_key = cfg.record_key
         self._robot = None
         self._ee_body_idx = None
         self._initialized = False
@@ -164,7 +166,7 @@ class PostStepEndEffectorPoseRecorder(RecorderTerm):
         ee_lin_vel = self._robot.data.body_lin_vel_w[:, self._ee_body_idx, :]  # (num_envs, 3)
         ee_ang_vel = self._robot.data.body_ang_vel_w[:, self._ee_body_idx, :]  # (num_envs, 3)
 
-        return "ee_pose", {
+        return self._record_key, {
             "position": ee_pos,
             "orientation": ee_quat,
             "linear_velocity": ee_lin_vel,
@@ -334,13 +336,15 @@ class PostStepEndEffectorPoseRecorderCfg(RecorderTermCfg):
 
     Attributes:
         robot_cfg_name: Name of the robot articulation in the scene. Default: "robot"
-        ee_body_name: Name of the end effector body to record. Default: "base_link"
-            (for DROID, this matches Gripper/Robotiq_2F_85/base_link)
+        ee_body_name: Name of the end effector body to record. Required; sourced
+            from the robot cfg's ``ee_recorder_bodies`` label (see docs/robots.md).
+        record_key: HDF5 channel name to record under (e.g. "ee_pose"). Required.
     """
 
     class_type: type[RecorderTerm] = PostStepEndEffectorPoseRecorder
     robot_cfg_name: str = "robot"
-    ee_body_name: str = "base_link"
+    ee_body_name: str = MISSING
+    record_key: str = MISSING
 
 
 @configclass

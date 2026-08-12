@@ -161,6 +161,10 @@ class DroidCfg:
 # it into a config field. Robots may instead declare their own TableFixtureCfg
 # here (custom USD + pose). See docs/robots.md#table-fixture.
 DroidCfg.table_fixture = FRANKA_TABLE_FIXTURE
+# EE-pose recorder channels (HDF5 channel name -> EE body name), consumed by
+# create_recorder_config. "base_link" is the Robotiq 2F-85 gripper base
+# (Gripper/Robotiq_2F_85/base_link).
+DroidCfg.ee_recorder_bodies = {"ee_pose": "base_link"}
 
 
 @configclass

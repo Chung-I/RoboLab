@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.3.1] - 2026-08-11
+
+### Added
+
+- Kinova Gen3 (Robotiq 2F-85) fixed-base support: robot config, joint-position
+  environment registrations, and an example runner
+  (`examples/run_kinova_jointpos.py`).
+  ([#23](https://github.com/NVlabs/RoboLab/pull/23))
+- Floor-standing robot support: a robot config can declare the
+  `root_z_above_ground` label (the reach of its lowest colliders below the
+  root), and the environment factory places the root on each task scene's
+  authored ground plane plus that offset (`docs/robots.md`).
+- Per-scene ground-height lock (`tests/test_scene_ground.py`): the task table
+  is a dynamic rigid body resting on the ground plane, so the authored ground
+  height sets the tabletop height and is now locked per scene.
+
+### Changed
+
+- Every robot config must now declare the `ee_recorder_bodies` label mapping
+  HDF5 channel names to the articulation bodies recorded for end-effector
+  pose (`{}` opts out). **Breaking for custom robot configs**: environment
+  generation fails with a `ValueError` naming the config until the label is
+  added — see `docs/robots.md#end-effector-pose-recording`.
+- Remaining task-scene ground planes aligned to the canonical -0.697 height;
+  legacy scenes keep their original -0.65 ground to preserve replay
+  compatibility with existing recordings.
+
 ## [0.3.0] - 2026-08-07
 
 ### Added
@@ -110,6 +137,7 @@ Initial public release: 100+ benchmark tasks,
 DROID and Franka embodiments, server-client policy evaluation (Pi0 family,
 GR00T, DreamZero), and HDF5 episode recording with analysis tools.
 
+[0.3.1]: https://github.com/NVlabs/RoboLab/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/NVlabs/RoboLab/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/NVlabs/RoboLab/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/NVlabs/RoboLab/compare/v0.1.1...v0.2.0

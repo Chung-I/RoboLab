@@ -138,6 +138,9 @@ class FrankaCfg:
 # Class-level label, assigned after the class body so configclass does not turn
 # it into a config field. See docs/robots.md#table-fixture.
 FrankaCfg.table_fixture = FRANKA_TABLE_FIXTURE
+# EE-pose recorder channels (HDF5 channel name -> EE body name), consumed by
+# create_recorder_config.
+FrankaCfg.ee_recorder_bodies = {"ee_pose": "panda_hand"}
 
 # IsaacLab ContactSensor requires exactly one prim per env for filter_prim_paths_expr
 # (force_matrix_w) to work. panda_.*finger matches 2 bodies per env, breaking

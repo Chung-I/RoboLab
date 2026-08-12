@@ -14,10 +14,13 @@ not recognize):
 
 - ``table_fixture``: a :class:`TableFixtureCfg` naming the fixture USD and its
   pose, or ``None`` for robots with their own base. Robots without the label
-  default to :data:`FRANKA_TABLE_FIXTURE`. Robot files may also declare their
-  own :class:`TableFixtureCfg` with a custom USD and pose.
-- ``root_on_scene_ground`` (default ``False``): when ``True`` the robot root's
-  init z is rebased to the scene's authored ``/GroundPlane`` height.
+  default to :data:`FRANKA_TABLE_FIXTURE`.
+- ``root_z_above_ground`` (float meters, default ``None``): rebases the robot
+  root's init z to the scene's authored ``/GroundPlane`` height plus this
+  offset — the reach of the robot's lowest colliders below its root, so the
+  robot stands exactly on whatever floor the scene authors. Ground heights are
+  per-scene (canonical -0.697, legacy -0.65; locked by
+  ``tests/test_scene_ground.py``).
 """
 
 import os
@@ -150,14 +153,14 @@ def scene_without_table_fixture(task_scene: type) -> tuple[type, float | None]:
     return scene_override, ground_z
 
 
-def robot_cfg_at_ground(robot_cfg: type, ground_z: float | None) -> type:
-    """Return a robot cfg subclass with its root placed on the scene's ground."""
+def robot_cfg_above_ground(robot_cfg: type, ground_z: float | None, offset: float) -> type:
+    """Return a robot cfg subclass with its root placed ``offset`` above the scene's ground."""
     if ground_z is None:
         raise ValueError(
-            f"{robot_cfg.__name__} sets root_on_scene_ground, but the task scene does not author /GroundPlane."
+            f"{robot_cfg.__name__} sets root_z_above_ground, but the task scene does not author /GroundPlane."
         )
     robot = robot_cfg().robot.copy()
     robot.init_state = robot.init_state.copy()
-    robot.init_state.pos = (*robot.init_state.pos[:2], ground_z)
-    class_name = f"{robot_cfg.__name__}Ground{abs(round(ground_z * 1000))}mm"
+    robot.init_state.pos = (*robot.init_state.pos[:2], ground_z + offset)
+    class_name = f"{robot_cfg.__name__}Ground{abs(round((ground_z + offset) * 1000))}mm"
     return configclass(type(class_name, (robot_cfg,), {"robot": robot}))

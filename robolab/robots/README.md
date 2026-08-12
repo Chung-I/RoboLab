@@ -63,8 +63,6 @@ from robolab.robots.franka_high_pd import FrankaCfg              # high PD, grav
 from robolab.robots.franka_definitions import FrankaJointPositionActionCfg, contact_gripper
 ```
 
----
-
 ## Kinova Gen3 (Gen3 7-DoF + Robotiq 2F-85)
 
 `tags: single-arm · fixed-base · parallel-jaw · wrist-cam · gravity-disabled`
