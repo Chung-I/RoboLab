@@ -173,6 +173,29 @@ def main():
     wrist_idx = list(robot.body_names).index("base_link")
     fj = list(robot.joint_names).index("finger_joint")
     ids = torch.tensor([fj], device=robot.device)
+    pad_names = [nme for nme in robot.body_names
+                 if ("pad" in nme.lower() or "finger" in nme.lower())]
+    _l = [nme for nme in pad_names if "left" in nme.lower()]
+    _r = [nme for nme in pad_names if "right" in nme.lower()]
+    li = list(robot.body_names).index(_l[0]) if _l else None
+    ri = list(robot.body_names).index(_r[0]) if _r else None
+
+    def closing_axis_now():
+        if li is None or ri is None:
+            return np.array([0.0, 1.0])
+        p = robot.data.body_pos_w[0].detach().cpu().numpy()
+        v = (p[ri] - p[li])[:2]
+        n = np.linalg.norm(v)
+        return v / n if n > 1e-6 else np.array([0.0, 1.0])
+
+    def yaw_err_to(c_tgt):
+        c = closing_axis_now()
+        e = np.arctan2(c_tgt[1], c_tgt[0]) - np.arctan2(c[1], c[0])
+        while e > np.pi / 2:
+            e -= np.pi
+        while e < -np.pi / 2:
+            e += np.pi
+        return e
 
     # ---- author the CoM condition BEFORE reset (USD MassAPI; PhysX parses
     # authored CoM at scene init). root_physx_view.set_coms() after reset
@@ -311,16 +334,25 @@ def main():
         objst = rigid_state(env.unwrapped.scene, "target")
         name, budget, tgt = queue[phase_i]
 
-        # live targets for the set-down choreography
+        # Handle axis in world (the set-down leaves the hammer YAWED — the
+        # 2026-08-27 campaign showed regrasps that aim along world-x land
+        # misaligned and drop even with a 6 mm CoM estimate).
+        qw_, qx_, qy_, qz_ = objst[3:7]
+        obj_yaw = np.arctan2(2 * (qw_ * qz_ + qx_ * qy_),
+                             1 - 2 * (qy_ * qy_ + qz_ * qz_))
+        h_w = np.array([np.cos(obj_yaw), np.sin(obj_yaw)])   # handle +x dir
+
+        # live targets for the set-down choreography (aim in the OBJECT frame)
         if name == "sdown":
             tgt = (ee[0], ee[1], OBJ_POSE[2] + FLANGE_TO_TIP + 0.002)
         elif name == "srise":
             tgt = (ee[0], ee[1], HOVER_Z)
         elif name == "shover":
-            tgt = (objst[0] + est_offset_clamped, objst[1], HOVER_Z)
+            tgt = (objst[0] + est_offset_clamped * h_w[0],
+                   objst[1] + est_offset_clamped * h_w[1], HOVER_Z)
         elif name == "sdesc":
             gx_new, fl = tgt
-            tgt = (objst[0] + gx_new, objst[1], fl)
+            tgt = (objst[0] + gx_new * h_w[0], objst[1] + gx_new * h_w[1], fl)
         elif name == "lift" and tgt is None:
             tgt = (ee[0], ee[1], LIFT_Z)
 
@@ -342,6 +374,11 @@ def main():
                 amp = BOUNCE_GAIN * max(cap - 0.03, 0.0)
                 d[2] += amp * np.sin(2 * np.pi * BOUNCE_HZ * count / HZ)
             a[0, 0], a[0, 1], a[0, 2] = float(d[0]), float(d[1]), float(d[2])
+        # yaw servo during the regrasp approach: keep the closing axis
+        # perpendicular to the (possibly rotated) handle.
+        if name in ("shover", "sdesc"):
+            c_tgt = np.array([-h_w[1], h_w[0]])
+            a[0, 5] = float(np.clip(0.8 * yaw_err_to(c_tgt), -0.15, 0.15))
         closed = name in ("close", "lift", "hold1", "sdown") or name.startswith("sweep") \
             or name in ("ret", "place")
         a[0, 6] = 1.0 if closed else 0.0
@@ -395,7 +432,10 @@ def main():
                 do_regrasp = False
                 if pol in ("static", "belief") and regrasps < max_regrasps:
                     r_x = float(ekf.x[1])
-                    settled = ekf.offset_settled() if pol == "belief" else True
+                    # belief uses the end-of-window estimate like static
+                    # (2026-08-27: the settled-gate never fired before drops
+                    # interrupted hold1 — a gate that waits loses the object).
+                    settled = True
                     if settled and abs(r_x) > REGRASP_THRESH:
                         do_regrasp = True
                         est_offset = r_x
