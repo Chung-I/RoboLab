@@ -465,11 +465,15 @@ def main():
         if name.startswith("sweep") or name == "ret":
             reached = abs(tgt[1] - ee[1]) < 0.020 and abs(tgt[0] - ee[0]) < 0.05
         elif name == "sdown":
-            # contact = object z stalls while we keep commanding descent
-            sdown_z_hist.append(float(objst[2]))
-            stalled = (len(sdown_z_hist) >= 8
-                       and max(sdown_z_hist[-8:]) - min(sdown_z_hist[-8:]) < 0.002
-                       and count > 12)
+            # contact = the EE keeps descending but the object no longer
+            # follows (v5 lesson: a statically-hanging object has zero z-rate
+            # BEFORE descent starts — compare against ee motion, not time).
+            sdown_z_hist.append((float(ee[2]), float(objst[2])))
+            stalled = False
+            if len(sdown_z_hist) >= 10:
+                ee_drop = sdown_z_hist[-10][0] - sdown_z_hist[-1][0]
+                obj_drop = sdown_z_hist[-10][1] - sdown_z_hist[-1][1]
+                stalled = ee_drop > 0.012 and obj_drop < 0.004
             reached = bool(objst[2] < 0.045 or stalled)
         elif name == "shover":
             c_tgt = np.array([-h_w[1], h_w[0]])
