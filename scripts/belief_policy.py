@@ -128,12 +128,31 @@ class OnlineEKF:
         self.tau_innov = 0.0
         self.tau_diff = 0.0
         self._prev_zT = None
+        self._buf = []          # rolling (zF, zT, spec) for one-shot LS aim
+
+    def aim_offset(self, n=15):
+        """One-shot LS hang-offset from the last n samples (quasi-static hold
+        during set-down): the EKF's slow random-walk cannot converge fast
+        enough for regrasp aiming (round 4: true hang -32 mm, EKF read +2 mm).
+        tau = r x F solved directly."""
+        buf = self._buf[-n:]
+        if len(buf) < 5:
+            return np.zeros(2)
+        m = float(np.sum([zF @ sp for zF, _, sp in buf]) /
+                  max(np.sum([sp @ sp for _, _, sp in buf]), 1e-9))
+        A = np.concatenate([-skew(m * sp) for _, _, sp in buf], axis=0)
+        b = np.concatenate([zT for _, zT, _ in buf])
+        r, *_ = np.linalg.lstsq(A, b, rcond=None)
+        return np.clip(r[:2], -0.05, 0.05)
 
     def update(self, F_b, T_b, spec):
         zF, zT = R_BW @ F_b, R_BW @ T_b
         if self._prev_zT is not None:
             self.tau_diff = float(np.linalg.norm(zT - self._prev_zT))
         self._prev_zT = zT.copy()
+        self._buf.append((zF.copy(), zT.copy(), spec.copy()))
+        if len(self._buf) > 40:
+            self._buf.pop(0)
         self.P = self.P + self.Q
         m, r = self.x[0], self.x[1:4]
         F = m * spec
@@ -171,7 +190,8 @@ class Controller:
         self.attempts = 1
         self.abort_xy = None
         self.regrasp_off = np.zeros(2)  # belief-aimed regrasp: cup landed at
-                                        # abort_xy + horizontal CoM offset
+                                        # abort_xy + horizontal hang offset
+        self.ekf_ref = None
         self.timer = 0         # transport+place steps (lift..retreat reached)
 
     REC_BUDGET = {"rset": 120, "ropen": 8, "rup": 60, "rdesc2": 120,
@@ -276,6 +296,12 @@ class Controller:
             if name in ("ropen", "rclose"):
                 reached = False
             if reached or self.rec_count >= self.REC_BUDGET[name]:
+                if name == "rset" and self.ekf_ref is not None:
+                    off = self.ekf_ref.aim_offset()
+                    if self.policy == "belief":
+                        self.regrasp_off = off
+                    print(f"[AIM] LS hang-offset = ({off[0]:+.3f},{off[1]:+.3f})",
+                          flush=True)
                 self.recovery.pop(0)
                 self.rec_count = 0
                 if not self.recovery:
@@ -366,6 +392,7 @@ def main():
     obs, _ = env.reset()
     ctl = Controller(args_cli.policy)
     ekf = OnlineEKF()
+    ctl.ekf_ref = ekf
     ee_hist = []
     rec = {k: [] for k in ["ee_pos", "wrench", "L", "cap", "theta",
                            "cup_state", "ball_a_state", "ball_b_state"]}
