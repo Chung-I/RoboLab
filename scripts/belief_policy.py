@@ -170,12 +170,14 @@ class Controller:
         self.rec_count = 0
         self.attempts = 1
         self.abort_xy = None
+        self.regrasp_off = np.zeros(2)  # belief-aimed regrasp: cup landed at
+                                        # abort_xy + horizontal CoM offset
         self.timer = 0         # transport+place steps (lift..retreat reached)
 
     REC_BUDGET = {"rset": 120, "ropen": 8, "rup": 60, "rdesc2": 120,
                   "rclose": 22, "rlift": 80}
 
-    def maybe_abort(self, gt_tilt_deg):
+    def maybe_abort(self, gt_tilt_deg, r_xy=None, gt_cup_xy=None, ee=None):
         """Sustained freeze (belief) or GT tilt (oracle) during sweeps => set
         the cup down HERE, regrasp deeper, resume. One regrasp max."""
         if self.attempts > 1 or self.recovery:
@@ -185,6 +187,14 @@ class Controller:
             return
         trig = (self.policy == "belief" and self.freeze_run >= ABORT_FREEZE_STEPS) or                (self.policy == "oracle" and gt_tilt_deg > ORACLE_TILT_ABORT)
         if trig:
+            # Aim the regrasp: belief uses its own CoM offset estimate (the
+            # payload hangs at flange + r_xy, so that is where it lands);
+            # oracle uses GT cup position. Round-3 lesson: regrasping at the
+            # remembered flange xy misses a cup that hung rotated in the grip.
+            if self.policy == "belief" and r_xy is not None:
+                self.regrasp_off = np.clip(np.asarray(r_xy), -0.04, 0.04)
+            elif self.policy == "oracle" and gt_cup_xy is not None and ee is not None:
+                self.regrasp_off = np.clip(np.asarray(gt_cup_xy) - ee[:2], -0.06, 0.06)
             self.recovery = ["rset", "ropen", "rup", "rdesc2", "rclose", "rlift"]
             self.rec_count = 0
             self.attempts = 2
@@ -201,9 +211,10 @@ class Controller:
         if name == "rup":
             return (x, y, 0.26)
         if name in ("rdesc2", "rclose"):
-            return (x, y, GRASP_Z - REGRASP_DEEPER)
+            return (x + self.regrasp_off[0], y + self.regrasp_off[1],
+                    GRASP_Z - REGRASP_DEEPER)
         if name == "rlift":
-            return (x, y, LIFT[2])
+            return (x + self.regrasp_off[0], y + self.regrasp_off[1], LIFT[2])
         return None
 
     def target(self, name):
@@ -388,7 +399,7 @@ def main():
             qc = cup[3:7]
             zzc = 1 - 2 * (qc[1] * qc[1] + qc[2] * qc[2])
             tilt_deg = float(np.degrees(np.arccos(np.clip(zzc, -1, 1))))
-            ctl.maybe_abort(tilt_deg)
+            ctl.maybe_abort(tilt_deg, r_xy=ekf.x[1:3], gt_cup_xy=cup[:2], ee=ee)
         if name.startswith("sweep") and cup[2] < 0.05:
             dropped = True
         rec["ee_pos"].append(ee)
