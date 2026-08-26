@@ -86,11 +86,16 @@ CAP_XY, CAP_Z, REACH_TOL = 0.060, 0.050, 0.010
 R_BW = np.array([[0.698758, 0.708495, -0.09885],
                  [0.7153, -0.693756, 0.083959],
                  [-0.009093, -0.129374, -0.991554]])
-# Liveness = torque-innovation EMA NORMALIZED by the EKF's own mass estimate
-# (N*m per kg): raw thresholds calibrated at 0.16 kg failed to transfer to a
-# 0.22 kg payload (pilot 9: rigid stuck slow at L=0.0348). Campaign-1 stats
-# renormalized: contents p25 0.040/0.16=0.25, rigid p95 0.0245/0.16=0.153.
-L_HI, L_LO = 0.22, 0.17
+# Liveness = EMA of HIGH-FREQUENCY torque energy (first difference) per kg of
+# estimated payload. v3 change: raw innovation could not separate sloshing
+# contents from smooth in-grasp SLIP (pilot 10: rigid cup creeping through the
+# fingers reads as sustained innovation). Slosh is impulsive; slip is smooth —
+# the first-difference feature was the probe's 6.2x discriminator
+# (campaign-1 normalized: contents ~1.4, rigid ~0.23 N*m/s/kg).
+L_HI, L_LO = 0.70, 0.45
+ABORT_FREEZE_STEPS = 15   # sustained freeze during sweeps => abort-and-regrasp
+REGRASP_DEEPER = 0.007    # regrasp this much deeper (more vertical wall contact)
+ORACLE_TILT_ABORT = 12.0  # oracle aborts on GT cup tilt (deg)
 ORACLE_HI, ORACLE_LO = 0.015, 0.008  # GT contents rel-speed (m/s) thresholds
 SETTLE_MAX = 45                  # max release-gate wait (steps)
 
@@ -121,9 +126,14 @@ class OnlineEKF:
         self.Q = np.diag([1e-5, q_r, q_r, q_r]) ** 2
         self.Rn = np.diag([r_f] * 3 + [r_t] * 3) ** 2
         self.tau_innov = 0.0
+        self.tau_diff = 0.0
+        self._prev_zT = None
 
     def update(self, F_b, T_b, spec):
         zF, zT = R_BW @ F_b, R_BW @ T_b
+        if self._prev_zT is not None:
+            self.tau_diff = float(np.linalg.norm(zT - self._prev_zT))
+        self._prev_zT = zT.copy()
         self.P = self.P + self.Q
         m, r = self.x[0], self.x[1:4]
         F = m * spec
@@ -155,7 +165,46 @@ class Controller:
         self.L = 0.0           # liveness EMA
         self.mode_slow = policy == "oracle"  # oracle starts cautious
         self.freeze = False    # stop-and-settle: hold pose while contents surge
+        self.freeze_run = 0    # consecutive frozen steps (abort trigger)
+        self.recovery = []     # abort-and-regrasp phase queue (belief/oracle)
+        self.rec_count = 0
+        self.attempts = 1
+        self.abort_xy = None
         self.timer = 0         # transport+place steps (lift..retreat reached)
+
+    REC_BUDGET = {"rset": 120, "ropen": 8, "rup": 60, "rdesc2": 120,
+                  "rclose": 22, "rlift": 80}
+
+    def maybe_abort(self, gt_tilt_deg):
+        """Sustained freeze (belief) or GT tilt (oracle) during sweeps => set
+        the cup down HERE, regrasp deeper, resume. One regrasp max."""
+        if self.attempts > 1 or self.recovery:
+            return
+        name = self.seq[self.i]
+        if not name.startswith("sweep"):
+            return
+        trig = (self.policy == "belief" and self.freeze_run >= ABORT_FREEZE_STEPS) or                (self.policy == "oracle" and gt_tilt_deg > ORACLE_TILT_ABORT)
+        if trig:
+            self.recovery = ["rset", "ropen", "rup", "rdesc2", "rclose", "rlift"]
+            self.rec_count = 0
+            self.attempts = 2
+            self.freeze = False
+            self.freeze_run = 0
+            print(f"[ABORT] regrasp triggered (policy={self.policy})", flush=True)
+
+    def rec_target(self, name, ee):
+        if self.abort_xy is None:
+            self.abort_xy = (float(ee[0]), float(ee[1]))
+        x, y = self.abort_xy
+        if name in ("rset", "ropen"):
+            return (x, y, GRASP_Z + 0.004)
+        if name == "rup":
+            return (x, y, 0.26)
+        if name in ("rdesc2", "rclose"):
+            return (x, y, GRASP_Z - REGRASP_DEEPER)
+        if name == "rlift":
+            return (x, y, LIFT[2])
+        return None
 
     def target(self, name):
         if name == "hover":
@@ -184,7 +233,7 @@ class Controller:
     def update_liveness(self, ekf, gt_rel_speed):
         if self.policy == "belief":
             m_hat = max(ekf.x[0], 0.05)
-            self.L = 0.75 * self.L + 0.25 * (ekf.tau_innov / m_hat)
+            self.L = 0.75 * self.L + 0.25 * (ekf.tau_diff / m_hat)
             hi, lo = L_HI, L_LO
         elif self.policy == "oracle":
             self.L = 0.75 * self.L + 0.25 * gt_rel_speed
@@ -197,8 +246,31 @@ class Controller:
         elif self.L < lo:           # let contents settle, then creep
             self.mode_slow = False
             self.freeze = False
+        self.freeze_run = self.freeze_run + 1 if self.freeze else 0
 
     def step(self, ee):
+        # recovery queue takes precedence over the main sequence
+        if self.recovery:
+            name = self.recovery[0]
+            tgt = self.rec_target(name, ee)
+            a = torch.zeros(1, 7)
+            err = np.asarray(tgt) - ee
+            d = KP * err
+            d = np.clip(d, -0.04, 0.04)
+            a[0, 0], a[0, 1], a[0, 2] = float(d[0]), float(d[1]), float(d[2])
+            a[0, 6] = 0.0 if name in ("ropen", "rup", "rdesc2") else 1.0
+            self.rec_count += 1
+            self.timer += 1
+            reached = float(np.linalg.norm(np.asarray(tgt) - ee)) < REACH_TOL
+            if name in ("ropen", "rclose"):
+                reached = False
+            if reached or self.rec_count >= self.REC_BUDGET[name]:
+                self.recovery.pop(0)
+                self.rec_count = 0
+                if not self.recovery:
+                    self.abort_xy = None
+                    self.mode_slow = True   # stay cautious after regrasp
+            return f"REC:{name}", a
         name = self.seq[self.i]
         tgt = self.target(name)
         a = torch.zeros(1, 7)
@@ -313,6 +385,10 @@ def main():
         prev_rel = rel
         if carrying:
             ctl.update_liveness(ekf, gt_speed)
+            qc = cup[3:7]
+            zzc = 1 - 2 * (qc[1] * qc[1] + qc[2] * qc[2])
+            tilt_deg = float(np.degrees(np.arccos(np.clip(zzc, -1, 1))))
+            ctl.maybe_abort(tilt_deg)
         if name.startswith("sweep") and cup[2] < 0.05:
             dropped = True
         rec["ee_pos"].append(ee)
@@ -344,6 +420,7 @@ def main():
              phase=np.array(phases), **{k: np.stack(v) for k, v in rec.items()})
     manifest = dict(policy=args_cli.policy, condition=args_cli.condition,
                     seed=args_cli.seed, steps=len(phases), success=success,
+                    attempts=ctl.attempts,
                     upright=bool(upright), placed=bool(placed), dropped=bool(dropped),
                     spills=int(spills), task_time_steps=int(ctl.timer),
                     caps=dict(fast=args_cli.cap_fast, med=args_cli.cap_med,
