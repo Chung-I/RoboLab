@@ -381,8 +381,11 @@ def main():
                 d[2] += amp * np.sin(2 * np.pi * BOUNCE_HZ * count / HZ)
             a[0, 0], a[0, 1], a[0, 2] = float(d[0]), float(d[1]), float(d[2])
         # yaw servo during the regrasp approach: keep the closing axis
-        # perpendicular to the (possibly rotated) handle.
-        if name in ("shover", "sdesc"):
+        # perpendicular to the (possibly rotated) handle. Align at HOVER
+        # height in free space; freeze yaw during the low descent — v3
+        # forensics: simultaneous large yaw + descent stalls the dls IK
+        # (sdesc burned its whole budget without converging).
+        if name == "shover" or (name == "sdesc" and ee[2] > 0.25):
             c_tgt = np.array([-h_w[1], h_w[0]])
             a[0, 5] = float(np.clip(0.8 * yaw_err_to(c_tgt), -0.15, 0.15))
         closed = name in ("close", "lift", "hold1", "sdown") or name.startswith("sweep") \
@@ -454,6 +457,10 @@ def main():
             reached = abs(tgt[1] - ee[1]) < 0.020 and abs(tgt[0] - ee[0]) < 0.05
         elif name == "sdown":
             reached = bool(objst[2] < 0.045)   # contact-stopped set-down
+        elif name == "shover":
+            c_tgt = np.array([-h_w[1], h_w[0]])
+            reached = (float(np.linalg.norm(np.asarray(tgt) - ee)) < REACH_TOL
+                       and abs(yaw_err_to(c_tgt)) < 0.08)
         elif name in ("close", "open", "sopen", "hold1", "done"):
             reached = False
         elif tgt is not None:
