@@ -3,7 +3,7 @@
 # contents (via regrasp) and rigid (reasonably fast), launch the 40-run campaign.
 set -u
 ROOT=/home/chungyili/Codes/RoboLab
-export PROBE_SHELL_MASS=0.02 PROBE_BALL_MASS=0.08 OMNI_KIT_ACCEPT_EULA=YES
+export PROBE_SHELL_MASS=0.02 PROBE_BALL_MASS=0.08 PROBE_EPISODE_S=60 OMNI_KIT_ACCEPT_EULA=YES
 run() {
   mkdir -p "$4"
   (cd "$ROOT" && .venv/bin/python -u scripts/belief_policy.py --policy "$1" \

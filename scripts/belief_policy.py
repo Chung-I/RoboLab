@@ -244,7 +244,10 @@ class Controller:
             return (x, y, GRASP_Z + 0.004)
         dx, dy = SETDOWN_DRIFT
         if name in ("rreseat", "rclose"):
-            return (x + dx, y + dy, GRASP_Z - 0.012)
+            # -8 mm: deep enough to regrip the wall, shallow enough not to
+            # squeeze the thin wall-base junction (round 8: balls pressed out
+            # below the rim under the -12 mm grip during the resumed sweeps)
+            return (x + dx, y + dy, GRASP_Z - 0.008)
         if name == "rlift":
             return (x + dx, y + dy, LIFT[2])
         return None
@@ -319,6 +322,13 @@ class Controller:
                 if not self.recovery:
                     self.abort_xy = None
                     self.mode_slow = True   # stay cautious after regrasp
+                    # Deliver directly: after rescuing a failing grasp the
+                    # right policy is the safest path to task completion, not
+                    # resuming the remaining stress maneuvers (round 8: the
+                    # resumed sweeps worked the balls out over ~120 slow steps
+                    # and blew the episode budget).
+                    self.i = self.seq.index("ret")
+                    self.count = 0
             return f"REC:{name}", a
         name = self.seq[self.i]
         tgt = self.target(name)
