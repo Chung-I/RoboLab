@@ -92,7 +92,7 @@ R_BW = np.array([[0.698758, 0.708495, -0.09885],
 # fingers reads as sustained innovation). Slosh is impulsive; slip is smooth —
 # the first-difference feature was the probe's 6.2x discriminator
 # (campaign-1 normalized: contents ~1.4, rigid ~0.23 N*m/s/kg).
-L_HI, L_LO = 0.70, 0.45
+L_HI, L_LO = 0.33, 0.26  # pilot-11 measured: rigid fast-sweep max 0.245, contents surge 0.43
 ABORT_FREEZE_STEPS = 15   # sustained freeze during sweeps => abort-and-regrasp
 REGRASP_DEEPER = 0.007    # regrasp this much deeper (more vertical wall contact)
 ORACLE_TILT_ABORT = 12.0  # oracle aborts on GT cup tilt (deg)
