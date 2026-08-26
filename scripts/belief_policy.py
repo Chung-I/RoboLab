@@ -412,6 +412,31 @@ def main():
     wrist_idx = list(robot.body_names).index("base_link")
 
     obs, _ = env.reset()
+
+    # optional rollout video (env ROLLOUT_VIDEO=<path.mp4>): first scene camera
+    video_path = os.environ.get("ROLLOUT_VIDEO", "")
+    video = {"w": None, "key": None}
+
+    def record_frame(o):
+        if not video_path:
+            return
+        im = o.get("image_obs") or {}
+        if video["key"] is None:
+            ks = [k for k, v in im.items() if hasattr(v, "shape") and len(v.shape) >= 3]
+            if not ks:
+                return
+            video["key"] = ks[0]
+            print(f"[VIDEO] recording '{video['key']}' -> {video_path}", flush=True)
+        fr = im[video["key"]][0].detach().cpu().numpy()
+        if fr.dtype != np.uint8:
+            fr = (np.clip(fr, 0.0, 1.0) * 255).astype(np.uint8)
+        fr = np.ascontiguousarray(fr[..., :3])
+        if video["w"] is None:
+            h, wd = fr.shape[:2]
+            video["w"] = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*"mp4v"),
+                                         15, (wd, h))
+        video["w"].write(cv2.cvtColor(fr, cv2.COLOR_RGB2BGR))
+
     ctl = Controller(args_cli.policy)
     ekf = OnlineEKF()
     ctl.ekf_ref = ekf
@@ -423,9 +448,16 @@ def main():
     dropped = False
     for step in range(args_cli.max_steps):
         ee = obs["proprio_obs"]["ee_pos"][0].detach().cpu().numpy()
+        # Frozen-env init bug (intermittent, load-correlated): obs stays
+        # exactly zero and physics never advances. Bail so the driver retries.
+        if step == 10 and float(np.abs(ee).sum()) == 0.0:
+            print("FROZEN_ENV — bailing for retry", flush=True)
+            simulation_app.close()
+            sys.exit(2)
         ee_hist.append(ee)
         name, action = ctl.step(ee)
         obs, _, term, trunc, _ = env.step(action.to(env.device))
+        record_frame(obs)
         phases.append(name)
         w = robot.data.body_incoming_joint_wrench_b[0, wrist_idx].detach().cpu().numpy()
         cup = rigid_state(env.unwrapped.scene, "cup")
@@ -487,6 +519,9 @@ def main():
                               slow=args_cli.cap_slow))
     with open(os.path.join(args_cli.out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
+    if video["w"] is not None:
+        video["w"].release()
+        print(f"[VIDEO] saved {video_path}", flush=True)
     print(f"RESULT success={success} upright={upright} placed={placed} "
           f"dropped={dropped} spills={spills} time={ctl.timer}", flush=True)
     end_episode(env)

@@ -49,11 +49,22 @@ CONDITION = os.environ.get("PROBE_CONDITION", "contents")  # contents | rigid
 SEED = int(os.environ.get("PROBE_SEED", "0"))
 M_SHELL = float(os.environ.get("PROBE_SHELL_MASS", "0.06"))   # kg
 M_BALL = float(os.environ.get("PROBE_BALL_MASS", "0.05"))     # kg each
-CUP_SCALE = float(os.environ.get("PROBE_CUP_SCALE", "0.25"))  # 0.28 m -> 0.07 m
+# Container asset: wooden_bowl (cup, the original flagship) or coffee_pot
+# (kettle-shaped: taller, lid rim, off-axis spout — the frozen-hyperparameter
+# transfer object). Per-asset defaults chosen so the graspable width fits the
+# 2F-85's 85 mm stroke.
+ASSET = os.environ.get("PROBE_ASSET", "wooden_bowl")  # wooden_bowl | coffee_pot
+_ASSET_DEFAULTS = {
+    # usd subpath, default scale, native height (m), native graspable width (m)
+    "wooden_bowl": (("hot3d", "wooden_bowl.usd"), 0.25, 0.13),
+    "coffee_pot": (("hot3d", "coffee_pot.usd"), 0.5, 0.151),
+}
+_USD_SUB, _DEF_SCALE, _NATIVE_H = _ASSET_DEFAULTS[ASSET]
+CUP_SCALE = float(os.environ.get("PROBE_CUP_SCALE", str(_DEF_SCALE)))
 BALL_SCALE = float(os.environ.get("PROBE_BALL_SCALE", "0.25"))  # r 0.035 -> 0.00875
 
 CUP_POSE = (0.45, 0.00, 0.006)   # on the table, well inside Franka reach
-CUP_HEIGHT = 0.13 * CUP_SCALE    # 0.0325 m at default scale
+CUP_HEIGHT = _NATIVE_H * CUP_SCALE   # 0.0325 m bowl / 0.0755 m pot at defaults
 BALL_R = 0.035 * BALL_SCALE
 EPISODE_S = int(os.environ.get("PROBE_EPISODE_S", "30"))  # recovery runs need ~45 s
 BALL_PARK_A = (5.0, 4.4, 0.05)
@@ -76,12 +87,17 @@ _BALL_MASS = 0.001 if _RIGID else M_BALL
 def _ball_pos(jit):
     if _RIGID:
         return None  # parked positions used instead
-    return (CUP_POSE[0] + jit[0], CUP_POSE[1] + jit[1], CUP_POSE[2] + BALL_R + 0.004)
+    # bowl: just above the floor. pot: drop from 30% height so the balls fall
+    # into the cavity past the rim/lid lip and settle before the grasp starts.
+    drop_z = (CUP_POSE[2] + BALL_R + 0.004 if ASSET == "wooden_bowl"
+              else CUP_POSE[2] + 0.30 * CUP_HEIGHT)
+    scale = 1.0 if ASSET == "wooden_bowl" else 0.6   # pot interior is narrower
+    return (CUP_POSE[0] + scale * jit[0], CUP_POSE[1] + scale * jit[1], drop_z)
 
 
 def cup_spawn_cfg():
     return sim_utils.UsdFileCfg(
-        usd_path=os.path.join(ASSET_DIR, "objects", "hot3d", "wooden_bowl.usd"),
+        usd_path=os.path.join(ASSET_DIR, "objects", *_USD_SUB),
         scale=(CUP_SCALE, CUP_SCALE, CUP_SCALE),
         activate_contact_sensors=True,
         mass_props=sim_utils.MassPropertiesCfg(mass=_CUP_MASS),

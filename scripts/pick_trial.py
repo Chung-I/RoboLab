@@ -214,8 +214,39 @@ def main():
     rel_at_close = None
     obj_hist, phases = [], []
 
+    # optional rollout video (env ROLLOUT_VIDEO=<path.mp4>): first scene camera
+    video_path = os.environ.get("ROLLOUT_VIDEO", "")
+    video = {"w": None, "key": None}
+
+    def record_frame(o):
+        if not video_path:
+            return
+        im = o.get("image_obs") or {}
+        if video["key"] is None:
+            ks = [k for k, v in im.items() if hasattr(v, "shape") and len(v.shape) >= 3]
+            if not ks:
+                return
+            video["key"] = ks[0]
+            print(f"[VIDEO] recording '{video['key']}' -> {video_path}", flush=True)
+        fr = im[video["key"]][0].detach().cpu().numpy()
+        if fr.dtype != np.uint8:
+            fr = (np.clip(fr, 0.0, 1.0) * 255).astype(np.uint8)
+        fr = np.ascontiguousarray(fr[..., :3])
+        if video["w"] is None:
+            h, wd = fr.shape[:2]
+            video["w"] = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*"mp4v"),
+                                         15, (wd, h))
+        video["w"].write(cv2.cvtColor(fr, cv2.COLOR_RGB2BGR))
+
     for step in range(args_cli.max_steps):
         ee = obs["proprio_obs"]["ee_pos"][0].detach().cpu().numpy()
+        # Frozen-env init bug (intermittent, ~6.5% under load; audited
+        # 2026-08-26): obs stays exactly zero, physics never advances, and the
+        # run masquerades as a clean grasp failure. Bail so drivers retry.
+        if step == 10 and float(np.abs(ee).sum()) == 0.0:
+            print("FROZEN_ENV — bailing for retry", flush=True)
+            simulation_app.close()
+            sys.exit(2)
         objst = rigid_state(env.unwrapped.scene, "target")
         name = seq[i]
 
@@ -258,6 +289,7 @@ def main():
         a[0, 6] = 1.0 if seq.index("close") <= i < len(seq) else 0.0
 
         obs, _, term, trunc, _ = env.step(a.to(env.device))
+        record_frame(obs)
         ramp_grip()
         obj_hist.append(objst)
         phases.append(name)
@@ -316,6 +348,9 @@ def main():
         json.dump(manifest, f, indent=2)
     np.savez(os.path.join(args_cli.out, "traj.npz"),
              phase=np.array(phases), obj=np.stack(obj_hist))
+    if video["w"] is not None:
+        video["w"].release()
+        print(f"[VIDEO] saved {video_path}", flush=True)
     print(f"RESULT executed=True grasped={grasped} survived={survived} "
           f"drop_step={drop_step} slip_mm={slip_mm}", flush=True)
     end_episode(env)
