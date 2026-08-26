@@ -194,8 +194,7 @@ class Controller:
         self.ekf_ref = None
         self.timer = 0         # transport+place steps (lift..retreat reached)
 
-    REC_BUDGET = {"rset": 120, "ropen": 8, "rup": 60, "rdesc2": 120,
-                  "rclose": 22, "rlift": 80}
+    REC_BUDGET = {"rset": 120, "rreseat": 60, "rclose": 22, "rlift": 80}
 
     def maybe_abort(self, gt_tilt_deg, r_xy=None, gt_cup_xy=None, ee=None):
         """Sustained freeze (belief) or GT tilt (oracle) during sweeps => set
@@ -215,7 +214,14 @@ class Controller:
                 self.regrasp_off = np.clip(np.asarray(r_xy), -0.04, 0.04)
             elif self.policy == "oracle" and gt_cup_xy is not None and ee is not None:
                 self.regrasp_off = np.clip(np.asarray(gt_cup_xy) - ee[:2], -0.06, 0.06)
-            self.recovery = ["rset", "ropen", "rup", "rdesc2", "rclose", "rlift"]
+            # v6: RE-SEAT, not re-grasp. Rounds 4-5 proved the cup's landing
+            # point after a free-space release is unpredictable (~3-4 cm drift
+            # during the descent of a rotating cup) and no pre-release estimate
+            # can aim it. Instead: rest the cup on the table WHILE HOLDING (the
+            # flat base rights the tilt), then open the fingers only while
+            # sliding deeper — they cage the standing cup throughout — then
+            # re-close and lift. No release into free space, nothing to aim.
+            self.recovery = ["rset", "rreseat", "rclose", "rlift"]
             self.rec_count = 0
             self.attempts = 2
             self.freeze = False
@@ -226,15 +232,12 @@ class Controller:
         if self.abort_xy is None:
             self.abort_xy = (float(ee[0]), float(ee[1]))
         x, y = self.abort_xy
-        if name in ("rset", "ropen"):
+        if name == "rset":
             return (x, y, GRASP_Z + 0.004)
-        if name == "rup":
-            return (x, y, 0.26)
-        if name in ("rdesc2", "rclose"):
-            return (x + self.regrasp_off[0], y + self.regrasp_off[1],
-                    GRASP_Z - REGRASP_DEEPER)
+        if name in ("rreseat", "rclose"):
+            return (x, y, GRASP_Z - REGRASP_DEEPER)
         if name == "rlift":
-            return (x + self.regrasp_off[0], y + self.regrasp_off[1], LIFT[2])
+            return (x, y, LIFT[2])
         return None
 
     def target(self, name):
@@ -289,7 +292,7 @@ class Controller:
             d = KP * err
             d = np.clip(d, -0.04, 0.04)
             a[0, 0], a[0, 1], a[0, 2] = float(d[0]), float(d[1]), float(d[2])
-            a[0, 6] = 0.0 if name in ("ropen", "rup", "rdesc2") else 1.0
+            a[0, 6] = 0.0 if name == "rreseat" else 1.0
             self.rec_count += 1
             self.timer += 1
             reached = float(np.linalg.norm(np.asarray(tgt) - ee)) < REACH_TOL
