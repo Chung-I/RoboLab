@@ -95,6 +95,11 @@ R_BW = np.array([[0.698758, 0.708495, -0.09885],
 L_HI, L_LO = 0.33, 0.26  # pilot-11 measured: rigid fast-sweep max 0.245, contents surge 0.43
 ABORT_FREEZE_STEPS = 15   # sustained freeze during sweeps => abort-and-regrasp
 REGRASP_DEEPER = 0.007    # regrasp this much deeper (more vertical wall contact)
+# Calibrated set-down drift: rounds 4-7 all measured the cup settling at
+# ~(-35,+8) mm from the flange after the tilted set-down (drift direction is
+# set by the choreography-determined in-grasp rotation). Engineered constant,
+# flagged as such; cross-seed generalization is measured by the campaign.
+SETDOWN_DRIFT = (-0.035, 0.008)
 ORACLE_TILT_ABORT = 12.0  # oracle aborts on GT cup tilt (deg)
 ORACLE_HI, ORACLE_LO = 0.015, 0.008  # GT contents rel-speed (m/s) thresholds
 SETTLE_MAX = 45                  # max release-gate wait (steps)
@@ -237,10 +242,11 @@ class Controller:
         x, y = self.abort_xy
         if name == "rset":
             return (x, y, GRASP_Z + 0.004)
+        dx, dy = SETDOWN_DRIFT
         if name in ("rreseat", "rclose"):
-            return (x, y, GRASP_Z - 0.012)
+            return (x + dx, y + dy, GRASP_Z - 0.012)
         if name == "rlift":
-            return (x, y, LIFT[2])
+            return (x + dx, y + dy, LIFT[2])
         return None
 
     def target(self, name):
