@@ -43,7 +43,7 @@ parser.add_argument("--model", type=str, required=True)
 parser.add_argument("--out", type=str, required=True)
 parser.add_argument("--max-steps", type=int, default=650)
 parser.add_argument("--cap-shake", type=float, default=0.12)
-parser.add_argument("--depth-trim", type=float, default=-0.008)
+parser.add_argument("--depth-trim", type=float, default=-0.030)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, _ = parser.parse_known_args()
 args_cli.enable_cameras = True
@@ -151,6 +151,39 @@ def main():
             rm._terms.clear()
             break
     robot = env.unwrapped.scene["robot"]
+    # Grip-force fix (root-caused via sanity trials): with USD-default drive
+    # gains the 2F-85 pinch cannot hold the 0.5 kg hammer — it slides through
+    # the fingers during lift (the cup campaign's payload was only 0.18 kg, so
+    # this never showed). A real 2F-85 grips at 20-235 N and carries 5 kg;
+    # write realistic drive gains straight to the sim articulation.
+    fj = list(robot.joint_names).index("finger_joint")
+    ids = torch.tensor([fj], device=robot.device)
+    print(f"[GRIP] default stiffness={float(robot.data.joint_stiffness[0, fj]):.1f} "
+          f"damping={float(robot.data.joint_damping[0, fj]):.1f} "
+          f"effort_limit={float(robot.data.joint_effort_limits[0, fj]):.1f}", flush=True)
+    # Grip schedule (root-caused via sanity trials 3-7): default drive is
+    # stiffness 5729 / damping 0 / effort limit 16.5. The effort cap is the
+    # binding constraint once the finger stalls on the object — 16.5 closes
+    # GENTLY (grasps succeed) but cannot hold 0.5 kg through a lift (object
+    # slides down through the pads). Raising the limit for the whole episode
+    # instead EJECTS the object: the uncapped 5729-stiffness close slams the
+    # fingers shut and knocks it away. So: close at the default gentle limit,
+    # then ramp effort up once the fingers are seated (= the real 2F-85's
+    # grip-force setting; 20-235 N range). Applied at the close->lift
+    # transition in the main loop below.
+    grip_e = float(os.environ.get("PICK_GRIP_EFFORT", "60"))
+    grip_state = {"effort": 16.5, "on": False}
+
+    def ramp_grip():
+        # +1.5 per control step from the close->lift transition, up to grip_e:
+        # smooth squeeze build-up instead of an impulse (a step change ejects).
+        if grip_state["on"] and grip_state["effort"] < grip_e:
+            grip_state["effort"] = min(grip_e, grip_state["effort"] + 1.5)
+            robot.write_joint_effort_limit_to_sim(grip_state["effort"], joint_ids=ids)
+
+    def strengthen_grip():
+        grip_state["on"] = True
+        print(f"[GRIP] starting gradual effort ramp -> {grip_e}", flush=True)
     pad_names = [nme for nme in robot.body_names
                  if ("pad" in nme.lower() or "finger" in nme.lower())]
     print(f"[BODIES] finger candidates: {pad_names}", flush=True)
@@ -225,10 +258,13 @@ def main():
         a[0, 6] = 1.0 if seq.index("close") <= i < len(seq) else 0.0
 
         obs, _, term, trunc, _ = env.step(a.to(env.device))
+        ramp_grip()
         obj_hist.append(objst)
         phases.append(name)
 
-        if name == "close" and count == budget["close"] - 1:
+        # slip baseline: once the load has transferred (first hold1 step), not
+        # at close time when the object still rests on the table.
+        if name == "hold1" and rel_at_close is None:
             rel_at_close = objst[:3] - ee
         if i >= seq.index("hold1") and not grasped:
             grasped = objst[2] > 0.08
@@ -236,6 +272,16 @@ def main():
             drop_step = step
         if step % 30 == 0:
             print(f"[{step:04d}] {name:8s} ee_z={ee[2]:.3f} obj_z={objst[2]:.3f}", flush=True)
+        if os.environ.get("PICK_DEBUG") and name in ("descend", "close", "lift") and step % 10 == 0:
+            p = robot.data.body_pos_w[0].detach().cpu().numpy()
+            jp = robot.data.joint_pos[0].detach().cpu().numpy()
+            jn = list(robot.joint_names)
+            fj = jp[jn.index("finger_joint")] if "finger_joint" in jn else float("nan")
+            pads = {nme: np.round(p[list(robot.body_names).index(nme)], 4).tolist()
+                    for nme in pad_names}
+            print(f"[DBG {step:04d}] {name} ee={np.round(ee,4).tolist()} "
+                  f"obj={np.round(objst[:3],4).tolist()} finger_joint={fj:.3f} "
+                  f"pads={pads}", flush=True)
 
         count += 1
         if name.startswith("sweep") or name == "ret":
@@ -247,6 +293,8 @@ def main():
             if name in ("hover", "descend"):
                 reached = reached and abs(yaw_error(closing_axis_now(), closing_w)) < 0.06
         if reached or count >= budget[name]:
+            if name == "close":
+                strengthen_grip()
             i = min(i + 1, len(seq) - 1)
             count = 0
         if (i == len(seq) - 1 and count >= budget["done"] - 1) or term or trunc:
