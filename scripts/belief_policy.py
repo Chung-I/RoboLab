@@ -194,7 +194,10 @@ class Controller:
         self.ekf_ref = None
         self.timer = 0         # transport+place steps (lift..retreat reached)
 
-    REC_BUDGET = {"rset": 120, "rreseat": 60, "rclose": 22, "rlift": 80}
+    # rreseat runs its FULL budget as a dwell: round 6 reached depth in 5
+    # steps and re-closed on a cup still tilted 31 deg; the bottom-heavy cup
+    # self-rights if the open cage holds position for ~2 s.
+    REC_BUDGET = {"rset": 120, "rreseat": 30, "rclose": 22, "rlift": 80}
 
     def maybe_abort(self, gt_tilt_deg, r_xy=None, gt_cup_xy=None, ee=None):
         """Sustained freeze (belief) or GT tilt (oracle) during sweeps => set
@@ -235,7 +238,7 @@ class Controller:
         if name == "rset":
             return (x, y, GRASP_Z + 0.004)
         if name in ("rreseat", "rclose"):
-            return (x, y, GRASP_Z - REGRASP_DEEPER)
+            return (x, y, GRASP_Z - 0.012)
         if name == "rlift":
             return (x, y, LIFT[2])
         return None
@@ -296,8 +299,8 @@ class Controller:
             self.rec_count += 1
             self.timer += 1
             reached = float(np.linalg.norm(np.asarray(tgt) - ee)) < REACH_TOL
-            if name in ("ropen", "rclose"):
-                reached = False
+            if name in ("rreseat", "rclose"):
+                reached = False   # dwell phases: run the full budget
             if reached or self.rec_count >= self.REC_BUDGET[name]:
                 if name == "rset" and self.ekf_ref is not None:
                     off = self.ekf_ref.aim_offset()
