@@ -79,6 +79,8 @@ LIFT = (CUP_POSE[0], CUP_POSE[1], 0.36)
 SWEEP_Y = [0.14, -0.14, 0.14, -0.14]
 PLACE = (CUP_POSE[0], CUP_POSE[1])
 KP = 1.2
+BOUNCE_GAIN = 1.0   # vertical-jerk amplitude per unit of cap above cap_slow
+BOUNCE_HZ = 1.8     # bounce frequency during aggressive transport
 CAP_XY, CAP_Z, REACH_TOL = 0.060, 0.050, 0.010
 # Fixed wrench calibration (rigid-consensus, campaign1)
 R_BW = np.array([[0.698758, 0.708495, -0.09885],
@@ -143,11 +145,12 @@ class Controller:
                     ["ret", "pdesc", "settle", "open", "retreat", "done"])
         self.i, self.count = 0, 0
         self.budget = {"hover": 150, "descend": 220, "close": 22, "lift": 150,
-                       **{f"sweep{i}": 140 for i in range(len(SWEEP_Y))},
+                       **{f"sweep{i}": 260 for i in range(len(SWEEP_Y))},
                        "ret": 140, "pdesc": 160, "settle": SETTLE_MAX,
                        "open": 8, "retreat": 80, "done": 10}
         self.L = 0.0           # liveness EMA
         self.mode_slow = policy == "oracle"  # oracle starts cautious
+        self.freeze = False    # stop-and-settle: hold pose while contents surge
         self.timer = 0         # transport+place steps (lift..retreat reached)
 
     def target(self, name):
@@ -185,8 +188,10 @@ class Controller:
             return
         if self.L > hi:
             self.mode_slow = True
-        elif self.L < lo:
+            self.freeze = True      # incipient in-grasp rotation: stop NOW,
+        elif self.L < lo:           # let contents settle, then creep
             self.mode_slow = False
+            self.freeze = False
 
     def step(self, ee):
         name = self.seq[self.i]
@@ -200,6 +205,18 @@ class Controller:
             d[0] = np.clip(d[0], -cap, cap)
             d[1] = np.clip(d[1], -cap, cap)
             d[2] = np.clip(d[2], -CAP_Z, CAP_Z)
+            # Aggression is ONE dial: a faster cap also means harder cornering —
+            # a vertical jerk component during transport scaling with the cap
+            # (real fast transport excites vertical dynamics; a glide does not).
+            # Speed alone proved non-differential (pilots 6-7: in-grasp rotation
+            # is threshold-like in MASS, 0.07 safe / 0.08 fails at any speed);
+            # the bounce makes fast risky for loose contents (pumped over the
+            # rim) but harmless for an equal-mass rigid load.
+            if name.startswith("sweep"):
+                amp = BOUNCE_GAIN * max(cap - args_cli.cap_slow, 0.0)
+                d[2] += amp * np.sin(2 * np.pi * BOUNCE_HZ * self.count / HZ)
+            if self.freeze and (name.startswith("sweep") or name == "ret"):
+                d[:] = 0.0          # stop-and-settle (belief/oracle only)
             a[0, 0], a[0, 1], a[0, 2] = float(d[0]), float(d[1]), float(d[2])
         grip_open = self.i < self.seq.index("close") or self.i >= self.seq.index("open")
         a[0, 6] = 0.0 if grip_open else 1.0
