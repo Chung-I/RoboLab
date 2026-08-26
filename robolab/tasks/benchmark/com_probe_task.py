@@ -90,7 +90,12 @@ def cup_spawn_cfg():
             solver_position_iteration_count=16,
             solver_velocity_iteration_count=1,
         ),
-        collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+        # Tight per-collider offsets: at CUP_SCALE=0.25 the bowl wall is only
+        # ~2-3 mm thick — the global contact_offset=0.02/rest_offset=0.01
+        # EXCEEDS the geometry and heavy contents tunnel straight through the
+        # wall (observed: 0.08 kg balls exiting BELOW the cup base).
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            collision_enabled=True, contact_offset=0.002, rest_offset=0.0005),
     )
 
 
@@ -111,7 +116,8 @@ def ball_spawn_cfg():
             solver_position_iteration_count=16,
             solver_velocity_iteration_count=1,
         ),
-        collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            collision_enabled=True, contact_offset=0.002, rest_offset=0.0005),
     )
 
 
