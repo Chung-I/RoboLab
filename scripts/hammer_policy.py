@@ -319,6 +319,7 @@ def main():
     grasped_ever = False
     shake_carried = False
     dropped_in_shake = False
+    sdown_z_hist = []
     cur_grasp_x = grasp_x
     shake_started = False
     obj_hist, phases = [], []
@@ -346,11 +347,12 @@ def main():
 
         # live targets for the set-down choreography (aim in the OBJECT frame)
         if name == "sdown":
-            # Contact-stopped descent: an off-CoM-held hammer hangs TILTED, so
-            # a fixed set-down height rams the head into the table and skids
-            # the object away (v2 forensics: 70 cm skid off the table edge).
-            # Descend slowly and stop on object-table contact (reached logic).
-            tgt = (ee[0], ee[1], ee[2] - 0.02)
+            # Contact-stopped descent, aimed BACK AT TABLE CENTER: v4 video
+            # shows the set-down dragging the hammer to the table edge where
+            # it drapes over and the regrasp closes on air. Carry it home
+            # while descending; stop on contact (z-stall — a tilted hammer
+            # touches head-first while its center is still high).
+            tgt = (OBJ_POSE[0], OBJ_POSE[1], ee[2] - 0.02)
         elif name == "srise":
             tgt = (ee[0], ee[1], HOVER_Z)
         elif name == "shover":
@@ -387,7 +389,14 @@ def main():
         # (sdesc burned its whole budget without converging).
         if name == "shover" or (name == "sdesc" and ee[2] > 0.25):
             c_tgt = np.array([-h_w[1], h_w[0]])
-            a[0, 5] = float(np.clip(0.8 * yaw_err_to(c_tgt), -0.15, 0.15))
+            if os.environ.get("PICK_YAW_PROBE"):
+                a[0, 5] = 0.10   # constant probe: measure the actual response
+                if step % 5 == 0:
+                    c = closing_axis_now()
+                    print(f"[YAWPROBE {step}] closing_deg="
+                          f"{np.degrees(np.arctan2(c[1], c[0])):+.1f}", flush=True)
+            else:
+                a[0, 5] = float(np.clip(0.8 * yaw_err_to(c_tgt), -0.15, 0.15))
         closed = name in ("close", "lift", "hold1", "sdown") or name.startswith("sweep") \
             or name in ("ret", "place")
         a[0, 6] = 1.0 if closed else 0.0
@@ -456,7 +465,12 @@ def main():
         if name.startswith("sweep") or name == "ret":
             reached = abs(tgt[1] - ee[1]) < 0.020 and abs(tgt[0] - ee[0]) < 0.05
         elif name == "sdown":
-            reached = bool(objst[2] < 0.045)   # contact-stopped set-down
+            # contact = object z stalls while we keep commanding descent
+            sdown_z_hist.append(float(objst[2]))
+            stalled = (len(sdown_z_hist) >= 8
+                       and max(sdown_z_hist[-8:]) - min(sdown_z_hist[-8:]) < 0.002
+                       and count > 12)
+            reached = bool(objst[2] < 0.045 or stalled)
         elif name == "shover":
             c_tgt = np.array([-h_w[1], h_w[0]])
             reached = (float(np.linalg.norm(np.asarray(tgt) - ee)) < REACH_TOL
