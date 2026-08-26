@@ -317,6 +317,8 @@ def main():
     dropped = False
     drop_step = -1
     grasped_ever = False
+    shake_carried = False
+    dropped_in_shake = False
     cur_grasp_x = grasp_x
     shake_started = False
     obj_hist, phases = [], []
@@ -344,7 +346,11 @@ def main():
 
         # live targets for the set-down choreography (aim in the OBJECT frame)
         if name == "sdown":
-            tgt = (ee[0], ee[1], OBJ_POSE[2] + FLANGE_TO_TIP + 0.002)
+            # Contact-stopped descent: an off-CoM-held hammer hangs TILTED, so
+            # a fixed set-down height rams the head into the table and skids
+            # the object away (v2 forensics: 70 cm skid off the table edge).
+            # Descend slowly and stop on object-table contact (reached logic).
+            tgt = (ee[0], ee[1], ee[2] - 0.02)
         elif name == "srise":
             tgt = (ee[0], ee[1], HOVER_Z)
         elif name == "shover":
@@ -403,12 +409,42 @@ def main():
             est_hist.append(ekf.x.copy())
 
         # drop detection while airborne phases
-        if name.startswith("sweep") or name in ("ret", "hold1", "lift"):
+        in_shake = name.startswith("sweep") or name == "ret"
+        if in_shake or name in ("hold1", "lift"):
             if objst[2] > 0.08:
                 grasped_ever = True
+                if in_shake:
+                    shake_carried = True
             if grasped_ever and objst[2] < 0.05 and drop_step < 0:
                 dropped = True
                 drop_step = step
+                if in_shake:
+                    dropped_in_shake = True
+                # S3 loop: a PRE-shake drop is an informative failed grasp —
+                # the EKF ran during the partial lift, so re-aim at the
+                # estimated CoM on the (yawed, displaced) object and retry.
+                elif (pol in ("static", "belief") and regrasps < max_regrasps
+                      and abs(float(ekf.x[1])) > 0.005):
+                    regrasps += 1
+                    est_offset_clamped = float(np.clip(
+                        cur_grasp_x + float(ekf.x[1]), GRASP_X_MIN, GRASP_X_MAX))
+                    cur_grasp_x = est_offset_clamped
+                    print(f"[S3] dropped during {name}; r_x={ekf.x[1]:+.4f} -> "
+                          f"floor regrasp at object-x {est_offset_clamped:+.3f}",
+                          flush=True)
+                    reset_grip()
+                    ekf = OnlineEKF()
+                    drop_step = -1
+                    dropped = False
+                    queue = queue[:phase_i + 1] + [
+                        ("srise", 50, None), ("shover", 120, None),
+                        ("sdesc", 140, (est_offset_clamped,
+                                        OBJ_POSE[2] + FLANGE_TO_TIP + DEPTH_TRIM)),
+                        ("close", 25, None), ("lift", 90, None),
+                        ("hold1", HOLD_EST_STEPS + 10, None)]
+                    phase_i += 1
+                    count = 0
+                    continue
         if step % 40 == 0:
             print(f"[{step:04d}] {name:8s} ee_z={ee[2]:.3f} obj_z={objst[2]:.3f} "
                   f"r_x={ekf.x[1]:+.3f}", flush=True)
@@ -416,6 +452,8 @@ def main():
         count += 1
         if name.startswith("sweep") or name == "ret":
             reached = abs(tgt[1] - ee[1]) < 0.020 and abs(tgt[0] - ee[0]) < 0.05
+        elif name == "sdown":
+            reached = bool(objst[2] < 0.045)   # contact-stopped set-down
         elif name in ("close", "open", "sopen", "hold1", "done"):
             reached = False
         elif tgt is not None:
@@ -471,12 +509,17 @@ def main():
     qw, qx, qy, qz = objst[3:7]
     yaw_drift_deg = float(np.degrees(np.arctan2(
         2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz))))
-    success = bool(placed and not dropped and grasped_ever)
+    # success = the (possibly re-acquired) grasp carried the object THROUGH the
+    # shake and it ended placed. Pre-shake drops that were recovered via the S3
+    # floor-regrasp do not disqualify; a drop during the shake always does.
+    success = bool(placed and grasped_ever and shake_carried and not dropped_in_shake)
     manifest = dict(policy=pol, condition=args_cli.condition, seed=args_cli.seed,
                     gt_com_x=gt_com_x, grasp_x_initial=grasp_x,
                     grasp_x_final=cur_grasp_x, regrasps=regrasps,
                     est_r_x=(float(est_hist[-1][1]) if est_hist else None),
                     grasped=bool(grasped_ever), dropped=bool(dropped),
+                    dropped_in_shake=bool(dropped_in_shake),
+                    shake_carried=bool(shake_carried),
                     drop_step=int(drop_step), placed=placed, success=success,
                     yaw_drift_deg=yaw_drift_deg,
                     steps=len(phases), shake_started=bool(shake_started))
