@@ -86,7 +86,11 @@ CAP_XY, CAP_Z, REACH_TOL = 0.060, 0.050, 0.010
 R_BW = np.array([[0.698758, 0.708495, -0.09885],
                  [0.7153, -0.693756, 0.083959],
                  [-0.009093, -0.129374, -0.991554]])
-L_HI, L_LO = 0.035, 0.027       # liveness hysteresis (N*m), from campaign1
+# Liveness = torque-innovation EMA NORMALIZED by the EKF's own mass estimate
+# (N*m per kg): raw thresholds calibrated at 0.16 kg failed to transfer to a
+# 0.22 kg payload (pilot 9: rigid stuck slow at L=0.0348). Campaign-1 stats
+# renormalized: contents p25 0.040/0.16=0.25, rigid p95 0.0245/0.16=0.153.
+L_HI, L_LO = 0.22, 0.17
 ORACLE_HI, ORACLE_LO = 0.015, 0.008  # GT contents rel-speed (m/s) thresholds
 SETTLE_MAX = 45                  # max release-gate wait (steps)
 
@@ -179,7 +183,8 @@ class Controller:
 
     def update_liveness(self, ekf, gt_rel_speed):
         if self.policy == "belief":
-            self.L = 0.75 * self.L + 0.25 * ekf.tau_innov
+            m_hat = max(ekf.x[0], 0.05)
+            self.L = 0.75 * self.L + 0.25 * (ekf.tau_innov / m_hat)
             hi, lo = L_HI, L_LO
         elif self.policy == "oracle":
             self.L = 0.75 * self.L + 0.25 * gt_rel_speed
@@ -215,7 +220,7 @@ class Controller:
             if name.startswith("sweep"):
                 amp = BOUNCE_GAIN * max(cap - args_cli.cap_slow, 0.0)
                 d[2] += amp * np.sin(2 * np.pi * BOUNCE_HZ * self.count / HZ)
-            if self.freeze and (name.startswith("sweep") or name == "ret"):
+            if self.freeze and name.startswith("sweep"):
                 d[:] = 0.0          # stop-and-settle (belief/oracle only)
             a[0, 0], a[0, 1], a[0, 2] = float(d[0]), float(d[1]), float(d[2])
         grip_open = self.i < self.seq.index("close") or self.i >= self.seq.index("open")
