@@ -90,7 +90,7 @@ BOUNCE_GAIN, BOUNCE_HZ = 1.0, 1.8
 GRIP_EFFORT = 60.0
 HEAD_COM_X = 0.12
 GRASP_X_MAX, GRASP_X_MIN = 0.14, -0.18
-REGRASP_THRESH = 0.020
+REGRASP_THRESH = float(os.environ.get("PICK_REGRASP_THRESH", "0.020"))
 HOLD_EST_STEPS = 20
 R_BW = np.array([[0.698758, 0.708495, -0.09885],
                  [0.7153, -0.693756, 0.083959],
@@ -171,18 +171,23 @@ def main():
     fids = torch.tensor([fj], device=robot.device)
 
     # CoM authoring BEFORE reset (set_coms after reset freezes the sim)
-    if args_cli.condition == "head":
+    com_override = os.environ.get("PICK_COM_X")
+    if com_override is not None or args_cli.condition == "head":
         import omni.usd  # noqa
         from pxr import Gf, UsdPhysics  # noqa
         stage = omni.usd.get_context().get_stage()
         prim = stage.GetPrimAtPath("/World/envs/env_0/target")
+        _cx = float(com_override) if com_override is not None else HEAD_COM_X
         UsdPhysics.MassAPI.Apply(prim).GetCenterOfMassAttr().Set(
-            Gf.Vec3f(HEAD_COM_X, 0.014, -0.0006))
+            Gf.Vec3f(_cx, 0.014, -0.0006))
         for _ in range(4):
             simulation_app.update()
 
     obs, _ = env.reset()
-    gt_com_x = HEAD_COM_X if args_cli.condition == "head" else float(
+    if com_override is not None:
+        gt_com_x = float(com_override)
+    else:
+        gt_com_x = HEAD_COM_X if args_cli.condition == "head" else float(
         env.unwrapped.scene["target"].root_physx_view.get_coms().cpu().numpy()[0][0])
     print(f"[COM] gt_x={gt_com_x:+.3f}", flush=True)
 
@@ -368,10 +373,13 @@ def main():
             return False
         servo_to(flange_T(px, py, GRASP_FLANGE_Z, yaw, R0), "descend",
                  cap_lin=0.02, budget=90)
-        grip["cmd"] = 1.0
+        if os.environ.get("PICK_SKIP_GRASP"):
+            grip["cmd"] = 0.0   # bias measurement: lift the EMPTY gripper
+        else:
+            grip["cmd"] = 1.0
         for _ in range(25):
             sim_step(q_now(), "close")
-        grip["on"] = True
+        grip["on"] = grip["cmd"] > 0.5
         servo_to(flange_T(px, py, LIFT_Z, yaw, R0), "lift", cap_lin=0.02,
                  budget=110, estimate=True)
         for _ in range(HOLD_EST_STEPS + 10):
@@ -438,7 +446,12 @@ def main():
             try:
                 do_pick(cur_grasp_x, objst)
                 # decide regrasp (estimate-driven, in-hand)
-                r_x = float(np.median(r_hist[-15:])) if r_hist else 0.0
+                # calibrated window (sweep 2026-08-27): the mid-LIFT samples
+                # carry the CoM with slope -0.92, bias ~0, rms 9mm; the late
+                # window is corrupted once the object finishes pivoting in the
+                # grip. Sign-correct and use the mid window.
+                r_x = (-float(np.median(r_hist[10:25])) if len(r_hist) > 25
+                       else (-float(np.median(r_hist[2:])) if len(r_hist) > 6 else 0.0))
                 if (pol in ("static", "belief") and regrasps < max_regrasps
                         and abs(r_x) > REGRASP_THRESH):
                     regrasps += 1
@@ -456,7 +469,8 @@ def main():
                 if str(e) != "dropped":
                     raise
                 # S3: drop mid-lift/hold — regrasp from the floor
-                r_med = float(np.median(r_hist[-15:])) if r_hist else 0.0
+                r_med = (-float(np.median(r_hist[10:25])) if len(r_hist) > 25
+                         else (-float(np.median(r_hist[2:])) if len(r_hist) > 6 else 0.0))
                 if pol in ("static", "belief") and regrasps < max_regrasps \
                         and abs(r_med) > 0.005:
                     regrasps += 1
@@ -490,6 +504,7 @@ def main():
                     gt_com_x=gt_com_x, grasp_x_initial=grasp_x,
                     grasp_x_final=cur_grasp_x, regrasps=regrasps,
                     est_r_x=float(ekf.x[1]),
+                    est_r_med=(float(np.median(r_hist[-15:])) if r_hist else None),
                     grasped=state["grasped_ever"], dropped=state["dropped"],
                     dropped_in_shake=state["dropped_in_shake"],
                     shake_carried=state["shake_carried"],
@@ -500,7 +515,8 @@ def main():
     with open(os.path.join(args_cli.out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
     np.savez(os.path.join(args_cli.out, "traj.npz"),
-             phase=np.array(phases), obj=np.stack(obj_hist) if obj_hist else np.zeros((0, 13)))
+             phase=np.array(phases), obj=np.stack(obj_hist) if obj_hist else np.zeros((0, 13)),
+             r_hist=np.array(r_hist, dtype=np.float64))
     if video["w"] is not None:
         video["w"].release()
     print(f"RESULT success={success} grasped={state['grasped_ever']} "
