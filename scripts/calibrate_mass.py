@@ -44,7 +44,7 @@ def derive_levels(knee: float) -> dict:
 
 DEFAULT_MASSES = [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0]
 # per-object top-pinch grasp height above the object root, meters (tunable)
-GRASP_Z = {"orange_juice_carton": 0.12, "soft_scrub": 0.16}
+GRASP_Z = {"orange_juice_carton": 0.02, "soft_scrub": 0.16}
 
 
 def main() -> None:
@@ -67,6 +67,8 @@ def main() -> None:
     app = AppLauncher(args).app
 
     import torch  # noqa: E402
+    import omni.usd  # noqa: E402
+    from pxr import Usd, UsdGeom  # noqa: E402
     import robolab.constants  # noqa: E402
     from robolab.core.environments.factory import get_envs  # noqa: E402
     from robolab.core.environments.runtime import create_env  # noqa: E402
@@ -88,6 +90,41 @@ def main() -> None:
 
     def quat_inv(q):
         return torch.tensor([q[0], -q[1], -q[2], -q[3]])
+
+    def quat_rotate_vec(q, v):
+        qv = torch.cat([torch.zeros(1), v])
+        return quat_mul(quat_mul(q, qv), quat_inv(q))[1:]
+
+    # Robotiq 2F-85 base flange -> fingertip plane distance along the flange's
+    # local +z (approach axis); see robolab/robots/droid.py's commented
+    # body_offset=[0, 0, 0.1628] on DroidRelIKActionCfg ("max height base
+    # flange -> fingertip is 162.8mm per Robotiq spec"). A direct per-body
+    # position probe (left_inner_finger / right_inner_finger / etc.) reports
+    # the exact same world position as base_link even after 20 held physics
+    # steps -- the gripper's USD is franka_robotiq_2f_85_flattened.usd, and
+    # its finger rigid bodies are collapsed into base_link's rigid body for
+    # physics, so body_pos_w cannot be used to measure this offset at
+    # runtime. Use the documented fixed constant instead, rotated into world
+    # frame by the flange's actual measured orientation.
+    FINGERTIP_LOCAL_OFFSET = torch.tensor([0.0, 0.0, 0.1628])
+
+    # Explicit top-down wrist orientation (base_link/flange frame): 180 deg
+    # about world X maps local +z -> world -z, so the gripper points straight
+    # down and FINGERTIP_LOCAL_OFFSET projects to a purely vertical world
+    # offset. Measured at the arm's reset pose, base_link's actual orientation
+    # has local +z pointing along ~world +x (near-horizontal, not top-down at
+    # all) -- keeping that reset orientation while retargeting position (as
+    # first attempted) drove the flange ~16cm sideways of the object and hit
+    # a joint limit (near_limit True throughout descend), so the IK never
+    # reached the intended pose. Forcing an explicit top-down orientation for
+    # the grasp motion (a) matches the "top-pinch" grasp this primitive is
+    # documented to perform, (b) keeps the flange retarget purely vertical
+    # (well within reach), and (c) is the brief's own authorized fallback for
+    # when the fingertip offset can't be measured from live body poses.
+    BASE_QUAT_TOPDOWN = torch.tensor([0.0, 1.0, 0.0, 0.0])
+    EEF_OFFSET_ROT_T = torch.tensor(EEF_OFFSET_ROT, dtype=torch.float32)
+    EEF_QUAT_TOPDOWN = quat_mul(BASE_QUAT_TOPDOWN, EEF_OFFSET_ROT_T)
+    FINGERTIP_WORLD_OFFSET_TOPDOWN = quat_rotate_vec(BASE_QUAT_TOPDOWN, FINGERTIP_LOCAL_OFFSET)
 
     auto_register_droid_abs_ik_envs(task=args.task)
     env_name = get_envs(task=args.task)[0]
@@ -111,6 +148,23 @@ def main() -> None:
         o = env.scene[args.obj]
         return o.data.root_pos_w[0].cpu().clone(), o.data.root_quat_w[0].cpu().clone()
 
+    def obj_bbox_center():
+        # root_pos_w is the object's physics-body origin, which for this
+        # asset is NOT at its geometric center: a fresh world-space bbox
+        # (queried directly by concrete prim path, not the flagged-stale
+        # world_state.get_bbox helper) puts the centroid ~11cm/~7cm away
+        # from root_pos_w in x/y for orange_juice_carton. Grasp targets
+        # built from root_pos_w x,y miss the object entirely regardless of
+        # any flange/fingertip correction, so use the bbox centroid instead.
+        prim_path = env.scene[args.obj].root_physx_view.prim_paths[0]
+        prim = omni.usd.get_context().get_stage().GetPrimAtPath(prim_path)
+        cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_], useExtentsHint=True)
+        rng = cache.ComputeWorldBound(prim).ComputeAlignedRange()
+        mn, mx = rng.GetMin(), rng.GetMax()
+        center = torch.tensor([(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2])
+        extent = torch.tensor([mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]])
+        return center, extent
+
     def set_mass(m):
         view = env.scene[args.obj].root_physx_view
         masses = view.get_masses().clone()
@@ -124,12 +178,40 @@ def main() -> None:
         obs, _ = env.reset()
         step_to(frames.data.target_pos_w[0, eef_idx, :].cpu().clone(), eef_quat(), 0.0, 15)  # settle
         set_mass(current_mass)
+
+        # Grasp-center correction: the abs-IK action drives the flange
+        # (base_link; eef_frame has zero position offset from it), but the
+        # actual pinch point is ~162.8mm from the flange along the gripper's
+        # local +z (approach) axis (FINGERTIP_LOCAL_OFFSET; see comment
+        # above). We command an explicit top-down wrist orientation (see
+        # note above) for the grasp motion, so this offset is purely
+        # vertical and known exactly: flange_target = desired_grasp_point +
+        # offset, offset = -FINGERTIP_WORLD_OFFSET_TOPDOWN (fingertip sits
+        # below the flange when pointing straight down).
+        eef_pos_now = frames.data.target_pos_w[0, eef_idx, :].cpu().clone()
+        q = EEF_QUAT_TOPDOWN
+        offset = -FINGERTIP_WORLD_OFFSET_TOPDOWN
+        grasp_center = eef_pos_now + FINGERTIP_WORLD_OFFSET_TOPDOWN  # informational: fingertip point if flange were here, top-down
+        fallback_topdown = True
+
         p, _ = obj_pose()
-        grasp_z = p[2] + GRASP_Z[args.obj]
-        hover = torch.tensor([p[0], p[1], grasp_z + 0.15])
-        grasp = torch.tensor([p[0], p[1], grasp_z])
-        lift = torch.tensor([p[0], p[1], grasp_z + 0.25])
-        q = eef_quat()
+        # Diagnostic only (see obj_bbox_center's docstring/comment): a fresh
+        # world-space bbox on the correctly-resolved concrete prim lands the
+        # centroid ~11cm/~7cm away from root_pos_w in x/y. Using that bbox
+        # centroid as the grasp x,y target was tried and made things *worse*
+        # (the flange never got anywhere near the object, zero drift at any
+        # point) -- root_pos_w x,y is the one that gets the flange into the
+        # object's actual neighborhood, so it is used for targeting; the
+        # bbox is kept only to size GRASP_Z correctly against the object's
+        # real (much shorter than assumed) height.
+        bbox_center, bbox_extent = obj_bbox_center()
+        desired_grasp = torch.tensor([p[0], p[1], p[2] + GRASP_Z[args.obj]])
+        grasp = desired_grasp + offset
+        hover = grasp + torch.tensor([0.0, 0.0, 0.15])
+        lift = grasp + torch.tensor([0.0, 0.0, 0.25])
+        print(f"[calibrate] obj_pos={p.tolist()} bbox_center={bbox_center.tolist()} bbox_extent={bbox_extent.tolist()} "
+              f"grasp_center={grasp_center.tolist() if grasp_center is not None else None} "
+              f"eef_pos={eef_pos_now.tolist()} offset={offset.tolist()} fallback_topdown={fallback_topdown}")
         if args.debug_grasp:
             print(f"[debug] object pos: {p.tolist()}")
             print(f"[debug] hover target: {hover.tolist()}  grasp target: {grasp.tolist()}  lift target: {lift.tolist()}")
