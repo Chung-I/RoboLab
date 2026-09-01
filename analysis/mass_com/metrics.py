@@ -7,18 +7,31 @@ rates are cap-insensitive: they fire the moment the stage is reached, so a
 timeout artifact (heavy trials running out of clock) shows as success_rate
 falling while lift_rate holds.
 
-STAGE_SUBSTRINGS below are the brief's documented placeholders, kept as-is
-pending Phase 1: an empirical dump (Task 8, step 1 amendment) of
-get_all_env_events() from one real OJCartonInCrateTask carton lift showed the
-grasp stage ("object_grabbed") never fires as its own distinguishable event —
-object_grabbed and object_picked_up became true in the same state-machine
-check and were logged as a single combined event, so t_grasp_s will read
-None against real event logs today. See task-8-report.md for the full dump
-and root-cause trace (object_picked_up's `_and(object_grabbed(...), ...)`
-re-evaluates object_grabbed's contact-based signal at check time, which is
-the same flaky in_contact reporting carried as a risk from Task 5). The pure
-functions below and their tests are unaffected by this; only real-log
-t_grasp_s/grasp_rate values are impacted, to be revisited in Phase 1.
+Matching is case-insensitive: event ``name`` values are upper-cased
+StatusCode enum members (e.g. ``OBJECT_GRABBED_SUCCESS``) while ``info``
+values carry the lower-case predicate function name (e.g.
+``object_picked_up(...)``), and STAGE_SUBSTRINGS is written in the lower-case
+form, so every comparison below lower-cases both sides.
+
+An empirical dump (Task 8, step 1 amendment) of get_all_env_events() from one
+real OJCartonInCrateTask carton lift produced a single combined event at
+step 157: ``name='OBJECT_GRABBED_SUCCESS'``, ``info='success:
+object_picked_up(object=orange_juice_carton, surface=table). advanced 2
+step(s)...'``. With case-insensitive matching this event correctly satisfies
+*both* the grasp and lift substrings, so ``t_grasp_s == t_lift_s == 157/15``
+for that episode: the state machine's subtask tracker advanced two
+conditions (object_grabbed, object_picked_up) in the same check and folded
+them into one event, so grasp and lift are recorded as simultaneous — not,
+as an earlier version of this docstring claimed, as an unrecoverable None.
+The subtlety that remains open for Phase 1 is entirely about *when* that
+folded event fires relative to the true moment of grasp: object_picked_up's
+`_and(object_grabbed(...), ...)` re-evaluates object_grabbed's contact-based
+signal at check time, the same flaky in_contact reporting carried as a risk
+from Task 5, so a *genuinely earlier* standalone t_grasp (before the object
+is already lifted) requires fixing that contact-sensing lag at the
+RoboLab/env level — this module's case-insensitive substring matching cannot
+recover a transition that was never logged as its own event. See
+task-8-report.md for the full dump and root-cause trace.
 """
 
 import argparse
@@ -30,10 +43,17 @@ STAGE_SUBSTRINGS = {"grasp": "object_grabbed", "lift": "object_picked_up",
                     "place": "object_in_container", "drop": "object_dropped"}
 
 
+def _blob(e: dict) -> str:
+    """Lower-cased "name info" blob for substring matching, name and info
+    joined with a separator so a substring can't span the boundary between
+    them."""
+    return ((e.get("name") or "") + " " + (e.get("info") or "")).lower()
+
+
 def _first_step(events, key):
     sub = STAGE_SUBSTRINGS[key]
     for e in events:
-        if sub in (e.get("name") or "") or sub in (e.get("info") or ""):
+        if sub in _blob(e):
             return e["step"]
     return None
 
@@ -42,14 +62,14 @@ def episode_metrics(events: list[dict], num_steps: int, control_hz: float = 15.0
     t_grasp = _first_step(events, "grasp")
     t_lift = _first_step(events, "lift")
     success = any(
-        (STAGE_SUBSTRINGS["place"] in ((e.get("name") or "") + (e.get("info") or "")))
+        (STAGE_SUBSTRINGS["place"] in _blob(e))
         and e.get("score", 0.0) >= 1.0
         for e in events
     )
     # a regrasp = grasp after a drop that itself followed a grasp
     n_regrasp, seen_grasp, dropped = 0, False, False
     for e in events:
-        blob = (e.get("name") or "") + (e.get("info") or "")
+        blob = _blob(e)
         if STAGE_SUBSTRINGS["grasp"] in blob:
             if seen_grasp and dropped:
                 n_regrasp += 1

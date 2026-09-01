@@ -36,3 +36,22 @@ def test_aggregate_cell_rates_and_means():
     assert agg["success_rate"] == 0.5
     assert agg["grasp_rate"] == 0.5 and agg["lift_rate"] == 0.5
     assert agg["mean_t_grasp_s"] == 2.0
+
+
+def test_real_folded_event_case_insensitive():
+    # Actual get_all_env_events() dump from one real OJCartonInCrateTask
+    # carton lift (task-8-report.md): the subtask state machine advanced two
+    # conditions (object_grabbed, object_picked_up) in a single check, so
+    # name carries the upper-case StatusCode for the FIRST condition while
+    # info carries the lower-case predicate text for the LAST condition.
+    # Case-insensitive matching must recover both stages from this one event.
+    events = [{
+        "step": 157, "code": 139, "name": "OBJECT_GRABBED_SUCCESS",
+        "info": ("success: object_picked_up(object=orange_juice_carton, "
+                  "surface=table). advanced 2 step(s) to step 2 for "
+                  "orange_juice_carton."),
+        "score": 0.0,
+    }]
+    m = episode_metrics(events, num_steps=450)
+    assert m["grasped"] is True and m["lifted"] is True
+    assert m["t_grasp_s"] == m["t_lift_s"] == 157 / 15.0
