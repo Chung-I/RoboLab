@@ -165,8 +165,8 @@ Phase 0 also settles four things the rest of the design assumes:
 
 ### Phase 1 — behavioral benchmark
 
-The 320 closed-loop episodes. 20 registered envs, each run once at
-`--num-envs 16`. Deliverable: success rates, cap-insensitive rates, and
+The 320 closed-loop episodes. 10 registered envs (2 tasks x 5 conditions),
+each run once per model (20 cells), at `--num-envs 16`. Deliverable: success rates, cap-insensitive rates, and
 adaptation signatures per cell.
 
 ### Phase 2 — replay corpus

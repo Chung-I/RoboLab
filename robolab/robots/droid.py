@@ -381,7 +381,10 @@ class DroidIKActionCfg:
         scale=1.0,
         body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.0]),
         # Robotiq 2F-85 max height base flange -> fingertip is 162.8mm (per Robotiq spec).
-        # Uncomment to control the fingertip plane instead of the base flange.
+        # NOTE: [0, 0, 0.1628] is that offset in the EEF frame, not in base_link's:
+        # eef +z == base_link local +x (docs/frames.md), and OffsetCfg.pos is applied
+        # in the controlled body's own frame, so controlling the fingertip plane from
+        # base_link needs pos=[0.1628, 0.0, 0.0].
         # body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.1628]),
     )
 
@@ -415,7 +418,10 @@ class DroidRelIKActionCfg:
             # rot=(0.5, -0.5, 0.5, -0.5),  # Match eef_frame: rotates base_link to the EE control frame.
         ),
         # Robotiq 2F-85 max height base flange -> fingertip is 162.8mm (per Robotiq spec).
-        # Uncomment to control the fingertip plane instead of the base flange.
+        # NOTE: [0, 0, 0.1628] is that offset in the EEF frame, not in base_link's:
+        # eef +z == base_link local +x (docs/frames.md), and OffsetCfg.pos is applied
+        # in the controlled body's own frame, so controlling the fingertip plane from
+        # base_link needs pos=[0.1628, 0.0, 0.0].
         # body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.1628]),
     )
 

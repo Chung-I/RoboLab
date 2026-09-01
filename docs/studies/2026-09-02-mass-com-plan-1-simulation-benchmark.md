@@ -154,6 +154,12 @@ git commit -m "feat: allow events_cfg override in generated env cfgs"
 - Test: `tests/test_physics_variation_cfg.py`
 
 **Interfaces:**
+> **AMENDED (final review, C1/C2):** the CoM term shipped as a custom, shape-tolerant,
+> idempotent `set_rigid_body_com_offset` (not `mdp.randomize_rigid_body_com`, which
+> IndexErrors on a RigidObject's 2-D CoM tensor and accumulates at `mode="reset"`), and
+> the signature is now `(object_name, mass_kg=None, com_offset_m=0.0, com_offset_axis="z")`.
+> The draft code below is kept as the historical brief; `robolab/variations/physics.py` is authoritative.
+
 - Produces: `make_object_physics_events_cfg(object_name: str, mass_kg: float | None = None, com_offset_z_m: float = 0.0) -> object` — a configclass instance with optional `set_mass` / `offset_com` EventTerm fields (`None` fields are skipped by Isaac Lab's manager).
 - Consumes: nothing from earlier tasks (pure Isaac Lab).
 
@@ -1222,6 +1228,10 @@ The stage names in the event log come from the subtask state machine, not from t
 
 ```python
 STAGE_SUBSTRINGS = {"grasp": "object_grabbed", "lift": "object_picked_up", "place": "object_in_container"}
+# AMENDED (final review, I1/I2/I3): stage matching ships keyed on the numeric StatusCode
+# (grasp 139, place 125, drop 263) because WRONG_OBJECT_GRABBED_FAILURE (250) and
+# OBJECT_GRABBED_FAILURE (248) both contain "object_grabbed"; text matching survives only
+# for lift (no code exists) and for uncoded events. analysis/mass_com/metrics.py is authoritative.
 ```
 
 Adjust the substrings to what the log actually contains; the matcher below uses substring membership over `name` and `info` so cosmetic prefixes don't matter.
@@ -1409,7 +1419,10 @@ if __name__ == "__main__":
 
 Run: `uv run pytest tests/test_mass_com_metrics.py -v` — Expected: 4 PASS.
 
-- [ ] **Step 6: Validate `load_episode_events` against real output**
+- [ ] **Step 6: Validate `load_episode_events` against real output** — DONE (final review, C3):
+  the real layout is one dict per episode at `<folder>/<ENV_NAME>/log_{run}_env{eid}.json`
+  with a top-level `events` list; `episode_results.jsonl` at the folder root holds event
+  *tallies*, not lists. The loader now reads that layout and errors loudly on zero rows.
 
 After the first real (or smoke) eval run exists under `output/`, run `uv run python -m analysis.mass_com.metrics output/<folder>` and confirm per-cell rows appear. If the results-file schema differs from the two key names tried, adjust `load_episode_events` to the actual layout (inspect one file by hand) — the pure functions and their tests do not change.
 
@@ -1523,7 +1536,13 @@ uv run python policies/pi0_family/run_mass_variation.py --policy pi05 \
 # 3. Phase 1b (cml30: stop pi05, bash scripts/cml30/serve_molmobot.sh; local:)
 uv run python policies/molmobot/run.py \
     --remote-host cml30.csie.ntu.edu.tw --remote-port 8000 \
-    --num-envs 16 --num-runs 1 --record-image-data --headless
+    --num-envs 1 --num-runs 16 --record-image-data --headless
+
+# Preferred: patch the MolmoBot server at cml30 setup to return the full 16-step
+# chunk per request, then run BOTH models at --num-envs 16; if infeasible, run
+# BOTH models at --num-envs 1 for batching symmetry (controller ruling I5).
+# (policies/molmobot/run.py enforces --num-envs 1 unless --allow-multi-env is
+# passed, which is what the server patch unlocks.)
 
 # 4. Metrics -> CSV + wandb
 uv run python -m analysis.mass_com.metrics output/<pi05_folder> --wandb --run-name pi05-phase1

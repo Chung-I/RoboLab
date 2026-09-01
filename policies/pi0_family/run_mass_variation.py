@@ -41,12 +41,6 @@ parser.add_argument("--enable-debug", "--enable_debug", action="store_true",
                     help="Debug output (default: False).")
 parser.add_argument("--record-image-data", "--record_image_data", action="store_true",
                     help="Enable proprio image data recording (default: False).")
-parser.add_argument("--randomize-background", "--randomize_background", action="store_true",
-                    help=("Sample a random non-default background per task at registration time. "
-                          "Each registered env gets one fixed background; the chosen texture is "
-                          "recorded in the per-task env_cfg.json."))
-parser.add_argument("--background-seed", "--background_seed", type=int, default=None,
-                    help="Seed for reproducible per-task background sampling. Used with --randomize-background.")
 parser.add_argument("--calibration-path", "--calibration_path", type=str, default=None,
                     help="mass_levels.json from scripts/calibrate_mass.py (default: output/calibration/mass_levels.json)")
 

@@ -12,7 +12,10 @@ internal 16-step action buffer advanced one action per request). Running
 this runner with --num-envs N>1 multiplexes N interleaved env streams into
 that single buffer and produces corrupted actions. Until the server is
 patched to return the full chunk per request (see the study runbook), run
-MolmoBot evaluations with --num-envs 1.
+MolmoBot evaluations with ``--num-envs 1 --num-runs 16``. This runner
+*enforces* that: anything but ``--num-envs 1`` exits immediately unless
+``--allow-multi-env`` is passed (pass it only after the server patch lands,
+when BOTH models run at ``--num-envs 16``).
 """
 
 import argparse
@@ -37,14 +40,12 @@ parser.add_argument("--enable-debug", "--enable_debug", action="store_true",
                     help="Debug output (default: False).")
 parser.add_argument("--record-image-data", "--record_image_data", action="store_true",
                     help="Enable proprio image data recording (default: False).")
-parser.add_argument("--randomize-background", "--randomize_background", action="store_true",
-                    help=("Sample a random non-default background per task at registration time. "
-                          "Each registered env gets one fixed background; the chosen texture is "
-                          "recorded in the per-task env_cfg.json."))
-parser.add_argument("--background-seed", "--background_seed", type=int, default=None,
-                    help="Seed for reproducible per-task background sampling. Used with --randomize-background.")
 parser.add_argument("--calibration-path", "--calibration_path", type=str, default=None,
                     help="mass_levels.json from scripts/calibrate_mass.py (default: output/calibration/mass_levels.json)")
+parser.add_argument("--allow-multi-env", "--allow_multi_env", action="store_true",
+                    help=("Bypass the --num-envs 1 guard. Only pass this once the MolmoBot "
+                          "server returns the FULL action chunk per request; with the stock "
+                          "server, N>1 interleaves N env streams into one action buffer."))
 
 from robolab.eval.runner import add_common_eval_args, run_evaluation  # noqa: E402
 
@@ -53,6 +54,21 @@ AppLauncher.add_app_launcher_args(parser)
 
 args_cli, _ = parser.parse_known_args()
 args_cli.enable_cameras = True
+
+# The stock MolmoBot server keeps per-session state: one internal 16-step
+# action buffer advanced by one action per request. With --num-envs N>1 the
+# runner interleaves N env streams into that single buffer, so every env gets
+# actions computed for some other env's observation — silent data corruption,
+# not a crash. Refuse to start instead (study ruling I5).
+if args_cli.num_envs != 1 and not args_cli.allow_multi_env:
+    raise SystemExit(
+        f"--num-envs {args_cli.num_envs} is unsafe for MolmoBot: the server's "
+        "single 16-step action buffer is advanced one action per request, so N>1 "
+        "interleaved env streams read each other's actions. Run "
+        "'--num-envs 1 --num-runs 16' instead. Preferred fix: patch the server to "
+        "return the full 16-step chunk per request, then rerun BOTH models at "
+        "--num-envs 16 for batching symmetry, and pass --allow-multi-env here."
+    )
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
