@@ -117,6 +117,9 @@ def main() -> None:
                              "centroid xy and at its root xy, printing contact + object drift")
     parser.add_argument("--grasp-dz", type=float, default=None,
                         help="override GRASP_Z for this object (metres, added to the pinch height)")
+    parser.add_argument("--dump-events", action="store_true",
+                        help="after each attempt_lift, print get_all_env_events(env) "
+                             "(diagnostic aid for pinning event-log stage-name strings)")
     import cv2  # noqa: F401  must import before isaaclab
     from isaaclab.app import AppLauncher
     AppLauncher.add_app_launcher_args(parser)
@@ -456,6 +459,9 @@ def main() -> None:
         ok = rise >= LIFT_RISE_M
         print(f"[grasp] contact={contact} grabbed={grabbed} "
               f"root_rise={rise * 100:.1f} cm centroid_rise={com_rise * 100:.1f} cm -> lifted={ok}")
+        if args.dump_events:
+            from robolab.core.logging.results import get_all_env_events
+            print(f"[events] {get_all_env_events(env)!r}")
         return ok
 
     def probe_descend():
