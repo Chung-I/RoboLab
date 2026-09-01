@@ -510,9 +510,14 @@ def main() -> None:
         # spec §3.4: t=0 pose must match across CoM conditions after settling.
         # Events aren't wired into the abs-IK env; emulate the CoM condition by
         # direct set_coms, mirroring make_object_physics_events_cfg semantics.
+        # Each condition starts from the snapshotted post-spawn state, not from
+        # env.reset(): the up/down conditions are the process's 2nd and 3rd
+        # resets, and this scene's reset does not restore the object (it comes
+        # back at the world origin, part-way through the table), so a bare
+        # env.reset() here would have compared three different resting poses.
         results = {}
         for label, dz in [("center", 0.0), ("up", +0.05), ("down", -0.05)]:
-            env.reset()
+            restore_initial_state()
             view = env.scene[args.obj].root_physx_view
             coms = view.get_coms().clone()
             coms[..., 2] += dz
