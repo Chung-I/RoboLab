@@ -5,9 +5,12 @@
 import json
 
 import gymnasium as gym
+import pytest
 
 from robolab.registrations.droid.auto_env_registrations_mass_variations import (
+    COM_OFFSET_BY_OBJECT,
     CONDITIONS,
+    DEFAULT_CALIBRATION_PATH,
     DEFAULT_MASS_LEVELS,
     auto_register_droid_envs_mass_variations,
     load_mass_levels,
@@ -28,8 +31,13 @@ def test_registers_ten_envs_with_correct_masses():
         if name.endswith("_CoMCenter"):
             assert cfg.events.offset_com is None
         else:
-            z = cfg.events.offset_com.params["com_range"]["z"]
-            assert z[0] == z[1] and abs(z[0]) == 0.05
+            obj = "orange_juice_carton" if name.startswith("OJCarton") else "soft_scrub"
+            axis, mag = COM_OFFSET_BY_OBJECT[obj]
+            offset = cfg.events.offset_com.params["com_offset"]
+            assert abs(offset["xyz".index(axis)]) == mag
+            # exactly one axis carries the offset
+            assert sum(1 for v in offset if v != 0.0) == 1
+            assert (offset["xyz".index(axis)] > 0) == name.endswith("_CoMUp")
 
 
 def test_calibration_file_overrides_defaults(tmp_path):
@@ -40,3 +48,27 @@ def test_calibration_file_overrides_defaults(tmp_path):
     assert levels["orange_juice_carton"]["medium"] == 0.22
     # objects absent from the file keep defaults
     assert levels["soft_scrub"] == DEFAULT_MASS_LEVELS["soft_scrub"]
+
+
+def test_explicit_missing_calibration_path_raises(tmp_path):
+    # A mistyped --calibration-path must not silently fall back to defaults.
+    with pytest.raises(FileNotFoundError):
+        load_mass_levels(str(tmp_path / "nope.json"))
+
+
+def test_provenance_key_is_ignored(tmp_path):
+    p = tmp_path / "mass_levels.json"
+    p.write_text(json.dumps({
+        "_provenance": {"orange_juice_carton": {"timestamp": "now"}},
+        "orange_juice_carton": {"light": 0.11, "medium": 0.22, "heavy": 0.33},
+    }))
+    levels = load_mass_levels(str(p))
+    assert levels["orange_juice_carton"]["medium"] == 0.22
+    assert "_provenance" not in levels
+
+
+def test_default_calibration_path_is_repo_root_anchored():
+    assert DEFAULT_CALIBRATION_PATH.is_absolute()
+    assert DEFAULT_CALIBRATION_PATH.parts[-3:] == ("output", "calibration", "mass_levels.json")
+    # ...and it resolves next to the repo's own pyproject.toml, not the cwd
+    assert (DEFAULT_CALIBRATION_PATH.parents[2] / "pyproject.toml").is_file()
