@@ -125,7 +125,8 @@ def generate_task_env_cfg(task_class: Task,
                          gripper_closure_cfg: dict | None = None,
                          lazy_sensor_update: bool = True,
                          ee_recorder_bodies: dict[str, str] | None = None,
-                         object_state_obs: bool = False) -> Type[RobolabDefaultEnvCfg]:
+                         object_state_obs: bool = False,
+                         events_cfg=None) -> Type[RobolabDefaultEnvCfg]:
     """
     Generate a complete task environment configuration class.
 
@@ -152,6 +153,11 @@ def generate_task_env_cfg(task_class: Task,
             meters), ``<object>_quat`` (world-frame w, x, y, z), and
             ``<object>_vel`` (world-frame) terms for every entry of the
             task's ``contact_object_list`` (minus fixtures). Default False.
+        events_cfg: Optional events override for the task's own ``events``.
+            May be a configclass instance or a zero-arg callable returning
+            one; a callable is invoked per env-cfg instantiation so every
+            instance gets a fresh events object (no shared state). None
+            (default) falls back to the task class's own ``events``.
 
     Returns:
         A complete environment configuration class
@@ -181,6 +187,7 @@ def generate_task_env_cfg(task_class: Task,
     # body would shadow the parameter before it can be read (class bodies do
     # not close over names they also assign).
     _ee_recorder_bodies = ee_recorder_bodies
+    _events_cfg = events_cfg
 
     @configclass
     class GeneratedTaskEnvCfg(RobolabDefaultEnvCfg):
@@ -219,8 +226,12 @@ def generate_task_env_cfg(task_class: Task,
             if getattr(task_class, 'rewards', None) is not None:
                 self.rewards = task_class.rewards()
 
-            # Set optional events if provided by the task
-            if getattr(task_class, 'events', None) is not None:
+            # Set optional events: an explicit events_cfg from registration
+            # overrides the task's own. A zero-arg callable is invoked per
+            # instantiation so every env cfg gets a fresh events instance.
+            if _events_cfg is not None:
+                self.events = _events_cfg() if callable(_events_cfg) else _events_cfg
+            elif getattr(task_class, 'events', None) is not None:
                 self.events = task_class.events()
 
             # Must specify this after the scene is set.
