@@ -139,6 +139,11 @@ def main() -> None:
     from robolab.registrations.droid.auto_env_registrations_abs_ik import (  # noqa: E402
         auto_register_droid_abs_ik_envs,
     )
+    # single source of truth for the CoM condition (axis + magnitude), so
+    # --check-com can never drift from what the study envs actually register
+    from robolab.registrations.droid.auto_env_registrations_mass_variations import (  # noqa: E402
+        COM_OFFSET_AXIS, COM_OFFSET_BY_OBJECT, COM_OFFSET_M,
+    )
 
     robolab.constants.RECORD_IMAGE_DATA = False
 
@@ -378,11 +383,35 @@ def main() -> None:
         robot.write_joint_state_to_sim(INIT_JOINT_POS.unsqueeze(0).to(env.device),
                                        torch.zeros((1, INIT_JOINT_POS.shape[0]), device=env.device))
 
+    # Snapshot of the asset's authored mass/inertia, taken on the first
+    # set_mass call so every later write scales from the AUTHORED values
+    # rather than from the previous sweep point.
+    _authored_physics = {}
+
     def set_mass(m):
         view = env.scene[args.obj].root_physx_view
-        masses = view.get_masses().clone()
+        if not _authored_physics:
+            _authored_physics["mass"] = view.get_masses().clone()
+            _authored_physics["inertia"] = view.get_inertias().clone()
+        default_mass = _authored_physics["mass"]
+        default_inertia = _authored_physics["inertia"]
+        idx = torch.arange(default_mass.shape[0])
+
+        masses = default_mass.clone()
         masses[:] = m
-        view.set_masses(masses, torch.arange(masses.shape[0]))
+        view.set_masses(masses, idx)
+
+        # Isaac Lab's randomize_rigid_body_mass(recompute_inertia=True) scales
+        # the inertia tensor by the mass ratio, i.e. it assumes uniform density
+        # (isaaclab/envs/mdp/events.py:338-353). Match that here, or the swept
+        # masses would be calibrated against the authored inertia and the knee
+        # would not transfer to the registered study envs.
+        ratios = (masses / default_mass).reshape(default_mass.shape)
+        if default_inertia.dim() == 3:      # articulation: (N, bodies, 9)
+            inertias = default_inertia * ratios[..., None]
+        else:                               # rigid object: (N, 9)
+            inertias = default_inertia * ratios
+        view.set_inertias(inertias, idx)
 
     def attempt_lift() -> bool:
         restore_initial_state()
@@ -522,11 +551,15 @@ def main() -> None:
         # back at the world origin, part-way through the table), so a bare
         # env.reset() here would have compared three different resting poses.
         results = {}
-        for label, dz in [("center", 0.0), ("up", +0.05), ("down", -0.05)]:
+        axis, mag = COM_OFFSET_BY_OBJECT.get(args.obj, (COM_OFFSET_AXIS, COM_OFFSET_M))
+        ax = "xyz".index(axis)
+        print(f"[check-com] {args.obj}: offset axis={axis} magnitude={mag:.3f} m "
+              "(from auto_env_registrations_mass_variations.COM_OFFSET_BY_OBJECT)")
+        for label, dz in [("center", 0.0), ("up", +mag), ("down", -mag)]:
             restore_initial_state()
             view = env.scene[args.obj].root_physx_view
             coms = view.get_coms().clone()
-            coms[..., 2] += dz
+            coms[..., ax] += dz
             view.set_coms(coms, torch.arange(coms.shape[0]))
             settle(30)  # settle 2 s, arm commanded to hold
             o = env.scene[args.obj]
@@ -535,7 +568,7 @@ def main() -> None:
             # Restore: undo the += dz on the same cloned tensor, then write it back.
             # (get_coms() returns a (count, 7) [pos+quat] tensor; broadcasting a
             # bare (3,) tensor against it crashes, so we must mutate coms in place.)
-            coms[..., 2] -= dz
+            coms[..., ax] -= dz
             view.set_coms(coms, torch.arange(coms.shape[0]))
         base = torch.tensor(results["center"]["pos"])
         for label in ("up", "down"):
@@ -561,6 +594,18 @@ def main() -> None:
         levels_path = out / "mass_levels.json"
         all_levels = json.loads(levels_path.read_text()) if levels_path.is_file() else {}
         all_levels[args.obj] = levels
+        # Provenance so a stale or smoke-sized file is recognisable later. The
+        # registration loader ignores keys starting with "_".
+        provenance = all_levels.get("_provenance") or {}
+        provenance[args.obj] = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "task": args.task,
+            "masses_swept": masses,
+            "lifted": lifted,
+            "trials_per_mass": args.trials,
+            "knee_kg": knee,
+        }
+        all_levels["_provenance"] = provenance
         levels_path.write_text(json.dumps(all_levels, indent=2))
         print(f"[calibrate] knee={knee:.2f} kg  levels={levels}")
 
