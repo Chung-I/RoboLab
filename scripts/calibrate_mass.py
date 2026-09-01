@@ -2,11 +2,35 @@
 # SPDX-License-Identifier: Apache-2.0
 """Phase 0: scripted grasp-and-lift mass calibration (no policy in the loop).
 
-Sweeps object mass, runs a fixed abs-IK pick primitive, and records whether
-object_picked_up holds after a lift+hold. Writes the success curve and derived
-light/medium/heavy levels (0.3/1.0/1.7 x knee) for the registration module.
-Also: --check-com verifies the CoM conditions leave the t=0 resting pose
-unchanged (spec §3.4), and every run reports wall-clock steps/sec (spec §7.4).
+Sweeps object mass, runs a fixed abs-IK pick primitive, and records whether the
+object was actually lifted after a lift+hold. Writes the success curve and
+derived light/medium/heavy levels (0.3/1.0/1.7 x knee) for the registration
+module. Also: --check-com verifies the CoM conditions leave the t=0 resting
+pose unchanged (spec §3.4), and every run reports wall-clock steps/sec
+(spec §7.4).
+
+Grasp geometry (round 3). Three things make the naive primitive miss:
+
+  1. The abs-IK action drives the flange (``base_link``); the pinch point sits
+     ~16cm further along the gripper's local +z. The flange->fingertip distance
+     is *measured* from the gripper USD at startup (see ``gripper_geometry``)
+     rather than assumed, and every waypoint is expressed as a fingertip
+     target that is converted to a flange target.
+  2. Some assets' physics root (``root_pos_w``) is nowhere near their visible
+     geometry -- ``orange_juice_carton``'s is ~13cm off, because its Mesh child
+     prim carries its own local transform. Grasp x,y therefore comes from the
+     object's *centroid* (``root_com_pos_w``, PhysX's own mass-weighted centre,
+     cross-checked at startup against the mesh-vertex centroid), never from
+     ``root_pos_w``.
+  3. A parallel-jaw gripper only closes 85mm, so the jaw axis must line up with
+     the object's *narrow* horizontal axis. The closing direction is chosen by
+     scanning the object's live mesh footprint for the minimum-width direction,
+     and the wrist quaternion is built from (approach axis, closing axis).
+
+Success is kinematic: the object's root z must be >= LIFT_RISE_M above its
+post-settle value at the end of the hold. Contact sensing is printed as a
+diagnostic only (``contact_gripper`` instruments a single finger, so it
+under-reports).
 
 Usage:
   uv run python scripts/calibrate_mass.py --task OJCartonInCrateTask \
@@ -43,8 +67,35 @@ def derive_levels(knee: float) -> dict:
 
 
 DEFAULT_MASSES = [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0]
-# per-object top-pinch grasp height above the object root, meters (tunable)
-GRASP_Z = {"orange_juice_carton": 0.02, "soft_scrub": 0.16}
+
+# --- grasp tuning knobs -------------------------------------------------
+# Fine-tuning offset (m) added to the geometry-derived fingertip pinch height.
+# The pinch height itself is derived from the object's live footprint (see
+# attempt_lift), so this is only a per-object nudge, not the whole height.
+# soft_scrub sits 0.88 m out, at the very edge of the arm's reach: pinching it
+# 4cm higher (level with its centroid rather than low on its body) keeps the
+# descend target inside the envelope, which a lower pinch is not.
+GRASP_Z = {"orange_juice_carton": 0.0, "soft_scrub": 0.04}
+# Outward tilt of the approach axis away from vertical, degrees. 0 = strictly
+# top-down. Tilting the wrist outward (down-and-away from the robot base) pulls
+# the flange back toward the base by fingertip_offset*sin(tilt), which is what
+# brings far objects such as soft_scrub (0.88m out) back inside the arm's
+# reach envelope; a strict top-down wrist there hits a joint limit ~10cm short.
+GRASP_TILT_DEG = {"orange_juice_carton": 0.0, "soft_scrub": 20.0}
+# Fingertip target depth below the object's centroid: a fraction of the
+# object's world-frame height, capped so tall objects are still gripped near
+# their middle rather than at the very bottom.
+GRASP_DEPTH_FRAC = 0.35
+GRASP_DEPTH_MAX = 0.04
+# Minimum fingertip clearance above the object's lowest point (keeps the
+# fingertips off the table).
+GRASP_MIN_CLEAR = 0.010
+# Fingertip clearance above the object's highest point when hovering, before
+# the vertical descent.
+HOVER_CLEAR = 0.06
+# Kinematic lift criterion (spec Phase 0 success): the object's root must be
+# this far above its post-settle height at the end of the hold.
+LIFT_RISE_M = 0.10
 
 
 def main() -> None:
@@ -58,7 +109,14 @@ def main() -> None:
                         help="verify t=0 rest pose across CoM conditions instead of sweeping mass")
     parser.add_argument("--trials", type=int, default=2, help="lift attempts per mass; success = all lift")
     parser.add_argument("--debug-grasp", action="store_true",
-                        help="print object/EE positions and grasp state at each stage (tuning aid)")
+                        help="print per-stage EE/object positions and contact state (tuning aid)")
+    parser.add_argument("--tilt-deg", type=float, default=None,
+                        help="override GRASP_TILT_DEG for this object (degrees from vertical)")
+    parser.add_argument("--probe-descend", action="store_true",
+                        help="diagnostic: descend the flange in 15mm steps at the object's "
+                             "centroid xy and at its root xy, printing contact + object drift")
+    parser.add_argument("--grasp-dz", type=float, default=None,
+                        help="override GRASP_Z for this object (metres, added to the pinch height)")
     import cv2  # noqa: F401  must import before isaaclab
     from isaaclab.app import AppLauncher
     AppLauncher.add_app_launcher_args(parser)
@@ -66,104 +124,256 @@ def main() -> None:
     args.enable_cameras = True
     app = AppLauncher(args).app
 
-    import torch  # noqa: E402
+    import numpy as np  # noqa: E402
     import omni.usd  # noqa: E402
+    import torch  # noqa: E402
     from pxr import Usd, UsdGeom  # noqa: E402
+
     import robolab.constants  # noqa: E402
     from robolab.core.environments.factory import get_envs  # noqa: E402
     from robolab.core.environments.runtime import create_env  # noqa: E402
     from robolab.core.task.conditionals import object_grabbed as object_grabbed_fn  # noqa: E402
-    from robolab.core.task.conditionals import object_picked_up  # noqa: E402
     from robolab.registrations.droid.auto_env_registrations_abs_ik import (  # noqa: E402
         auto_register_droid_abs_ik_envs,
     )
-    from robolab.robots.droid import EEF_OFFSET_ROT  # noqa: E402
 
     robolab.constants.RECORD_IMAGE_DATA = False
 
-    def quat_mul(q1, q2):
-        w1, x1, y1, z1 = q1.tolist(); w2, x2, y2, z2 = q2.tolist()
-        return torch.tensor([w1*w2 - x1*x2 - y1*y2 - z1*z2,
-                             w1*x2 + x1*w2 + y1*z2 - z1*y2,
-                             w1*y2 - x1*z2 + y1*w2 + z1*x2,
-                             w1*z2 + x1*y2 - y1*x2 + z1*w2])
+    # ------------------------------------------------------------------
+    # quaternion / rotation helpers (w, x, y, z)
+    # ------------------------------------------------------------------
+    def quat_to_mat(q):
+        w, x, y, z = q.tolist()
+        return torch.tensor([
+            [1 - 2*(y*y + z*z), 2*(x*y - z*w),     2*(x*z + y*w)],
+            [2*(x*y + z*w),     1 - 2*(x*x + z*z), 2*(y*z - x*w)],
+            [2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x*x + y*y)],
+        ], dtype=torch.float32)
 
-    def quat_inv(q):
-        return torch.tensor([q[0], -q[1], -q[2], -q[3]])
+    def mat_to_quat(m):
+        m = m.tolist()
+        t = m[0][0] + m[1][1] + m[2][2]
+        if t > 0:
+            s = math.sqrt(t + 1.0) * 2
+            q = [0.25 * s, (m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s]
+        elif m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+            s = math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2
+            q = [(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s]
+        elif m[1][1] > m[2][2]:
+            s = math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2
+            q = [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s]
+        else:
+            s = math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2
+            q = [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s]
+        q = torch.tensor(q, dtype=torch.float32)
+        return q / torch.linalg.norm(q)
 
-    def quat_rotate_vec(q, v):
-        qv = torch.cat([torch.zeros(1), v])
-        return quat_mul(quat_mul(q, qv), quat_inv(q))[1:]
+    def unit(v):
+        return v / torch.linalg.norm(v)
 
-    # Robotiq 2F-85 base flange -> fingertip plane distance along the flange's
-    # local +z (approach axis); see robolab/robots/droid.py's commented
-    # body_offset=[0, 0, 0.1628] on DroidRelIKActionCfg ("max height base
-    # flange -> fingertip is 162.8mm per Robotiq spec"). A direct per-body
-    # position probe (left_inner_finger / right_inner_finger / etc.) reports
-    # the exact same world position as base_link even after 20 held physics
-    # steps -- the gripper's USD is franka_robotiq_2f_85_flattened.usd, and
-    # its finger rigid bodies are collapsed into base_link's rigid body for
-    # physics, so body_pos_w cannot be used to measure this offset at
-    # runtime. Use the documented fixed constant instead, rotated into world
-    # frame by the flange's actual measured orientation.
-    FINGERTIP_LOCAL_OFFSET = torch.tensor([0.0, 0.0, 0.1628])
+    # ------------------------------------------------------------------
+    # USD geometry helpers (static, authored-stage transforms only)
+    # ------------------------------------------------------------------
+    def _stage():
+        return omni.usd.get_context().get_stage()
 
-    # Explicit top-down wrist orientation (base_link/flange frame): 180 deg
-    # about world X maps local +z -> world -z, so the gripper points straight
-    # down and FINGERTIP_LOCAL_OFFSET projects to a purely vertical world
-    # offset. Measured at the arm's reset pose, base_link's actual orientation
-    # has local +z pointing along ~world +x (near-horizontal, not top-down at
-    # all) -- keeping that reset orientation while retargeting position (as
-    # first attempted) drove the flange ~16cm sideways of the object and hit
-    # a joint limit (near_limit True throughout descend), so the IK never
-    # reached the intended pose. Forcing an explicit top-down orientation for
-    # the grasp motion (a) matches the "top-pinch" grasp this primitive is
-    # documented to perform, (b) keeps the flange retarget purely vertical
-    # (well within reach), and (c) is the brief's own authorized fallback for
-    # when the fingertip offset can't be measured from live body poses.
-    BASE_QUAT_TOPDOWN = torch.tensor([0.0, 1.0, 0.0, 0.0])
-    EEF_OFFSET_ROT_T = torch.tensor(EEF_OFFSET_ROT, dtype=torch.float32)
-    EEF_QUAT_TOPDOWN = quat_mul(BASE_QUAT_TOPDOWN, EEF_OFFSET_ROT_T)
-    FINGERTIP_WORLD_OFFSET_TOPDOWN = quat_rotate_vec(BASE_QUAT_TOPDOWN, FINGERTIP_LOCAL_OFFSET)
+    def _l2w(prim):
+        return UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+
+    def points_in_frame(root_prim, frame_prim, bbox_cache=None):
+        """Vertices of ``root_prim``'s subtree expressed in ``frame_prim``'s frame.
+
+        Uses raw mesh points where available (exact) and falls back to the
+        prim's world bounding-box corners otherwise. Only *relative*
+        transforms are used, so this is valid for any later rigid-body pose.
+        """
+        w2f = np.array(_l2w(frame_prim).GetInverse(), dtype=np.float64)
+        out = []
+        rng = Usd.PrimRange(root_prim, Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate))
+        for prim in rng:
+            mesh = UsdGeom.Mesh(prim)
+            pts = mesh.GetPointsAttr().Get() if mesh else None
+            if pts is None or len(pts) == 0:
+                continue
+            m = np.array(np.array(_l2w(prim), dtype=np.float64) @ w2f, dtype=np.float64)
+            arr = np.asarray(pts, dtype=np.float64)
+            out.append(arr @ m[:3, :3] + m[3, :3])
+        if out:
+            return np.concatenate(out, axis=0)
+        if bbox_cache is None:
+            bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_],
+                                           useExtentsHint=True)
+        rngw = bbox_cache.ComputeWorldBound(root_prim).ComputeAlignedRange()
+        mn, mx = rngw.GetMin(), rngw.GetMax()
+        corners = np.array([[mn[0] if i & 1 else mx[0], mn[1] if i & 2 else mx[1],
+                             mn[2] if i & 4 else mx[2]] for i in range(8)], dtype=np.float64)
+        return corners @ w2f[:3, :3] + w2f[3, :3]
 
     auto_register_droid_abs_ik_envs(task=args.task)
     env_name = get_envs(task=args.task)[0]
     env, _ = create_env(env_name, num_envs=1, use_fabric=True)
-    frames = env.scene["frames"]
-    eef_idx = frames.data.target_frame_names.index("eef_frame")
-    offset_inv = quat_inv(torch.tensor(EEF_OFFSET_ROT, dtype=torch.float32))
     step_times: list[float] = []
 
-    def step_to(pos, quat_eef, grip, steps):
+    stage = _stage()
+    robot_path = env.scene["robot"].cfg.prim_path.replace("{ENV_REGEX_NS}", "/World/envs/env_0")
+    robot_prim = stage.GetPrimAtPath(robot_path)
+    if not robot_prim.IsValid():
+        robot_prim = stage.GetPrimAtPath("/World/envs/env_0/robot")
+
+    # --- flange -> fingertip offset and jaw axis, measured from the USD ---
+    # droid.py documents 162.8mm (Robotiq spec) as a commented-out body_offset,
+    # but the live finger *bodies* all report base_link's pose (the gripper USD
+    # is "flattened", so their rigid bodies are collapsed into base_link), so
+    # the offset cannot be read from body_pos_w at runtime. It can still be
+    # measured off the authored gripper geometry, which is what we do here.
+    # The prim names are searched for rather than hard-coded: the flattened USD
+    # does not necessarily nest them under the path DroidCfg's sensor configs use.
+    FINGERTIP_LEN = 0.1628                            # fallback: Robotiq 2F-85 spec
+    APPROACH_LOCAL = torch.tensor([1.0, 0.0, 0.0])    # fallback: local +x
+    CLOSING_LOCAL = torch.tensor([0.0, 1.0, 0.0])     # fallback: local +y
+    JAW_SPAN = None
+    wanted = ("base_link", "left_inner_finger", "right_inner_finger")
+    found = {}
+    if robot_prim.IsValid():
+        for prim in Usd.PrimRange(robot_prim, Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)):
+            n = prim.GetName()
+            if n in wanted and n not in found:
+                found[n] = prim
+    print(f"[geom] robot prim: {robot_prim.GetPath() if robot_prim.IsValid() else None} "
+          f"found={{ {', '.join(f'{k}: {v.GetPath()}' for k, v in found.items())} }}")
+    if "base_link" in found:
+        bp = found["base_link"]
+        gp = bp.GetParent()
+        pts_b = points_in_frame(gp, bp)
+        # The approach (finger) axis is whichever signed local axis the gripper
+        # body actually reaches furthest along. Measured for
+        # franka_robotiq_2f_85_flattened.usd this is local +x at 0.150 m, NOT
+        # local +z: droid.py's commented-out body_offset=[0, 0, 0.1628] is
+        # expressed in *eef_frame* (whose +z is base_link's +x, per
+        # EEF_OFFSET_ROT), so reading it as a base_link offset points the whole
+        # grasp 90 degrees away from the fingers -- which is exactly why every
+        # earlier round closed the jaws in mid-air.
+        reach = [(float(pts_b[:, i].max()), i, +1.0) for i in range(3)]
+        reach += [(float(-pts_b[:, i].min()), i, -1.0) for i in range(3)]
+        FINGERTIP_LEN, ax, sgn = max(reach)
+        APPROACH_LOCAL = torch.zeros(3)
+        APPROACH_LOCAL[ax] = sgn
+        lc = points_in_frame(found["left_inner_finger"], bp).mean(axis=0) if "left_inner_finger" in found else None
+        rc = points_in_frame(found["right_inner_finger"], bp).mean(axis=0) if "right_inner_finger" in found else None
+        if lc is not None and rc is not None:
+            d = torch.tensor(lc - rc, dtype=torch.float32)
+            JAW_SPAN = float(torch.linalg.norm(d))
+            d = d - (d @ APPROACH_LOCAL) * APPROACH_LOCAL
+            if float(torch.linalg.norm(d)) > 1e-6:
+                CLOSING_LOCAL = unit(d)
+        print(f"[geom] gripper subtree {gp.GetPath()}: n_pts={pts_b.shape[0]} "
+              f"local z-range=({pts_b[:, 2].min():.4f},{pts_b[:, 2].max():.4f}) "
+              f"x-range=({pts_b[:, 0].min():.4f},{pts_b[:, 0].max():.4f}) "
+              f"y-range=({pts_b[:, 1].min():.4f},{pts_b[:, 1].max():.4f})")
+    print(f"[geom] gripper: fingertip_offset={FINGERTIP_LEN:.4f} m along local "
+          f"approach_axis={APPROACH_LOCAL.tolist()}, closing_axis_local={CLOSING_LOCAL.tolist()} "
+          f"finger_link_span={JAW_SPAN}")
+
+    # --- object geometry in its own rigid-body frame (static) ---
+    obj_prim_path = env.scene[args.obj].root_physx_view.prim_paths[0]
+    obj_prim = stage.GetPrimAtPath(obj_prim_path)
+    obj_pts_b = points_in_frame(obj_prim, obj_prim)
+    if obj_pts_b.shape[0] > 20000:
+        obj_pts_b = obj_pts_b[:: max(1, obj_pts_b.shape[0] // 20000)]
+    OBJ_PTS_B = torch.tensor(obj_pts_b, dtype=torch.float32)
+    obj_c_b = 0.5 * (OBJ_PTS_B.max(0).values + OBJ_PTS_B.min(0).values)
+    obj_ext_b = OBJ_PTS_B.max(0).values - OBJ_PTS_B.min(0).values
+    print(f"[geom] {args.obj}: prim={obj_prim_path} n_pts={OBJ_PTS_B.shape[0]} "
+          f"mesh_center_local={obj_c_b.tolist()} mesh_extent_local={obj_ext_b.tolist()}")
+
+    def obj_state():
+        """(root_pos, root_quat, centroid, world mesh points) for the object.
+
+        ``root_com_pos_w`` is PhysX's mass-weighted centre of the collision
+        geometry; for a uniform-density asset it is the geometric centroid, and
+        it is the only *live* handle on where the object actually is when the
+        rigid-body origin is offset from the mesh (orange_juice_carton).
+        """
+        o = env.scene[args.obj]
+        p = o.data.root_pos_w[0].cpu().clone()
+        q = o.data.root_quat_w[0].cpu().clone()
+        com = o.data.root_com_pos_w[0].cpu().clone()
+        pts_w = OBJ_PTS_B @ quat_to_mat(q).T + p
+        return p, q, com, pts_w
+
+    def best_closing_dir(pts_w):
+        """Horizontal direction of minimum object width (the jaw axis)."""
+        ang = torch.arange(0.0, 180.0, 2.0) * math.pi / 180.0
+        u = torch.stack([torch.cos(ang), torch.sin(ang)], dim=1)
+        proj = pts_w[:, :2] @ u.T
+        width = proj.max(0).values - proj.min(0).values
+        k = int(torch.argmin(width))
+        return torch.tensor([u[k, 0], u[k, 1], 0.0]), float(width[k])
+
+    def wrist_quat(approach_w, closing_w):
+        """base_link quaternion mapping the gripper's measured local approach
+        axis -> approach_w and its local jaw axis -> closing_w (orthogonalised
+        against the approach axis)."""
+        z_l = APPROACH_LOCAL
+        b_l = CLOSING_LOCAL - (CLOSING_LOCAL @ z_l) * z_l
+        b_l = unit(b_l)
+        c_l = torch.linalg.cross(z_l, b_l)
+        z_w = unit(approach_w)
+        b_w = closing_w - (closing_w @ z_w) * z_w
+        b_w = unit(b_w)
+        c_w = torch.linalg.cross(z_w, b_w)
+        A = torch.stack([b_l, c_l, z_l], dim=1)
+        B = torch.stack([b_w, c_w, z_w], dim=1)
+        return mat_to_quat(B @ A.T)
+
+    def step_to(pos, quat_base, grip, steps):
+        """Command an absolute base_link (flange) pose. DroidIKActionCfg tracks
+        base_link with an identity body_offset, so the action quaternion is the
+        base_link quaternion directly."""
         action = torch.zeros(1, 8, device=env.device)
         action[0, :3] = pos.to(env.device)
-        action[0, 3:7] = quat_mul(quat_eef, offset_inv).to(env.device)
+        action[0, 3:7] = quat_base.to(env.device)
         action[0, 7] = grip
         for _ in range(steps):
             t0 = time.time()
             env.step(action)
             step_times.append(time.time() - t0)
 
-    def obj_pose():
-        o = env.scene[args.obj]
-        return o.data.root_pos_w[0].cpu().clone(), o.data.root_quat_w[0].cpu().clone()
+    robot = env.scene["robot"]
+    base_body_idx = robot.data.body_names.index("base_link")
 
-    def obj_bbox_center():
-        # root_pos_w is the object's physics-body origin, which for this
-        # asset is NOT at its geometric center: a fresh world-space bbox
-        # (queried directly by concrete prim path, not the flagged-stale
-        # world_state.get_bbox helper) puts the centroid ~11cm/~7cm away
-        # from root_pos_w in x/y for orange_juice_carton. Grasp targets
-        # built from root_pos_w x,y miss the object entirely regardless of
-        # any flange/fingertip correction, so use the bbox centroid instead.
-        prim_path = env.scene[args.obj].root_physx_view.prim_paths[0]
-        prim = omni.usd.get_context().get_stage().GetPrimAtPath(prim_path)
-        cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_], useExtentsHint=True)
-        rng = cache.ComputeWorldBound(prim).ComputeAlignedRange()
-        mn, mx = rng.GetMin(), rng.GetMax()
-        center = torch.tensor([(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2])
-        extent = torch.tensor([mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]])
-        return center, extent
+    def base_pose():
+        """Live flange (base_link) pose, read from the articulation rather than
+        the FrameTransformer: right after env.reset() the sensor still reports
+        the pre-reset pose, and feeding that stale pose back as an absolute IK
+        target makes the differential IK lurch and collapse the arm into the
+        robot base (observed as a 400mm tracking error on the second trial)."""
+        return (robot.data.body_pos_w[0, base_body_idx].cpu().clone(),
+                robot.data.body_quat_w[0, base_body_idx].cpu().clone())
+
+    def settle(steps=20):
+        """Hold the arm where it is, re-reading the pose every step so the
+        commanded target never jumps."""
+        for _ in range(steps):
+            step_to(*base_pose(), 0.0, 1)
+
+    # env.reset() does not put this scene back the way it started: the second
+    # trial came up with the object at the world origin (half through the table)
+    # and the arm collapsed against its own base. Snapshot the post-spawn state
+    # once and restore it explicitly per trial instead, and stretch the episode
+    # so IsaacLab never truncates (and auto-resets) mid-sweep.
+    env.cfg.episode_length_s = 1.0e6
+    env.reset()
+    settle()
+    INIT_OBJ_POSE = env.scene[args.obj].data.root_pose_w[0].clone()
+    INIT_JOINT_POS = robot.data.joint_pos[0].clone()
+
+    def restore_initial_state():
+        o = env.scene[args.obj]
+        o.write_root_pose_to_sim(INIT_OBJ_POSE.unsqueeze(0).to(env.device))
+        o.write_root_velocity_to_sim(torch.zeros((1, 6), device=env.device))
+        robot.write_joint_state_to_sim(INIT_JOINT_POS.unsqueeze(0).to(env.device),
+                                       torch.zeros((1, INIT_JOINT_POS.shape[0]), device=env.device))
 
     def set_mass(m):
         view = env.scene[args.obj].root_physx_view
@@ -171,111 +381,132 @@ def main() -> None:
         masses[:] = m
         view.set_masses(masses, torch.arange(masses.shape[0]))
 
-    def eef_quat():
-        return frames.data.target_quat_w[0, eef_idx, :].cpu().clone()
-
     def attempt_lift() -> bool:
-        obs, _ = env.reset()
-        step_to(frames.data.target_pos_w[0, eef_idx, :].cpu().clone(), eef_quat(), 0.0, 15)  # settle
+        restore_initial_state()
+        settle()
+        p0, q0 = base_pose()
         set_mass(current_mass)
 
-        # Grasp-center correction: the abs-IK action drives the flange
-        # (base_link; eef_frame has zero position offset from it), but the
-        # actual pinch point is ~162.8mm from the flange along the gripper's
-        # local +z (approach) axis (FINGERTIP_LOCAL_OFFSET; see comment
-        # above). We command an explicit top-down wrist orientation (see
-        # note above) for the grasp motion, so this offset is purely
-        # vertical and known exactly: flange_target = desired_grasp_point +
-        # offset, offset = -FINGERTIP_WORLD_OFFSET_TOPDOWN (fingertip sits
-        # below the flange when pointing straight down).
-        eef_pos_now = frames.data.target_pos_w[0, eef_idx, :].cpu().clone()
-        q = EEF_QUAT_TOPDOWN
-        offset = -FINGERTIP_WORLD_OFFSET_TOPDOWN
-        grasp_center = eef_pos_now + FINGERTIP_WORLD_OFFSET_TOPDOWN  # informational: fingertip point if flange were here, top-down
-        fallback_topdown = True
+        root_p, root_q, com, pts_w = obj_state()
+        z0 = float(root_p[2])
+        com_z0 = float(com[2])
+        top_z, bot_z = float(pts_w[:, 2].max()), float(pts_w[:, 2].min())
+        height = top_z - bot_z
+        closing, width = best_closing_dir(pts_w)
 
-        p, _ = obj_pose()
-        # Diagnostic only (see obj_bbox_center's docstring/comment): a fresh
-        # world-space bbox on the correctly-resolved concrete prim lands the
-        # centroid ~11cm/~7cm away from root_pos_w in x/y. Using that bbox
-        # centroid as the grasp x,y target was tried and made things *worse*
-        # (the flange never got anywhere near the object, zero drift at any
-        # point) -- root_pos_w x,y is the one that gets the flange into the
-        # object's actual neighborhood, so it is used for targeting; the
-        # bbox is kept only to size GRASP_Z correctly against the object's
-        # real (much shorter than assumed) height.
-        bbox_center, bbox_extent = obj_bbox_center()
-        desired_grasp = torch.tensor([p[0], p[1], p[2] + GRASP_Z[args.obj]])
-        grasp = desired_grasp + offset
-        hover = grasp + torch.tensor([0.0, 0.0, 0.15])
+        # approach axis: straight down, optionally tilted outward (away from
+        # the robot base) so the flange is pulled back inside the reach envelope
+        tilt = math.radians(args.tilt_deg if args.tilt_deg is not None
+                            else GRASP_TILT_DEG.get(args.obj, 0.0))
+        radial = torch.tensor([float(com[0]), float(com[1]), 0.0])
+        radial = unit(radial) if float(torch.linalg.norm(radial)) > 1e-6 else torch.tensor([1.0, 0.0, 0.0])
+        approach = unit(math.sin(tilt) * radial + torch.tensor([0.0, 0.0, -math.cos(tilt)]))
+
+        # pick the jaw-axis sign that needs the least wrist rotation from here
+        cur = quat_to_mat(q0) @ CLOSING_LOCAL
+        cur[2] = 0.0
+        if float(cur @ closing) < 0:
+            closing = -closing
+        q_base = wrist_quat(approach, closing)
+
+        dz = args.grasp_dz if args.grasp_dz is not None else GRASP_Z.get(args.obj, 0.0)
+        tip_z = float(com[2]) - min(GRASP_DEPTH_FRAC * height, GRASP_DEPTH_MAX) + dz
+        tip_z = max(tip_z, bot_z + GRASP_MIN_CLEAR)
+        tip_z = min(tip_z, top_z - 0.005)
+        tip = torch.tensor([float(com[0]), float(com[1]), tip_z])
+
+        # flange target: the fingertip sits FINGERTIP_LEN along the wrist's
+        # local +z, which under the commanded orientation is `approach`.
+        grasp = tip - FINGERTIP_LEN * approach
+        # Hover must clear the object's top, not merely sit above the grasp
+        # point: soft_scrub is 25cm tall, so a hover 15cm above a pinch point
+        # low on its body still swings the jaws through the bottle on the way
+        # in and knocks it off the table.
+        hover_tip_z = max(float(tip[2]) + 0.15, top_z + HOVER_CLEAR)
+        hover = grasp + torch.tensor([0.0, 0.0, hover_tip_z - float(tip[2])])
         lift = grasp + torch.tensor([0.0, 0.0, 0.25])
-        print(f"[calibrate] obj_pos={p.tolist()} bbox_center={bbox_center.tolist()} bbox_extent={bbox_extent.tolist()} "
-              f"grasp_center={grasp_center.tolist() if grasp_center is not None else None} "
-              f"eef_pos={eef_pos_now.tolist()} offset={offset.tolist()} fallback_topdown={fallback_topdown}")
+        print(f"[grasp] root={[round(v, 4) for v in root_p.tolist()]} "
+              f"centroid={[round(v, 4) for v in com.tolist()]} "
+              f"root->centroid={[round(float(com[i] - root_p[i]), 4) for i in range(3)]} "
+              f"z_span=({bot_z:.4f},{top_z:.4f}) min_width={width:.4f} "
+              f"closing={[round(float(v), 3) for v in closing]} tilt={math.degrees(tilt):.0f}deg")
+        print(f"[grasp] fingertip_target={[round(float(v), 4) for v in tip]} "
+              f"flange_target={[round(float(v), 4) for v in grasp]} "
+              f"reach_xy={float(torch.linalg.norm(grasp[:2])):.4f} "
+              f"q_base={[round(float(v), 4) for v in q_base]}")
+
+        step_to(hover, q_base, 0.0, 45)
         if args.debug_grasp:
-            print(f"[debug] object pos: {p.tolist()}")
-            print(f"[debug] hover target: {hover.tolist()}  grasp target: {grasp.tolist()}  lift target: {lift.tolist()}")
-        step_to(hover, q, 0.0, 45)
-        if args.debug_grasp:
-            ee_p, _ = frames.data.target_pos_w[0, eef_idx, :].cpu().clone(), None
-            print(f"[debug] EE pos after hover: {ee_p.tolist()}  (target {hover.tolist()})")
-            robot = env.scene["robot"]
-            finger_body_idx = [j for j, n in enumerate(robot.data.body_names) if "finger" in n.lower()]
-            print(f"[debug] finger body names: {[robot.data.body_names[j] for j in finger_body_idx]}")
-            fb_pos = robot.data.body_pos_w[0, finger_body_idx].cpu().tolist()
-            print(f"[debug] finger body world pos at hover: {fb_pos}")
-        if args.debug_grasp:
-            from robolab.core.world.world_state import get_world
-            world = get_world(env)
-            for i in range(9):
-                step_to(grasp, q, 0.0, 5)
-                ee_p = frames.data.target_pos_w[0, eef_idx, :].cpu().clone()
-                in_c = world.in_contact(args.obj, "gripper", env_id=0)
-                in_c_table = world.in_contact("table", "gripper", env_id=0)
-                robot = env.scene["robot"]
-                arm_idx = [j for j, n in enumerate(robot.data.joint_names) if n.startswith("panda_joint")]
-                jp = robot.data.joint_pos[0, arm_idx].cpu().tolist()
-                jlim = robot.data.soft_joint_pos_limits[0, arm_idx].cpu().tolist()
-                near_limit = [abs(p - lo) < 0.02 or abs(p - hi) < 0.02 for p, (lo, hi) in zip(jp, jlim)]
-                print(f"[debug]   descend step {(i+1)*5}: EE z={ee_p[2]:.4f}  in_contact(obj)={in_c} in_contact(table)={in_c_table} near_limit={near_limit}")
-        else:
-            step_to(grasp, q, 0.0, 45)
-        if args.debug_grasp:
-            ee_p = frames.data.target_pos_w[0, eef_idx, :].cpu().clone()
-            p_now, _ = obj_pose()
-            print(f"[debug] EE pos after descend: {ee_p.tolist()}  (target {grasp.tolist()})  object pos: {p_now.tolist()}")
-        if args.debug_grasp:
-            from robolab.core.world.world_state import get_world
-            world = get_world(env)
-            for i in range(8):
-                step_to(grasp, q, 1.0, 5)
-                in_c = world.in_contact(args.obj, "gripper", env_id=0)
-                p_now, _ = obj_pose()
-                print(f"[debug]   close step {(i+1)*5}: in_contact(obj)={in_c}  object pos: {p_now.tolist()}")
-        else:
-            step_to(grasp, q, 1.0, 20)   # close
-        if args.debug_grasp:
-            robot = env.scene["robot"]
-            finger_idx = [i for i, n in enumerate(robot.data.joint_names) if "finger" in n.lower()]
-            finger_pos = robot.data.joint_pos[0, finger_idx].cpu().tolist()
-            p_now, _ = obj_pose()
-            print(f"[debug] finger joints after close: {finger_pos}  object pos: {p_now.tolist()}")
-            print(f"[debug] object_grabbed after close: {object_grabbed_fn(env, object=args.obj, env_id=0)}")
-        step_to(lift, q, 1.0, 45)    # lift
-        if args.debug_grasp:
-            ee_p = frames.data.target_pos_w[0, eef_idx, :].cpu().clone()
-            p_now, _ = obj_pose()
-            print(f"[debug] EE pos after lift: {ee_p.tolist()}  object pos after lift: {p_now.tolist()}")
-        step_to(lift, q, 1.0, 45)    # hold 3 s
-        if args.debug_grasp:
-            p_now, _ = obj_pose()
-            grabbed = object_grabbed_fn(env, object=args.obj, env_id=0)
-            print(f"[debug] object pos after hold: {p_now.tolist()}  object_grabbed: {grabbed}")
-        return bool(object_picked_up(env, object=args.obj, surface="table", env_id=0))
+            print(f"[debug] flange after hover: {[round(float(v), 4) for v in base_pose()[0]]} "
+                  f"(target {[round(float(v), 4) for v in hover]})")
+        step_to(grasp, q_base, 0.0, 45)
+        fp, _ = base_pose()
+        print(f"[grasp] flange after descend: {[round(float(v), 4) for v in fp]} "
+              f"err={float(torch.linalg.norm(fp - grasp)) * 1000:.1f} mm")
+        step_to(grasp, q_base, 1.0, 25)   # close
+        from robolab.core.world.world_state import get_world
+        world = get_world(env)
+        contact = bool(world.in_contact(args.obj, "gripper", env_id=0))
+        grabbed = bool(object_grabbed_fn(env, object=args.obj, env_id=0))
+        step_to(lift, q_base, 1.0, 45)    # lift
+        step_to(lift, q_base, 1.0, 45)    # hold 3 s
+        root_p1, _, com1, _ = obj_state()
+        rise = float(root_p1[2]) - z0
+        com_rise = float(com1[2]) - com_z0
+        ok = rise >= LIFT_RISE_M
+        print(f"[grasp] contact={contact} grabbed={grabbed} "
+              f"root_rise={rise * 100:.1f} cm centroid_rise={com_rise * 100:.1f} cm -> lifted={ok}")
+        return ok
+
+    def probe_descend():
+        """Measure where the gripper actually is: walk the flange down in 15mm
+        steps at two candidate grasp x,y (the object's centroid and its physics
+        root) and print contact + object drift at each height. The flange z at
+        which the instrumented finger first touches the table gives the real
+        flange->fingertip reach; the x,y at which the object responds says which
+        candidate is the object's true position."""
+        from robolab.core.world.world_state import get_world
+        world = get_world(env)
+        restore_initial_state()
+        settle()
+        root_p, root_q, com, pts_w = obj_state()
+        closing, width = best_closing_dir(pts_w)
+        approach = torch.tensor([0.0, 0.0, -1.0])
+        cur = quat_to_mat(base_pose()[1]) @ CLOSING_LOCAL
+        cur[2] = 0.0
+        if float(cur @ closing) < 0:
+            closing = -closing
+        q_base = wrist_quat(approach, closing)
+        print(f"[probe] root={[round(v, 4) for v in root_p.tolist()]} "
+              f"centroid={[round(v, 4) for v in com.tolist()]} "
+              f"z_span=({float(pts_w[:, 2].min()):.4f},{float(pts_w[:, 2].max()):.4f}) "
+              f"min_width={width:.4f}")
+        for label, xy in (("centroid", com[:2].clone()), ("root", root_p[:2].clone())):
+            restore_initial_state()
+            settle()
+            p_ref, _, _, _ = obj_state()
+            step_to(torch.tensor([float(xy[0]), float(xy[1]), 0.45]), q_base, 0.0, 60)
+            for i in range(22):
+                zc = 0.40 - 0.015 * i
+                tgt = torch.tensor([float(xy[0]), float(xy[1]), zc])
+                step_to(tgt, q_base, 0.0, 10)
+                fp, _ = base_pose()
+                pn, _, _, _ = obj_state()
+                d = pn - p_ref
+                print(f"[probe] {label} cmd_z={zc:.3f} act_z={float(fp[2]):.4f} "
+                      f"err={float(torch.linalg.norm(fp - tgt)) * 1000:5.1f}mm "
+                      f"c_obj={int(bool(world.in_contact(args.obj, 'gripper', env_id=0)))} "
+                      f"c_table={int(bool(world.in_contact('table', 'gripper', env_id=0)))} "
+                      f"obj_d=[{float(d[0]):+.4f},{float(d[1]):+.4f},{float(d[2]):+.4f}]")
+                if float(torch.linalg.norm(d)) > 0.03:
+                    print(f"[probe] {label}: object displaced >3cm, stopping descent")
+                    break
 
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
 
-    if args.check_com:
+    if args.probe_descend:
+        probe_descend()
+    elif args.check_com:
         # spec §3.4: t=0 pose must match across CoM conditions after settling.
         # Events aren't wired into the abs-IK env; emulate the CoM condition by
         # direct set_coms, mirroring make_object_physics_events_cfg semantics.
@@ -286,10 +517,10 @@ def main() -> None:
             coms = view.get_coms().clone()
             coms[..., 2] += dz
             view.set_coms(coms, torch.arange(coms.shape[0]))
-            for _ in range(30):  # settle 2 s, arm commanded to hold
-                step_to(frames.data.target_pos_w[0, eef_idx, :].cpu().clone(), eef_quat(), 0.0, 1)
-            p, qq = obj_pose()
-            results[label] = {"pos": p.tolist(), "quat": qq.tolist()}
+            settle(30)  # settle 2 s, arm commanded to hold
+            o = env.scene[args.obj]
+            results[label] = {"pos": o.data.root_pos_w[0].cpu().tolist(),
+                              "quat": o.data.root_quat_w[0].cpu().tolist()}
             # Restore: undo the += dz on the same cloned tensor, then write it back.
             # (get_coms() returns a (count, 7) [pos+quat] tensor; broadcasting a
             # bare (3,) tensor against it crashes, so we must mutate coms in place.)
