@@ -7,6 +7,15 @@ constructed (and unit-tested) with no server running.
 
 See the [policies README](../README.md) for the shared client architecture.
 
+## Operational constraint: `--num-envs 1` only
+
+The MolmoBot server keeps per-session state (an internal 16-step action
+buffer advanced one action per request). Running `policies/molmobot/run.py`
+with `--num-envs N>1` multiplexes N interleaved env streams into that single
+buffer and produces corrupted actions. Until the server is patched to return
+the full chunk per request (see the study runbook), run MolmoBot evaluations
+with `--num-envs 1`.
+
 ## Install the client
 
 `openpi_client` is required. If it is not already installed in the RoboLab
