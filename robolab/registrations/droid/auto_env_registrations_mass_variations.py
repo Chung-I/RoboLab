@@ -41,7 +41,14 @@ COM_OFFSET_AXIS = "z"
 
 # object -> (body-frame axis, magnitude in meters)
 COM_OFFSET_BY_OBJECT = {
-    "orange_juice_carton": (COM_OFFSET_AXIS, COM_OFFSET_M),
+    # Phase 0 (2026-09-02): the carton RESTS LYING on its ~7 cm face; its
+    # resting quat maps body-y to world-up (|up.axis| = 1.000, tilt 0.7 deg).
+    # A body-z offset therefore acts horizontally and leans it 1.74 deg
+    # (> the 1.0 deg spec-3.4 gate). Offset along body-y instead, magnitude
+    # 0.02 m -- inside the 3.6 cm half-extent, verified invisible by
+    # --check-com. soft_scrub stands upright (body-z vertical, 0.5 deg tilt)
+    # and passes the gate at the full 0.05 m.
+    "orange_juice_carton": ("y", 0.02),
     "soft_scrub": (COM_OFFSET_AXIS, COM_OFFSET_M),
 }
 
