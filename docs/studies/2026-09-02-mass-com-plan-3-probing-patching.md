@@ -200,3 +200,15 @@ def test_targets_masks_and_reparams():
 - Spec §5.1 probing (selectivity, layers, positions) → Tasks 1/3; §5.2 patching best-practices → Task 5 (both directions, CRN, floors — exceeding the spec per synthesis adj.); §5.3 targets/controls/windows → Task 2 masks + Task 3 grid + leakage guard; §5.4 timing anchors → consumed via ft.npz anchors (contact-lag ruling respected: anchor = commanded close). Certificates/bounds (synthesis) → Task 4. Deferred by scope change: every MolmoBot analysis.
 - Known judgment calls recorded for executors: `wrench_resist`'s final definition (stated in Task 2 with the rejected alternatives noted as pre-registration of the reasoning); group-coherent shuffling for time-varying targets (documented compromise); patching budget subsample rule; Task 3 carries no TDD cycle by design (its deliverable is a run of Tasks 1–2 code, gated by the built-in leakage/ceiling assertions).
 - Type consistency: `run_probe_cell/time_resolved/sweep` signatures match between Task 1 interface, Task 1 tests, and Task 3 usage; `build_targets(ds, ftmap=...)` matches Task 2 test and Task 3 CLI; `patch_metrics`/`build_pairs` match Task 5 tests and CLI.
+
+## Pre-registration amendment 1 (2026-09-02, before full-sweep results were computed)
+
+**Trigger:** the Task-3 leakage guard (`mass_log` selectivity < 0.1 pre-contact) FAILED on the smoke pass (sel 0.156–0.366 across layers) with real pre-contact R² *negative* everywhere. Characterization (in task-3-report.md, quarantined smoke data only): the signal is the mass↔object-identity confound — the two objects' calibrated mass ranges barely overlap, `object_id` is decodable at R²=1.000 pre-contact from visual input (as it must be), and predicting each object's mean mass alone yields analytic R²=0.28. Within-object pre-contact mass selectivity is ≈0 (carton −0.014±0.026, scrub −0.031±0.043) — the intended clean null.
+
+**Amendment (binding):**
+1. New PRIMARY mass target `mass_log_c` = `mass_log − log(knee_mass(object))`. Because mass levels are proportional per object (0.3/1.0/1.7 × knee), `mass_log_c` has the identical support {log 0.3, 0, log 1.7} for both objects — it is the hidden within-object mass variation, deconfounded from identity by construction. Target count 17 → 18; EXPECTED list updated in probe_labels.
+2. Leakage guard re-scoped to `mass_log_c`: selectivity < 0.1 at every layer, position 0, mask precontact. Unchanged threshold, unchanged abort semantics.
+3. The old cross-object `mass_log` cells remain in the sweep but are REPORTED as the composite "identity + mass prior" channel, never as hidden-mass evidence. `object_id` pre-contact decodability is reported alongside as the visual-identity channel, explicitly expected ≈1.
+4. Headline mass claims (probes AND patching) use `mass_log_c` (and `mass_inv`/`mass_m` within-object analogues are NOT added — one primary avoids a garden of forking paths; `mass_log` composite is the only secondary).
+
+Rationale documented before any full-sweep or non-diagnostic result was seen; smoke parquets were quarantined during the decision.
