@@ -144,3 +144,68 @@ dims, versions: numpy 1.26.0, sklearn 1.9.0, pandas 3.0.5, pyarrow 25.0.1).
    driven in bounded foreground loops.
 4. wandb naming: dispatch said `phase3-probes` (used); the older plan text said
    `phase0-probes`.
+
+---
+
+# Fix round (review verdict + amendment 2), 2026-09-03
+
+All four review items plus the three amendment-2 items are done. Tests: **71 passed**
+(`uv run --no-sync pytest analysis/mass_com -v`; includes Task-4's 12 parallel
+test_certificates tests present in the worktree).
+
+## IMPORTANT-1 — object_id decodability as pipeline output (narrow option)
+
+New `_objid_unit` worker in `run_probes.py`: one clf cell per layer (position 0, mask
+`precontact`, full control stack) for `object_id`, checkpointed as
+`checkpoints/objid_L??_P0.parquet`, merged into `results.parquet` (18 rows,
+`target == "object_id"`), per-layer BA dict + max in `run_config.json` and the wandb
+summary. **Result: BA = 1.000 at every one of the 18 layers** (shuffled ≈ 0.5) — the
+visual-identity channel is at ceiling pre-contact, exactly as amendment-1 point 3 expects.
+Only the 18 new cells were computed; all 54 grid and 8 time checkpoints were reused
+(0 pending; time checkpoints verified byte-identical by md5 before/after the round).
+
+## IMPORTANT-2 — CI-enforced equivalence pins
+
+`test_probe_core.py::test_svd_closed_form_ridge_matches_sklearn_ridge` (pooled predictions
+vs `sklearn.Ridge(fit_intercept=True)` per fold, atol 1e-8, all 7 alphas, synthetic 60x40)
+and `::test_rotated_basis_logistic_matches_direct_fit` (agreement >= 0.97 documented
+threshold; converged fits agree exactly). Both pass.
+
+## Minors
+
+(a) `r2_vs_layer_*` figures no longer clamp silently: values beyond the axis range are
+clipped for display with a ▼/▲ marker at the axis edge plus a corner annotation pointing
+to results.parquet. (b) `worst` → `max_sel` in `sanity_check`.
+
+## Amendment 2
+
+1. **rank_acc** (mass_log_c only): same-object different-level pairwise ordering accuracy
+   from the real fit's best-alpha pooled held-out predictions (`return_pred` plumbing in
+   probe_core + `sweep(extra_metrics=...)`; no new fits in the sweep path). Unit tests:
+   exact 3/4 case, cross-object/equal-level exclusion, NaN when no informative pair,
+   prediction ties = incorrect. Values: window/P0 max 0.549 (PG11), precontact/P0 max
+   0.331, `late`/`all` below 0.47 everywhere — the secondary STRENGTHENS the primary null
+   ("not even reliably rankable"). Note for Task 6: values far below 0.5 mostly reflect
+   tie-collapse (near-constant regularized predictions), not anti-ordering.
+2. **rmse** (wrench_norm/wrench_resist/contact_norm, physical units N): e.g. PG11/P0
+   window: wrench_norm 3.12 N (real R² 0.240), wrench_resist 3.32 N (0.488), contact_norm
+   1.07 N (0.667). Unit test with hand-computed value.
+3. **Tightened degenerate guard**: `is_degenerate` now flags reg targets with masked
+   variance < 1e-12 (unit-tested). Shipped checkpoints upgraded by the committed refresh
+   script `analysis/mass_com/refresh_results_amendment2.py` (precedent:
+   refresh_meta_f16.py): adds the two secondary columns (810 cells recomputed through the
+   identical code path, every recomputed `real` asserted equal to the stored value at
+   atol 1e-10) and relabels degenerate cells. **Changed rows: exactly the 54
+   contact_norm × precontact cells (R²=1.0 → NaN, degenerate=True) + the two new columns;
+   nothing else.** Script also asserts no time-curve bin is degenerate (none are).
+
+## Parquet/wandb state
+
+`results.parquet`: 3906 rows (3888 grid + 18 object_id), columns + `rank_acc`, `rmse`,
+54 degenerate rows (all contact_norm/precontact, metrics NaN). `timecurves.parquet`
+unchanged. Sanity gates re-evaluated, values identical (ceiling 0.99994 PASS; mass_log_c
+precontact max sel −0.142 PASS). Authoritative wandb run:
+**phase3-probes-v3 <https://wandb.ai/leon129506/mass-com-vla-probing/runs/03bc2njb>**
+(supersedes phase3-probes/npgbej7d and phase3-probes-v2/chq45cef; two earlier
+phase3-probes-v3 attempts crashed at summary upload — wandb rejects non-str dict keys,
+fixed by stringifying the layer keys — and hold partial tables only).

@@ -113,8 +113,9 @@ def _fold_factors(X, groups, splits=None):
     return factors
 
 
-def _cv_pooled_best_factored(factors, y, task):
-    """Best pooled held-out score over ALPHAS, from precomputed factors."""
+def _cv_pooled_best_factored(factors, y, task, return_pred=False):
+    """Best pooled held-out score over ALPHAS, from precomputed factors.
+    With ``return_pred`` also returns the best alpha's pooled predictions."""
     if task == "reg":
         y = np.asarray(y, dtype=np.float64)
         preds = np.empty((len(ALPHAS), len(y)), dtype=np.float64)
@@ -125,8 +126,10 @@ def _cv_pooled_best_factored(factors, y, task):
             for i, alpha in enumerate(ALPHAS):
                 shrink = f["s"] / (f["s"] ** 2 + alpha)
                 preds[i, f["te"]] = f["G"] @ (shrink * c) + y_mean
-        return max(_score(y, preds[i], task) for i in range(len(ALPHAS)))
-    best = -np.inf
+        scores = [_score(y, preds[i], task) for i in range(len(ALPHAS))]
+        best_i = int(np.argmax(scores))
+        return (scores[best_i], preds[best_i]) if return_pred else scores[best_i]
+    best, best_pred = -np.inf, None
     for alpha in ALPHAS:
         pred = np.empty(len(y), dtype=np.asarray(y).dtype)
         for f in factors:
@@ -135,8 +138,10 @@ def _cv_pooled_best_factored(factors, y, task):
             model = LogisticRegression(C=1.0 / alpha, max_iter=1000, class_weight="balanced")
             model.fit(f["Ztr"], y[f["tr"]])
             pred[f["te"]] = model.predict(f["G"])
-        best = max(best, _score(y, pred, task))
-    return best
+        score = _score(y, pred, task)
+        if score > best:
+            best, best_pred = score, pred
+    return (best, best_pred) if return_pred else best
 
 
 def _floor(y, groups, task, splits=None):
@@ -153,12 +158,18 @@ def _floor(y, groups, task, splits=None):
     return _score(y, pred, task)
 
 
-def _cell_from_factors(factors, y, groups, task, seed):
-    """The run_probe_cell statistic evaluated on precomputed fold factors."""
+def _cell_from_factors(factors, y, groups, task, seed, return_pred=False):
+    """The run_probe_cell statistic evaluated on precomputed fold factors.
+    With ``return_pred`` the result dict gains a ``pred`` key: the real
+    fit's best-alpha pooled held-out predictions (used by the amendment-2
+    secondary metrics; never fed back into any primary statistic)."""
     y = np.asarray(y)
     groups = np.asarray(groups)
     rng = np.random.default_rng(seed)
-    real = _cv_pooled_best_factored(factors, y, task)
+    if return_pred:
+        real, pred = _cv_pooled_best_factored(factors, y, task, return_pred=True)
+    else:
+        real = _cv_pooled_best_factored(factors, y, task)
     shuf_scores = [
         _cv_pooled_best_factored(factors, _shuffle_group_coherent(y, groups, rng), task)
         for _ in range(N_SHUFFLES)
@@ -166,7 +177,7 @@ def _cell_from_factors(factors, y, groups, task, seed):
     shuffled = float(np.mean(shuf_scores))
     shuffled_std = float(np.std(shuf_scores))
     floor = _floor(y, groups, task, splits=[(f["tr"], f["te"]) for f in factors])
-    return {
+    out = {
         "real": real,
         "shuffled": shuffled,
         "shuffled_std": shuffled_std,
@@ -175,15 +186,20 @@ def _cell_from_factors(factors, y, groups, task, seed):
         "n": len(y),
         "n_groups": len(np.unique(groups)),
     }
+    if return_pred:
+        out["pred"] = pred
+    return out
 
 
-def run_probe_cell(X, y, groups, task="reg", seed=0):
+def run_probe_cell(X, y, groups, task="reg", seed=0, return_pred=False):
     """One probe cell: real signal, group-coherent shuffled control, floor.
 
     Returns a dict with keys ``real, shuffled, shuffled_std, floor,
     selectivity, n, n_groups``. ``task="reg"``: ridge, metric R² (pooled
     held-out predictions). ``task="clf"``: logistic, metric balanced
-    accuracy.
+    accuracy. ``return_pred=True`` adds a ``pred`` key holding the real
+    fit's best-alpha pooled held-out predictions (secondary-metric input;
+    the base keys are unchanged).
 
     ``shuffled`` is the mean over N_SHUFFLES independent group-coherent
     permutations, each with its own independent ALPHAS search (see module
@@ -202,7 +218,7 @@ def run_probe_cell(X, y, groups, task="reg", seed=0):
     y = np.asarray(y)
     groups = np.asarray(groups)
     factors = _fold_factors(X, groups)
-    return _cell_from_factors(factors, y, groups, task, seed)
+    return _cell_from_factors(factors, y, groups, task, seed, return_pred=return_pred)
 
 
 def time_resolved(X, y, groups, step_rel, bins, task="reg", seed=0):
@@ -218,7 +234,7 @@ def time_resolved(X, y, groups, step_rel, bins, task="reg", seed=0):
     return rows
 
 
-def sweep(acts, targets, groups, masks, layers, positions, task="reg", seed=0):
+def sweep(acts, targets, groups, masks, layers, positions, task="reg", seed=0, extra_metrics=None):
     """Full (target, layer, position, mask) grid of ``run_probe_cell`` calls
     over ``acts[:, layer, position, :]``. ``acts`` is upcast f16->f32 once.
 
@@ -227,10 +243,17 @@ def sweep(acts, targets, groups, masks, layers, positions, task="reg", seed=0):
     and the per-fold SVD factors once per (layer, position, mask), shared
     across all targets and shuffle draws — cell statistics are unchanged
     (each cell still seeds its own rng with ``seed``).
+
+    ``extra_metrics`` (amendment-2 secondaries): optional dict
+    ``{target_name: callable(y_cell, pred_cell, row_idx) -> dict}`` — for
+    those targets the real fit's pooled held-out predictions are captured
+    and the callable's returned items become extra DataFrame columns (NaN
+    for every other row). ``row_idx`` is the cell's original row indices.
     """
     acts = np.asarray(acts, dtype=np.float32)
     groups = np.asarray(groups)
     task_of = task if isinstance(task, dict) else {t: task for t in targets}
+    extra_metrics = extra_metrics or {}
     masks = {m: np.asarray(v) for m, v in masks.items()}
     splits_by_mask = {m: _group_splits(np.zeros((v.sum(), 1)), groups[v]) for m, v in masks.items()}
     cells = {}
@@ -241,9 +264,15 @@ def sweep(acts, targets, groups, masks, layers, positions, task="reg", seed=0):
                 factors = _fold_factors(X_lp[mask], groups[mask], splits=splits_by_mask[mname])
                 for tname, y in targets.items():
                     y = np.asarray(y)
-                    cells[(tname, layer, position, mname)] = _cell_from_factors(
-                        factors, y[mask], groups[mask], task_of[tname], seed
+                    want_pred = tname in extra_metrics
+                    cell = _cell_from_factors(
+                        factors, y[mask], groups[mask], task_of[tname], seed,
+                        return_pred=want_pred,
                     )
+                    if want_pred:
+                        pred = cell.pop("pred")
+                        cell.update(extra_metrics[tname](y[mask], pred, np.flatnonzero(mask)))
+                    cells[(tname, layer, position, mname)] = cell
     rows = [
         {"target": t, "layer": l, "position": p, "mask": m, **cells[(t, l, p, m)]}
         for t in targets

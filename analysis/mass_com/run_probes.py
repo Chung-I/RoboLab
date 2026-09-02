@@ -51,6 +51,8 @@ from analysis.mass_com.probe_labels import build_ftmap, build_targets
 F16_MAX = 65504.0
 CLIP_FRAC = 0.01
 CLF_TARGETS = {"com_axis_cls"}
+RANK_TARGETS = {"mass_log_c"}  # amendment 2: pairwise ordering accuracy
+RMSE_TARGETS = {"wrench_norm", "wrench_resist", "contact_norm"}  # amendment 2: physical-unit RMSE
 TIME_TARGETS = ["mass_log_c", "mass_inv", "wrench_norm", "com_signed", "jointpos_pc1", "step_clock"]
 TIME_LAYERS = [0, 5, 11, 17]
 TIME_POSITIONS = [0, 2]
@@ -88,11 +90,41 @@ def slice_features(acts, layer, position, positions_meta, excluded=None):
 
 
 def is_degenerate(y, task):
-    """True when a probe cell cannot be fit: empty, or clf with < 2 classes."""
+    """True when a probe cell must not be scored: empty; clf with < 2
+    classes; or (amendment 2 item 3) a regression target whose masked
+    variance is < 1e-12 (a constant target scores R²=1.0 trivially for any
+    mean-predicting model — never a real result)."""
     y = np.asarray(y)
     if y.size == 0:
         return True
-    return task == "clf" and len(np.unique(y)) < 2
+    if task == "clf":
+        return len(np.unique(y)) < 2
+    return float(np.var(np.asarray(y, dtype=np.float64))) < 1e-12
+
+
+def rank_accuracy(y_true, y_pred, obj):
+    """Amendment 2 item 1: pairwise ordering accuracy over same-object pairs
+    with different true levels; a pair is correct iff the predictions order
+    it the same way as the truth (prediction ties count as incorrect).
+    Chance 0.5; NaN when no informative pair exists."""
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    obj = np.asarray(obj)
+    same_obj = obj[:, None] == obj[None, :]
+    dy = y_true[:, None] - y_true[None, :]
+    informative = same_obj & (dy != 0) & (np.arange(len(obj))[:, None] < np.arange(len(obj))[None, :])
+    if not informative.any():
+        return float("nan")
+    dp = y_pred[:, None] - y_pred[None, :]
+    correct = (np.sign(dp) == np.sign(dy)) & informative
+    return float(correct.sum() / informative.sum())
+
+
+def rmse(y_true, y_pred):
+    """Pooled held-out RMSE in the target's physical units (amendment 2 item 2)."""
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
 
 def make_bins(lo, hi, width):
@@ -104,6 +136,17 @@ def make_bins(lo, hi, width):
 # ------------------------------------------------------------------- workers
 
 _G = {}  # populated in the parent before fork
+
+
+def _extra_metrics_map():
+    """Amendment-2 secondary-metric callables for sweep/run_probe_cell preds."""
+    def _rank(y, pred, idx):
+        return {"rank_acc": rank_accuracy(y, pred, _G["object_id"][idx])}
+
+    def _rmse(y, pred, idx):
+        return {"rmse": rmse(y, pred)}
+
+    return {**{t: _rank for t in RANK_TARGETS}, **{t: _rmse for t in RMSE_TARGETS}}
 
 
 def _cell_feasible(mask, y, task, groups):
@@ -125,6 +168,7 @@ def _grid_unit(unit):
         t: {m: _cell_feasible(masks[m], targets[t], task_of[t], groups) for m in masks}
         for t in targets
     }
+    extras = _extra_metrics_map()
     sweep_targets = {t: y for t, y in targets.items() if all(feasible[t].values())}
     rows = []
     if sweep_targets:
@@ -133,6 +177,7 @@ def _grid_unit(unit):
             X[:, None, None, :], sweep_targets, groups, ok_masks,
             layers=[0], positions=[0],
             task={t: task_of[t] for t in sweep_targets}, seed=SEED,
+            extra_metrics={t: f for t, f in extras.items() if t in sweep_targets},
         )
         df["layer"] = layer
         df["position"] = position
@@ -145,11 +190,40 @@ def _grid_unit(unit):
             base = {"target": t, "layer": layer, "position": position, "mask": mname}
             if feasible[t][mname]:
                 m = np.asarray(mask)
-                cell = run_probe_cell(X[m], targets[t][m], groups[m], task=task_of[t], seed=SEED)
+                want_pred = t in extras
+                cell = run_probe_cell(
+                    X[m], targets[t][m], groups[m], task=task_of[t], seed=SEED,
+                    return_pred=want_pred,
+                )
+                if want_pred:
+                    pred = cell.pop("pred")
+                    cell.update(extras[t](targets[t][m], pred, np.flatnonzero(m)))
                 rows.append(pd.DataFrame([{**base, **cell, "degenerate": False}]))
             else:
                 rows.append(pd.DataFrame([{**base, **NAN_CELL, "degenerate": True}]))
     out = pd.concat(rows, ignore_index=True)
+    out["wall_s"] = time.time() - t0
+    return unit, out
+
+
+def _objid_unit(unit):
+    """Amendment-1 point 3: object_id pre-contact decodability (the visual-
+    identity channel), one clf cell per layer at position 0, mask precontact.
+    Reported alongside the composite mass_log channel; NOT subject to the
+    mass leakage guard (identity is legitimately visible pre-contact)."""
+    layer, position = unit
+    t0 = time.time()
+    X = slice_features(_G["acts"], layer, position, _G["positions_meta"], _G["excluded"])
+    groups, y = _G["groups"], _G["object_id"]
+    mask = _G["masks"]["precontact"]
+    base = {"target": "object_id", "layer": layer, "position": position, "mask": "precontact"}
+    if _cell_feasible(mask, y, "clf", groups):
+        m = np.asarray(mask)
+        cell = run_probe_cell(X[m], y[m], groups[m], task="clf", seed=SEED)
+        rows = [{**base, **cell, "degenerate": False}]
+    else:
+        rows = [{**base, **NAN_CELL, "degenerate": True}]
+    out = pd.DataFrame(rows)
     out["wall_s"] = time.time() - t0
     return unit, out
 
@@ -210,10 +284,10 @@ def sanity_check(results, layers):
     ml = results[
         (results.target == "mass_log_c") & (results["mask"] == "precontact") & (results.position == 0)
     ]
-    worst = ml.loc[ml.selectivity.idxmax()]
+    max_sel = ml.loc[ml.selectivity.idxmax()]
     leak = {
-        "mass_log_c_precontact_max_selectivity": float(worst.selectivity),
-        "mass_log_c_precontact_argmax_layer": int(worst.layer),
+        "mass_log_c_precontact_max_selectivity": float(max_sel.selectivity),
+        "mass_log_c_precontact_argmax_layer": int(max_sel.layer),
         "n_layers_checked": int(ml.layer.nunique()),
     }
     values = {**ceiling, **leak}
@@ -247,21 +321,36 @@ def make_figures(results, timecurves, out_dir):
     import matplotlib.pyplot as plt
 
     paths = []
+    ylo, yhi = -1.05, 1.05
     for t in FIG_TARGETS:
         fig, ax = plt.subplots(figsize=(8, 5))
         sub = results[results.target == t]
+        any_clipped = False
         for mname, color in MASK_COLORS.items():
             for pos, style in POS_STYLES.items():
                 d = sub[(sub["mask"] == mname) & (sub.position == pos)].sort_values("layer")
                 if d.empty or d.real.isna().all():
                     continue
-                ax.plot(d.layer, d.real, style, color=color, lw=1.5,
+                vals = d.real.to_numpy()
+                ax.plot(d.layer, np.clip(vals, ylo, yhi), style, color=color, lw=1.5,
                         label=f"{mname} / P{pos} {POS_NAMES[pos]}")
+                below, above = vals < ylo, vals > yhi
+                if below.any():
+                    ax.plot(d.layer.to_numpy()[below], np.full(below.sum(), ylo), "v",
+                            color=color, ms=5, clip_on=False)
+                    any_clipped = True
+                if above.any():
+                    ax.plot(d.layer.to_numpy()[above], np.full(above.sum(), yhi), "^",
+                            color=color, ms=5, clip_on=False)
+                    any_clipped = True
         ax.axhline(0, color="k", lw=0.5)
         ax.set_xlabel("PaliGemma layer (P2 dashed = expert stream tap at same depth index)")
         ax.set_ylabel("held-out R² (pooled GroupKFold predictions)")
         ax.set_title(f"{t}: probe R² vs layer (color = phase mask, style = position)")
-        ax.set_ylim(-1.05, 1.05)
+        ax.set_ylim(ylo, yhi)
+        if any_clipped:
+            ax.text(0.99, 0.01, "▼/▲ marker = value beyond axis range (exact value in results.parquet)",
+                    transform=ax.transAxes, ha="right", va="bottom", fontsize=6, color="0.35")
         ax.legend(fontsize=6, ncol=2)
         p = out_dir / f"r2_vs_layer_{t}.png"
         fig.savefig(p, dpi=150, bbox_inches="tight")
@@ -292,7 +381,7 @@ def make_figures(results, timecurves, out_dir):
 
     piv = results[(results["mask"] == "window") & (results.position == 0)].pivot_table(
         index="target", columns="layer", values="selectivity"
-    ).reindex(sorted(results.target.unique()))
+    ).sort_index()
     fig, ax = plt.subplots(figsize=(11, 7))
     im = ax.imshow(piv.values, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
     ax.set_xticks(range(len(piv.columns)), piv.columns)
@@ -328,6 +417,7 @@ def main(argv=None):
                     help="calibrated per-object mass levels; 'medium' is the mass_log_c knee")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--no-wandb", action="store_true")
+    ap.add_argument("--wandb-name", default="phase3-probes")
     args = ap.parse_args(argv)
 
     np.random.seed(SEED)
@@ -367,12 +457,15 @@ def main(argv=None):
     _G.update(
         acts=ds["acts"], positions_meta=meta["positions"], excluded=excluded,
         targets=targets, masks=masks, groups=ds["episode_id"],
-        steps_since_anchor=ds["steps_since_anchor"],
+        steps_since_anchor=ds["steps_since_anchor"], object_id=ds["object_id"],
     )
 
     ckpt = out_dir / "checkpoints"
     grid_units = [(l, p) for l in layers for p in positions]
     results = _run_units(grid_units, _grid_unit, ckpt, "grid", args.workers)
+    objid_units = [(l, 0) for l in layers]
+    objid = _run_units(objid_units, _objid_unit, ckpt, "objid", args.workers)
+    results = pd.concat([results, objid], ignore_index=True)
     time_units = [(l, p) for l in TIME_LAYERS if l in layers for p in TIME_POSITIONS]
     timecurves = _run_units(time_units, _time_unit, ckpt, "time", args.workers)
 
@@ -381,6 +474,13 @@ def main(argv=None):
     print(f"grid rows: {len(results)}, time rows: {len(timecurves)}", flush=True)
 
     sanity = sanity_check(results, layers)
+    # Amendment-1 point 3: the visual-identity channel, with provenance
+    # (rows also live in results.parquet under target == "object_id").
+    # str keys: wandb's summary encoder rejects non-str dict keys
+    objid_ba = {str(int(r.layer)): float(r.real) for r in objid.itertuples()}
+    sanity["object_id_precontact_ba_by_layer"] = objid_ba
+    sanity["object_id_precontact_ba_max"] = max(objid_ba.values())
+    print("object_id precontact BA (pos 0) by layer:", json.dumps(objid_ba), flush=True)
 
     fig_paths = make_figures(results, timecurves, out_dir)
 
@@ -406,7 +506,7 @@ def main(argv=None):
     if not args.no_wandb:
         import wandb
         run = wandb.init(project="mass-com-vla-probing", job_type="analysis",
-                         name="phase3-probes", config=config)
+                         name=args.wandb_name, config=config)
         run.log({"results": wandb.Table(dataframe=results),
                  "timecurves": wandb.Table(dataframe=timecurves)})
         run.log({p.stem: wandb.Image(str(p)) for p in fig_paths})
