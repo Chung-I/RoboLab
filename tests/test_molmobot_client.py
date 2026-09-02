@@ -158,3 +158,21 @@ def test_reset_clears_frame_history(monkeypatch):
     c.reset(env_id=0)
     c.infer(_fake_raw_obs_marked(99), "t", env_id=0)
     assert ws.requests[-1]["exo_camera_1"].ndim == 3  # fresh episode: 1 frame
+
+
+def test_codec_dialects_do_not_interoperate_and_pypi_roundtrips():
+    """Pins the reason _PypiMsgpackWebsocketClient exists: openpi's vendored
+    msgpack_numpy and pypi msgpack-numpy use different ndarray encodings."""
+    import msgpack
+    import msgpack_numpy as pypi_mn
+    from openpi_client import msgpack_numpy as openpi_mn
+
+    payload = {"qpos": {"arm": np.arange(7, dtype=np.float32)}}
+    # cross-dialect: arrays arrive as plain dicts (the live-wire failure mode)
+    crossed = msgpack.unpackb(openpi_mn.packb(payload), object_hook=pypi_mn.decode)
+    assert not isinstance(crossed["qpos"]["arm"], np.ndarray)
+    # same-dialect pypi: round-trips intact, nested included
+    same = msgpack.unpackb(msgpack.packb(payload, default=pypi_mn.encode),
+                           object_hook=pypi_mn.decode)
+    assert isinstance(same["qpos"]["arm"], np.ndarray)
+    assert np.allclose(same["qpos"]["arm"], payload["qpos"]["arm"])

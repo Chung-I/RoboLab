@@ -59,6 +59,54 @@ from robolab.eval.base_client import InferenceClient
 logger = logging.getLogger(__name__)
 
 
+class _PypiMsgpackWebsocketClient:
+    """WebsocketClientPolicy twin speaking the pypi ``msgpack-numpy`` dialect.
+
+    MolmoBot's server packs/unpacks with the pypi package (``b'nd'``-keyed
+    ndarray maps). openpi's vendored codec writes ``b'__ndarray__'`` keys, so
+    arrays cross-decoded between the two dialects arrive as plain dicts --
+    which is exactly what a live wire check caught (qpos arrays turning into
+    dicts server-side). Handshake and framing are otherwise identical to
+    openpi's WebsocketClientPolicy: one metadata frame on connect, then
+    request/response pairs.
+    """
+
+    def __init__(self, host: str, port: int | None = None):
+        import time
+
+        import msgpack
+        import msgpack_numpy
+        import websockets.sync.client
+
+        self._msgpack, self._mn = msgpack, msgpack_numpy
+        uri = host if host.startswith("ws") else f"ws://{host}"
+        if port is not None:
+            uri = f"{uri}:{port}"
+        self._uri = uri
+        logger.info("Waiting for MolmoBot server at %s...", uri)
+        while True:
+            try:
+                conn = websockets.sync.client.connect(
+                    uri, compression=None, max_size=None)
+                self._ws = conn
+                self._server_metadata = msgpack.unpackb(
+                    conn.recv(), object_hook=msgpack_numpy.decode)
+                return
+            except ConnectionRefusedError:
+                logger.info("Still waiting for MolmoBot server...")
+                time.sleep(5)
+
+    def get_server_metadata(self) -> dict:
+        return self._server_metadata
+
+    def infer(self, obs: dict) -> dict:
+        self._ws.send(self._msgpack.packb(obs, default=self._mn.encode))
+        resp = self._ws.recv()
+        if isinstance(resp, str):
+            raise RuntimeError(f"Error in inference server:\n{resp}")
+        return self._msgpack.unpackb(resp, object_hook=self._mn.decode)
+
+
 class MolmoBotDroidJointposClient(InferenceClient):
     # Stock server returns one action per response (see wire-format findings
     # above) -> requery every env step. A --serve-full-chunk server announces
@@ -111,8 +159,7 @@ class MolmoBotDroidJointposClient(InferenceClient):
         return result
 
     def _connect(self):
-        from openpi_client.websocket_client_policy import WebsocketClientPolicy
-        return WebsocketClientPolicy(host=self._host, port=self._port)
+        return _PypiMsgpackWebsocketClient(self._host, self._port)
 
     def _adopt_server_metadata(self) -> None:
         """Full-chunk servers advertise their history contract at connect."""
