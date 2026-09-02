@@ -201,3 +201,12 @@ Both mutate the venv only — no openpi source commits.
 
 Parity artifacts (cml30, kept for reproducibility): `parity_check.py`,
 `parity_jax.npz`, `parity_torch.npz`, all under `/tmp2/chungyili/`.
+
+## Local config name for loading the converted checkpoint
+
+The local openpi checkout has no `pi05_droid_jointpos` entry; the capture (Task 5) loads the
+checkpoint under **`pi05_droid_jointpos_polaris`** (`src/openpi/training/misc/polaris_config.py:29-35`).
+The two configs are inference-equivalent: both construct `Pi0Config(action_horizon=15, pi05=True)`
+and `RLDSDroidDataConfig` applies the same `DroidInputs(PI05)` transform (`config.py:398-399`), so the
+parity PASS above (measured on cml30 under the fork's `pi05_droid_jointpos`) transfers to local
+loading under the polaris name. Plan-3 code should use `pi05_droid_jointpos_polaris` locally.
