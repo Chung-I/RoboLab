@@ -1,0 +1,8066 @@
+{
+ "created": "2026-09-03T04:24:28",
+ "git_sha": "89eb2b1da63e95b23466d13eb3632727aef8a0bd-dirty",
+ "corpus": "output/replay_corpus",
+ "n_pairs_total_before_subsample": 2012,
+ "subsample": {
+  "max_per_cell": 20,
+  "seed": 0
+ },
+ "noise": {
+  "z": "np.random.default_rng(0).standard_normal((15,32)) f32",
+  "z2_reseed": "np.random.default_rng(1).standard_normal((15,32)) f32"
+ },
+ "sites": {
+  "pg_layers_full": [
+   0,
+   3,
+   5,
+   7,
+   9,
+   11,
+   13,
+   15,
+   17
+  ],
+  "pg_layers_reduced": [
+   0,
+   5,
+   9,
+   11,
+   15,
+   17
+  ],
+  "expert_layers": [
+   0,
+   6,
+   12,
+   17
+  ],
+  "pg_blocks": [
+   "img_cam1",
+   "img_cam2",
+   "text",
+   "state"
+  ],
+  "budget_rule": "run the full pg layer set unless the measured projection exceeds 4 h GPU; then drop layers {3, 7, 13} (the reduced set) and document \u2014 pre-authorized by the plan"
+ },
+ "directions": [
+  "a2b",
+  "b2a"
+ ],
+ "floors": {
+  "reseed": "same obs, fresh noise z2, no patch",
+  "degradation": "same site patched from an unrelated episode: the other object, same condition name, family-aligned step (anchor/lift + step_rel, clipped)"
+ },
+ "thresholds": {
+  "min_median_proj": 0.1,
+  "reseed_multiple": 3.0,
+  "baseline_blocks": [
+   "text"
+  ],
+  "rule": "A site is reported causal for a (family, direction) iff its median proj across pairs exceeds min_median_proj, exceeds reseed_multiple x the median |reseed_proj|, exceeds the median |deg_proj| at the same site (degradation floor), and exceeds the per-family/direction baseline = median across pairs of the per-pair MAX proj over non-hypothesized (text) block sites; and the site's median proj is positive in BOTH directions. Text-block sites themselves are floor material, never headline sites."
+ },
+ "pairs": [
+  {
+   "pair_id": 0,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 97,
+   "t_b": 97
+  },
+  {
+   "pair_id": 1,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 98,
+   "t_b": 98
+  },
+  {
+   "pair_id": 2,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 100,
+   "t_b": 100
+  },
+  {
+   "pair_id": 3,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 105,
+   "t_b": 105
+  },
+  {
+   "pair_id": 4,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 108,
+   "t_b": 108
+  },
+  {
+   "pair_id": 5,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 110,
+   "t_b": 110
+  },
+  {
+   "pair_id": 6,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 7,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 26,
+   "t_a": 123,
+   "t_b": 123
+  },
+  {
+   "pair_id": 8,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 31,
+   "t_a": 128,
+   "t_b": 128
+  },
+  {
+   "pair_id": 9,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 32,
+   "t_a": 129,
+   "t_b": 129
+  },
+  {
+   "pair_id": 10,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 33,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 11,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 34,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 12,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 36,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 13,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 40,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 14,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 47,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 15,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 52,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 16,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 53,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 17,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 55,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 18,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 56,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 19,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 58,
+   "t_a": 155,
+   "t_b": 155
+  },
+  {
+   "pair_id": 20,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 0,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 21,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 119,
+   "t_b": 119
+  },
+  {
+   "pair_id": 22,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 2,
+   "t_a": 120,
+   "t_b": 120
+  },
+  {
+   "pair_id": 23,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 121,
+   "t_b": 121
+  },
+  {
+   "pair_id": 24,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 122,
+   "t_b": 122
+  },
+  {
+   "pair_id": 25,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 123,
+   "t_b": 123
+  },
+  {
+   "pair_id": 26,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 124,
+   "t_b": 124
+  },
+  {
+   "pair_id": 27,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 7,
+   "t_a": 125,
+   "t_b": 125
+  },
+  {
+   "pair_id": 28,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 126,
+   "t_b": 126
+  },
+  {
+   "pair_id": 29,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 127,
+   "t_b": 127
+  },
+  {
+   "pair_id": 30,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 129,
+   "t_b": 129
+  },
+  {
+   "pair_id": 31,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 32,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 13,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 33,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 34,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 35,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 36,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 17,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 37,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 38,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 19,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 39,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 40,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 99,
+   "t_b": 99
+  },
+  {
+   "pair_id": 41,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 102,
+   "t_b": 102
+  },
+  {
+   "pair_id": 42,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 108,
+   "t_b": 108
+  },
+  {
+   "pair_id": 43,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 109,
+   "t_b": 109
+  },
+  {
+   "pair_id": 44,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 111,
+   "t_b": 111
+  },
+  {
+   "pair_id": 45,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 112,
+   "t_b": 112
+  },
+  {
+   "pair_id": 46,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 113,
+   "t_b": 113
+  },
+  {
+   "pair_id": 47,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 17,
+   "t_a": 114,
+   "t_b": 114
+  },
+  {
+   "pair_id": 48,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 117,
+   "t_b": 117
+  },
+  {
+   "pair_id": 49,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 50,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 121,
+   "t_b": 121
+  },
+  {
+   "pair_id": 51,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 25,
+   "t_a": 122,
+   "t_b": 122
+  },
+  {
+   "pair_id": 52,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 28,
+   "t_a": 125,
+   "t_b": 125
+  },
+  {
+   "pair_id": 53,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 33,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 54,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 36,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 55,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 38,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 56,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 40,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 57,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 47,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 58,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 48,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 59,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 54,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 60,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 0,
+   "t_a": 118,
+   "t_b": 117
+  },
+  {
+   "pair_id": 61,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 119,
+   "t_b": 118
+  },
+  {
+   "pair_id": 62,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 2,
+   "t_a": 120,
+   "t_b": 119
+  },
+  {
+   "pair_id": 63,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 121,
+   "t_b": 120
+  },
+  {
+   "pair_id": 64,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 122,
+   "t_b": 121
+  },
+  {
+   "pair_id": 65,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 123,
+   "t_b": 122
+  },
+  {
+   "pair_id": 66,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 124,
+   "t_b": 123
+  },
+  {
+   "pair_id": 67,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 126,
+   "t_b": 125
+  },
+  {
+   "pair_id": 68,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 127,
+   "t_b": 126
+  },
+  {
+   "pair_id": 69,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 128,
+   "t_b": 127
+  },
+  {
+   "pair_id": 70,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 129,
+   "t_b": 128
+  },
+  {
+   "pair_id": 71,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 130,
+   "t_b": 129
+  },
+  {
+   "pair_id": 72,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 13,
+   "t_a": 131,
+   "t_b": 130
+  },
+  {
+   "pair_id": 73,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 132,
+   "t_b": 131
+  },
+  {
+   "pair_id": 74,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 133,
+   "t_b": 132
+  },
+  {
+   "pair_id": 75,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 134,
+   "t_b": 133
+  },
+  {
+   "pair_id": 76,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 17,
+   "t_a": 135,
+   "t_b": 134
+  },
+  {
+   "pair_id": 77,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 136,
+   "t_b": 135
+  },
+  {
+   "pair_id": 78,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 19,
+   "t_a": 137,
+   "t_b": 136
+  },
+  {
+   "pair_id": 79,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 138,
+   "t_b": 137
+  },
+  {
+   "pair_id": 80,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 97,
+   "t_b": 97
+  },
+  {
+   "pair_id": 81,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 101,
+   "t_b": 101
+  },
+  {
+   "pair_id": 82,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 108,
+   "t_b": 108
+  },
+  {
+   "pair_id": 83,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 112,
+   "t_b": 112
+  },
+  {
+   "pair_id": 84,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 116,
+   "t_b": 116
+  },
+  {
+   "pair_id": 85,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 117,
+   "t_b": 117
+  },
+  {
+   "pair_id": 86,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 119,
+   "t_b": 119
+  },
+  {
+   "pair_id": 87,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 120,
+   "t_b": 120
+  },
+  {
+   "pair_id": 88,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 121,
+   "t_b": 121
+  },
+  {
+   "pair_id": 89,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 26,
+   "t_a": 123,
+   "t_b": 123
+  },
+  {
+   "pair_id": 90,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 34,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 91,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 37,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 92,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 39,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 93,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 40,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 94,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 41,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 95,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 42,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 96,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 48,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 97,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 54,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 98,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 55,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 99,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 57,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 100,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 119,
+   "t_b": 120
+  },
+  {
+   "pair_id": 101,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 2,
+   "t_a": 120,
+   "t_b": 121
+  },
+  {
+   "pair_id": 102,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 121,
+   "t_b": 122
+  },
+  {
+   "pair_id": 103,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 122,
+   "t_b": 123
+  },
+  {
+   "pair_id": 104,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 123,
+   "t_b": 124
+  },
+  {
+   "pair_id": 105,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 124,
+   "t_b": 125
+  },
+  {
+   "pair_id": 106,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 7,
+   "t_a": 125,
+   "t_b": 126
+  },
+  {
+   "pair_id": 107,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 126,
+   "t_b": 127
+  },
+  {
+   "pair_id": 108,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 127,
+   "t_b": 128
+  },
+  {
+   "pair_id": 109,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 128,
+   "t_b": 129
+  },
+  {
+   "pair_id": 110,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 129,
+   "t_b": 130
+  },
+  {
+   "pair_id": 111,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 130,
+   "t_b": 131
+  },
+  {
+   "pair_id": 112,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 13,
+   "t_a": 131,
+   "t_b": 132
+  },
+  {
+   "pair_id": 113,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 132,
+   "t_b": 133
+  },
+  {
+   "pair_id": 114,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 133,
+   "t_b": 134
+  },
+  {
+   "pair_id": 115,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 134,
+   "t_b": 135
+  },
+  {
+   "pair_id": 116,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 17,
+   "t_a": 135,
+   "t_b": 136
+  },
+  {
+   "pair_id": 117,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 136,
+   "t_b": 137
+  },
+  {
+   "pair_id": 118,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 19,
+   "t_a": 137,
+   "t_b": 138
+  },
+  {
+   "pair_id": 119,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 138,
+   "t_b": 139
+  },
+  {
+   "pair_id": 120,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 99,
+   "t_b": 99
+  },
+  {
+   "pair_id": 121,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 100,
+   "t_b": 100
+  },
+  {
+   "pair_id": 122,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 104,
+   "t_b": 104
+  },
+  {
+   "pair_id": 123,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 107,
+   "t_b": 107
+  },
+  {
+   "pair_id": 124,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 108,
+   "t_b": 108
+  },
+  {
+   "pair_id": 125,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 109,
+   "t_b": 109
+  },
+  {
+   "pair_id": 126,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 111,
+   "t_b": 111
+  },
+  {
+   "pair_id": 127,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 112,
+   "t_b": 112
+  },
+  {
+   "pair_id": 128,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 113,
+   "t_b": 113
+  },
+  {
+   "pair_id": 129,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 130,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 28,
+   "t_a": 125,
+   "t_b": 125
+  },
+  {
+   "pair_id": 131,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 30,
+   "t_a": 127,
+   "t_b": 127
+  },
+  {
+   "pair_id": 132,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 37,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 133,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 41,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 134,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 44,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 135,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 49,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 136,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 50,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 137,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 53,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 138,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 57,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 139,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 59,
+   "t_a": 156,
+   "t_b": 156
+  },
+  {
+   "pair_id": 140,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 0,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 141,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 119,
+   "t_b": 119
+  },
+  {
+   "pair_id": 142,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 2,
+   "t_a": 120,
+   "t_b": 120
+  },
+  {
+   "pair_id": 143,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 121,
+   "t_b": 121
+  },
+  {
+   "pair_id": 144,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 122,
+   "t_b": 122
+  },
+  {
+   "pair_id": 145,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 123,
+   "t_b": 123
+  },
+  {
+   "pair_id": 146,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 124,
+   "t_b": 124
+  },
+  {
+   "pair_id": 147,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 7,
+   "t_a": 125,
+   "t_b": 125
+  },
+  {
+   "pair_id": 148,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 127,
+   "t_b": 127
+  },
+  {
+   "pair_id": 149,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 128,
+   "t_b": 128
+  },
+  {
+   "pair_id": 150,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 129,
+   "t_b": 129
+  },
+  {
+   "pair_id": 151,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 152,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 13,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 153,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 154,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 155,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 156,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 17,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 157,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 158,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 19,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 159,
+   "object": "orange_juice_carton",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 160,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 97,
+   "t_b": 97
+  },
+  {
+   "pair_id": 161,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 98,
+   "t_b": 98
+  },
+  {
+   "pair_id": 162,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 99,
+   "t_b": 99
+  },
+  {
+   "pair_id": 163,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 102,
+   "t_b": 102
+  },
+  {
+   "pair_id": 164,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 113,
+   "t_b": 113
+  },
+  {
+   "pair_id": 165,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 115,
+   "t_b": 115
+  },
+  {
+   "pair_id": 166,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 116,
+   "t_b": 116
+  },
+  {
+   "pair_id": 167,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 168,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 119,
+   "t_b": 119
+  },
+  {
+   "pair_id": 169,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 120,
+   "t_b": 120
+  },
+  {
+   "pair_id": 170,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 26,
+   "t_a": 123,
+   "t_b": 123
+  },
+  {
+   "pair_id": 171,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 27,
+   "t_a": 124,
+   "t_b": 124
+  },
+  {
+   "pair_id": 172,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 33,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 173,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 39,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 174,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 44,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 175,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 45,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 176,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 49,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 177,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 53,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 178,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 54,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 179,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 56,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 180,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 119,
+   "t_b": 118
+  },
+  {
+   "pair_id": 181,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 121,
+   "t_b": 120
+  },
+  {
+   "pair_id": 182,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 122,
+   "t_b": 121
+  },
+  {
+   "pair_id": 183,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 123,
+   "t_b": 122
+  },
+  {
+   "pair_id": 184,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 7,
+   "t_a": 125,
+   "t_b": 124
+  },
+  {
+   "pair_id": 185,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 130,
+   "t_b": 129
+  },
+  {
+   "pair_id": 186,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 132,
+   "t_b": 131
+  },
+  {
+   "pair_id": 187,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 134,
+   "t_b": 133
+  },
+  {
+   "pair_id": 188,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 136,
+   "t_b": 135
+  },
+  {
+   "pair_id": 189,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 138,
+   "t_b": 137
+  },
+  {
+   "pair_id": 190,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 23,
+   "t_a": 141,
+   "t_b": 140
+  },
+  {
+   "pair_id": 191,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 142,
+   "t_b": 141
+  },
+  {
+   "pair_id": 192,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 25,
+   "t_a": 143,
+   "t_b": 142
+  },
+  {
+   "pair_id": 193,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 26,
+   "t_a": 144,
+   "t_b": 143
+  },
+  {
+   "pair_id": 194,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 27,
+   "t_a": 145,
+   "t_b": 144
+  },
+  {
+   "pair_id": 195,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 29,
+   "t_a": 147,
+   "t_b": 146
+  },
+  {
+   "pair_id": 196,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 30,
+   "t_a": 148,
+   "t_b": 147
+  },
+  {
+   "pair_id": 197,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 32,
+   "t_a": 150,
+   "t_b": 149
+  },
+  {
+   "pair_id": 198,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 35,
+   "t_a": 153,
+   "t_b": 152
+  },
+  {
+   "pair_id": 199,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 38,
+   "t_a": 156,
+   "t_b": 155
+  },
+  {
+   "pair_id": 200,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 97,
+   "t_b": 97
+  },
+  {
+   "pair_id": 201,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 98,
+   "t_b": 98
+  },
+  {
+   "pair_id": 202,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 107,
+   "t_b": 107
+  },
+  {
+   "pair_id": 203,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 108,
+   "t_b": 108
+  },
+  {
+   "pair_id": 204,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 113,
+   "t_b": 113
+  },
+  {
+   "pair_id": 205,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 116,
+   "t_b": 116
+  },
+  {
+   "pair_id": 206,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 120,
+   "t_b": 120
+  },
+  {
+   "pair_id": 207,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 121,
+   "t_b": 121
+  },
+  {
+   "pair_id": 208,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 25,
+   "t_a": 122,
+   "t_b": 122
+  },
+  {
+   "pair_id": 209,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 29,
+   "t_a": 126,
+   "t_b": 126
+  },
+  {
+   "pair_id": 210,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 33,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 211,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 34,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 212,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 35,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 213,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 37,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 214,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 38,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 215,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 42,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 216,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 46,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 217,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 49,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 218,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 54,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 219,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 59,
+   "t_a": 156,
+   "t_b": 156
+  },
+  {
+   "pair_id": 220,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 119,
+   "t_b": 120
+  },
+  {
+   "pair_id": 221,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 2,
+   "t_a": 120,
+   "t_b": 121
+  },
+  {
+   "pair_id": 222,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 121,
+   "t_b": 122
+  },
+  {
+   "pair_id": 223,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 122,
+   "t_b": 123
+  },
+  {
+   "pair_id": 224,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 123,
+   "t_b": 124
+  },
+  {
+   "pair_id": 225,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 124,
+   "t_b": 125
+  },
+  {
+   "pair_id": 226,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 126,
+   "t_b": 127
+  },
+  {
+   "pair_id": 227,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 129,
+   "t_b": 130
+  },
+  {
+   "pair_id": 228,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 133,
+   "t_b": 134
+  },
+  {
+   "pair_id": 229,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 138,
+   "t_b": 139
+  },
+  {
+   "pair_id": 230,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 139,
+   "t_b": 140
+  },
+  {
+   "pair_id": 231,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 22,
+   "t_a": 140,
+   "t_b": 141
+  },
+  {
+   "pair_id": 232,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 142,
+   "t_b": 143
+  },
+  {
+   "pair_id": 233,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 27,
+   "t_a": 145,
+   "t_b": 146
+  },
+  {
+   "pair_id": 234,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 28,
+   "t_a": 146,
+   "t_b": 147
+  },
+  {
+   "pair_id": 235,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 31,
+   "t_a": 149,
+   "t_b": 150
+  },
+  {
+   "pair_id": 236,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 33,
+   "t_a": 151,
+   "t_b": 152
+  },
+  {
+   "pair_id": 237,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 35,
+   "t_a": 153,
+   "t_b": 154
+  },
+  {
+   "pair_id": 238,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 36,
+   "t_a": 154,
+   "t_b": 155
+  },
+  {
+   "pair_id": 239,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 37,
+   "t_a": 155,
+   "t_b": 156
+  },
+  {
+   "pair_id": 240,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 99,
+   "t_b": 99
+  },
+  {
+   "pair_id": 241,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 100,
+   "t_b": 100
+  },
+  {
+   "pair_id": 242,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 106,
+   "t_b": 106
+  },
+  {
+   "pair_id": 243,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 108,
+   "t_b": 108
+  },
+  {
+   "pair_id": 244,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 111,
+   "t_b": 111
+  },
+  {
+   "pair_id": 245,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 121,
+   "t_b": 121
+  },
+  {
+   "pair_id": 246,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 25,
+   "t_a": 122,
+   "t_b": 122
+  },
+  {
+   "pair_id": 247,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 26,
+   "t_a": 123,
+   "t_b": 123
+  },
+  {
+   "pair_id": 248,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 28,
+   "t_a": 125,
+   "t_b": 125
+  },
+  {
+   "pair_id": 249,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 34,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 250,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 38,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 251,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 45,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 252,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 46,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 253,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 51,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 254,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 52,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 255,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 53,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 256,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 55,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 257,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 56,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 258,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 57,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 259,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 58,
+   "t_a": 155,
+   "t_b": 155
+  },
+  {
+   "pair_id": 260,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 0,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 261,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 2,
+   "t_a": 120,
+   "t_b": 120
+  },
+  {
+   "pair_id": 262,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 127,
+   "t_b": 127
+  },
+  {
+   "pair_id": 263,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 128,
+   "t_b": 128
+  },
+  {
+   "pair_id": 264,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 129,
+   "t_b": 129
+  },
+  {
+   "pair_id": 265,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 266,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 267,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 22,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 268,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 23,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 269,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 270,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 25,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 271,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 26,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 272,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 27,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 273,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 28,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 274,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 30,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 275,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 31,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 276,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 33,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 277,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 34,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 278,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 36,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 279,
+   "object": "orange_juice_carton",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 38,
+   "t_a": 156,
+   "t_b": 156
+  },
+  {
+   "pair_id": 280,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 97,
+   "t_b": 97
+  },
+  {
+   "pair_id": 281,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 99,
+   "t_b": 99
+  },
+  {
+   "pair_id": 282,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 109,
+   "t_b": 109
+  },
+  {
+   "pair_id": 283,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 112,
+   "t_b": 112
+  },
+  {
+   "pair_id": 284,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 113,
+   "t_b": 113
+  },
+  {
+   "pair_id": 285,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 286,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 119,
+   "t_b": 119
+  },
+  {
+   "pair_id": 287,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 28,
+   "t_a": 125,
+   "t_b": 125
+  },
+  {
+   "pair_id": 288,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 29,
+   "t_a": 126,
+   "t_b": 126
+  },
+  {
+   "pair_id": 289,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 30,
+   "t_a": 127,
+   "t_b": 127
+  },
+  {
+   "pair_id": 290,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 34,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 291,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 36,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 292,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 40,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 293,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 43,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 294,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 45,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 295,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 48,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 296,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 50,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 297,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 52,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 298,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 54,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 299,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 56,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 300,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 0,
+   "t_a": 117,
+   "t_b": 119
+  },
+  {
+   "pair_id": 301,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 120,
+   "t_b": 122
+  },
+  {
+   "pair_id": 302,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 7,
+   "t_a": 124,
+   "t_b": 126
+  },
+  {
+   "pair_id": 303,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 125,
+   "t_b": 127
+  },
+  {
+   "pair_id": 304,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 126,
+   "t_b": 128
+  },
+  {
+   "pair_id": 305,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 128,
+   "t_b": 130
+  },
+  {
+   "pair_id": 306,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 131,
+   "t_b": 133
+  },
+  {
+   "pair_id": 307,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 135,
+   "t_b": 137
+  },
+  {
+   "pair_id": 308,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 19,
+   "t_a": 136,
+   "t_b": 138
+  },
+  {
+   "pair_id": 309,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 138,
+   "t_b": 140
+  },
+  {
+   "pair_id": 310,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 22,
+   "t_a": 139,
+   "t_b": 141
+  },
+  {
+   "pair_id": 311,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 141,
+   "t_b": 143
+  },
+  {
+   "pair_id": 312,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 25,
+   "t_a": 142,
+   "t_b": 144
+  },
+  {
+   "pair_id": 313,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 27,
+   "t_a": 144,
+   "t_b": 146
+  },
+  {
+   "pair_id": 314,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 28,
+   "t_a": 145,
+   "t_b": 147
+  },
+  {
+   "pair_id": 315,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 29,
+   "t_a": 146,
+   "t_b": 148
+  },
+  {
+   "pair_id": 316,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 31,
+   "t_a": 148,
+   "t_b": 150
+  },
+  {
+   "pair_id": 317,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 32,
+   "t_a": 149,
+   "t_b": 151
+  },
+  {
+   "pair_id": 318,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 35,
+   "t_a": 152,
+   "t_b": 154
+  },
+  {
+   "pair_id": 319,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 36,
+   "t_a": 153,
+   "t_b": 155
+  },
+  {
+   "pair_id": 320,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 103,
+   "t_b": 103
+  },
+  {
+   "pair_id": 321,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 105,
+   "t_b": 105
+  },
+  {
+   "pair_id": 322,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 107,
+   "t_b": 107
+  },
+  {
+   "pair_id": 323,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 111,
+   "t_b": 111
+  },
+  {
+   "pair_id": 324,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 112,
+   "t_b": 112
+  },
+  {
+   "pair_id": 325,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 116,
+   "t_b": 116
+  },
+  {
+   "pair_id": 326,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 27,
+   "t_a": 124,
+   "t_b": 124
+  },
+  {
+   "pair_id": 327,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 29,
+   "t_a": 126,
+   "t_b": 126
+  },
+  {
+   "pair_id": 328,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 31,
+   "t_a": 128,
+   "t_b": 128
+  },
+  {
+   "pair_id": 329,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 32,
+   "t_a": 129,
+   "t_b": 129
+  },
+  {
+   "pair_id": 330,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 33,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 331,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 36,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 332,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 45,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 333,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 48,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 334,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 49,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 335,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 51,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 336,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 53,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 337,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 54,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 338,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 58,
+   "t_a": 155,
+   "t_b": 155
+  },
+  {
+   "pair_id": 339,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 59,
+   "t_a": 156,
+   "t_b": 156
+  },
+  {
+   "pair_id": 340,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 0,
+   "t_a": 117,
+   "t_b": 118
+  },
+  {
+   "pair_id": 341,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 118,
+   "t_b": 119
+  },
+  {
+   "pair_id": 342,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 120,
+   "t_b": 121
+  },
+  {
+   "pair_id": 343,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 121,
+   "t_b": 122
+  },
+  {
+   "pair_id": 344,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 122,
+   "t_b": 123
+  },
+  {
+   "pair_id": 345,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 123,
+   "t_b": 124
+  },
+  {
+   "pair_id": 346,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 7,
+   "t_a": 124,
+   "t_b": 125
+  },
+  {
+   "pair_id": 347,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 128,
+   "t_b": 129
+  },
+  {
+   "pair_id": 348,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 129,
+   "t_b": 130
+  },
+  {
+   "pair_id": 349,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 132,
+   "t_b": 133
+  },
+  {
+   "pair_id": 350,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 133,
+   "t_b": 134
+  },
+  {
+   "pair_id": 351,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 17,
+   "t_a": 134,
+   "t_b": 135
+  },
+  {
+   "pair_id": 352,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 137,
+   "t_b": 138
+  },
+  {
+   "pair_id": 353,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 22,
+   "t_a": 139,
+   "t_b": 140
+  },
+  {
+   "pair_id": 354,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 23,
+   "t_a": 140,
+   "t_b": 141
+  },
+  {
+   "pair_id": 355,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 141,
+   "t_b": 142
+  },
+  {
+   "pair_id": 356,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 27,
+   "t_a": 144,
+   "t_b": 145
+  },
+  {
+   "pair_id": 357,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 31,
+   "t_a": 148,
+   "t_b": 149
+  },
+  {
+   "pair_id": 358,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 37,
+   "t_a": 154,
+   "t_b": 155
+  },
+  {
+   "pair_id": 359,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 38,
+   "t_a": 155,
+   "t_b": 156
+  },
+  {
+   "pair_id": 360,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 99,
+   "t_b": 99
+  },
+  {
+   "pair_id": 361,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 103,
+   "t_b": 103
+  },
+  {
+   "pair_id": 362,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 105,
+   "t_b": 105
+  },
+  {
+   "pair_id": 363,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 110,
+   "t_b": 110
+  },
+  {
+   "pair_id": 364,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 112,
+   "t_b": 112
+  },
+  {
+   "pair_id": 365,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 17,
+   "t_a": 114,
+   "t_b": 114
+  },
+  {
+   "pair_id": 366,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 116,
+   "t_b": 116
+  },
+  {
+   "pair_id": 367,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 118,
+   "t_b": 118
+  },
+  {
+   "pair_id": 368,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 25,
+   "t_a": 122,
+   "t_b": 122
+  },
+  {
+   "pair_id": 369,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 31,
+   "t_a": 128,
+   "t_b": 128
+  },
+  {
+   "pair_id": 370,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 32,
+   "t_a": 129,
+   "t_b": 129
+  },
+  {
+   "pair_id": 371,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 37,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 372,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 42,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 373,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 47,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 374,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 48,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 375,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 49,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 376,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 50,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 377,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 54,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 378,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 58,
+   "t_a": 155,
+   "t_b": 155
+  },
+  {
+   "pair_id": 379,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 59,
+   "t_a": 156,
+   "t_b": 156
+  },
+  {
+   "pair_id": 380,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 2,
+   "t_a": 121,
+   "t_b": 120
+  },
+  {
+   "pair_id": 381,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 3,
+   "t_a": 122,
+   "t_b": 121
+  },
+  {
+   "pair_id": 382,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 124,
+   "t_b": 123
+  },
+  {
+   "pair_id": 383,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 127,
+   "t_b": 126
+  },
+  {
+   "pair_id": 384,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 128,
+   "t_b": 127
+  },
+  {
+   "pair_id": 385,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 129,
+   "t_b": 128
+  },
+  {
+   "pair_id": 386,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 130,
+   "t_b": 129
+  },
+  {
+   "pair_id": 387,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 133,
+   "t_b": 132
+  },
+  {
+   "pair_id": 388,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 134,
+   "t_b": 133
+  },
+  {
+   "pair_id": 389,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 17,
+   "t_a": 136,
+   "t_b": 135
+  },
+  {
+   "pair_id": 390,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 137,
+   "t_b": 136
+  },
+  {
+   "pair_id": 391,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 139,
+   "t_b": 138
+  },
+  {
+   "pair_id": 392,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 140,
+   "t_b": 139
+  },
+  {
+   "pair_id": 393,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 143,
+   "t_b": 142
+  },
+  {
+   "pair_id": 394,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 29,
+   "t_a": 148,
+   "t_b": 147
+  },
+  {
+   "pair_id": 395,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 31,
+   "t_a": 150,
+   "t_b": 149
+  },
+  {
+   "pair_id": 396,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 33,
+   "t_a": 152,
+   "t_b": 151
+  },
+  {
+   "pair_id": 397,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 34,
+   "t_a": 153,
+   "t_b": 152
+  },
+  {
+   "pair_id": 398,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 35,
+   "t_a": 154,
+   "t_b": 153
+  },
+  {
+   "pair_id": 399,
+   "object": "orange_juice_carton",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 37,
+   "t_a": 156,
+   "t_b": 155
+  },
+  {
+   "pair_id": 400,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 401,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 402,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 403,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 404,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 405,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 406,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 407,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 408,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 409,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 410,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 411,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 412,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 413,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 414,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 415,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 416,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 417,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 418,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 419,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 420,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 169,
+   "t_b": 167
+  },
+  {
+   "pair_id": 421,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 172,
+   "t_b": 170
+  },
+  {
+   "pair_id": 422,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 182,
+   "t_b": 180
+  },
+  {
+   "pair_id": 423,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 27,
+   "t_a": 188,
+   "t_b": 186
+  },
+  {
+   "pair_id": 424,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 34,
+   "t_a": 195,
+   "t_b": 193
+  },
+  {
+   "pair_id": 425,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 38,
+   "t_a": 199,
+   "t_b": 197
+  },
+  {
+   "pair_id": 426,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 41,
+   "t_a": 202,
+   "t_b": 200
+  },
+  {
+   "pair_id": 427,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 49,
+   "t_a": 210,
+   "t_b": 208
+  },
+  {
+   "pair_id": 428,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 51,
+   "t_a": 212,
+   "t_b": 210
+  },
+  {
+   "pair_id": 429,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 52,
+   "t_a": 213,
+   "t_b": 211
+  },
+  {
+   "pair_id": 430,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 60,
+   "t_a": 221,
+   "t_b": 219
+  },
+  {
+   "pair_id": 431,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 61,
+   "t_a": 222,
+   "t_b": 220
+  },
+  {
+   "pair_id": 432,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 64,
+   "t_a": 225,
+   "t_b": 223
+  },
+  {
+   "pair_id": 433,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 69,
+   "t_a": 230,
+   "t_b": 228
+  },
+  {
+   "pair_id": 434,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 71,
+   "t_a": 232,
+   "t_b": 230
+  },
+  {
+   "pair_id": 435,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 72,
+   "t_a": 233,
+   "t_b": 231
+  },
+  {
+   "pair_id": 436,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 73,
+   "t_a": 234,
+   "t_b": 232
+  },
+  {
+   "pair_id": 437,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 74,
+   "t_a": 235,
+   "t_b": 233
+  },
+  {
+   "pair_id": 438,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 76,
+   "t_a": 237,
+   "t_b": 235
+  },
+  {
+   "pair_id": 439,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassLight_CoMCenter",
+   "family": "carry",
+   "step_rel": 80,
+   "t_a": 241,
+   "t_b": 239
+  },
+  {
+   "pair_id": 440,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 441,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 442,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 443,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 444,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 445,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 446,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 447,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 448,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 449,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 450,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 451,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 452,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 453,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 454,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 17,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 455,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 456,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 457,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 458,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 459,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 460,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 166,
+   "t_b": 165
+  },
+  {
+   "pair_id": 461,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 171,
+   "t_b": 170
+  },
+  {
+   "pair_id": 462,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 13,
+   "t_a": 174,
+   "t_b": 173
+  },
+  {
+   "pair_id": 463,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 177,
+   "t_b": 176
+  },
+  {
+   "pair_id": 464,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 19,
+   "t_a": 180,
+   "t_b": 179
+  },
+  {
+   "pair_id": 465,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 182,
+   "t_b": 181
+  },
+  {
+   "pair_id": 466,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 27,
+   "t_a": 188,
+   "t_b": 187
+  },
+  {
+   "pair_id": 467,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 28,
+   "t_a": 189,
+   "t_b": 188
+  },
+  {
+   "pair_id": 468,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 30,
+   "t_a": 191,
+   "t_b": 190
+  },
+  {
+   "pair_id": 469,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 32,
+   "t_a": 193,
+   "t_b": 192
+  },
+  {
+   "pair_id": 470,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 44,
+   "t_a": 205,
+   "t_b": 204
+  },
+  {
+   "pair_id": 471,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 45,
+   "t_a": 206,
+   "t_b": 205
+  },
+  {
+   "pair_id": 472,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 48,
+   "t_a": 209,
+   "t_b": 208
+  },
+  {
+   "pair_id": 473,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 49,
+   "t_a": 210,
+   "t_b": 209
+  },
+  {
+   "pair_id": 474,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 54,
+   "t_a": 215,
+   "t_b": 214
+  },
+  {
+   "pair_id": 475,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 59,
+   "t_a": 220,
+   "t_b": 219
+  },
+  {
+   "pair_id": 476,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 69,
+   "t_a": 230,
+   "t_b": 229
+  },
+  {
+   "pair_id": 477,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 72,
+   "t_a": 233,
+   "t_b": 232
+  },
+  {
+   "pair_id": 478,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 75,
+   "t_a": 236,
+   "t_b": 235
+  },
+  {
+   "pair_id": 479,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 78,
+   "t_a": 239,
+   "t_b": 238
+  },
+  {
+   "pair_id": 480,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 481,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 482,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 483,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 484,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 485,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 486,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 487,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 488,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 489,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 490,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 491,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 492,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 493,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 17,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 494,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 495,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 496,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 497,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 498,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 499,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 500,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 177,
+   "t_b": 176
+  },
+  {
+   "pair_id": 501,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 181,
+   "t_b": 180
+  },
+  {
+   "pair_id": 502,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 182,
+   "t_b": 181
+  },
+  {
+   "pair_id": 503,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 22,
+   "t_a": 183,
+   "t_b": 182
+  },
+  {
+   "pair_id": 504,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 185,
+   "t_b": 184
+  },
+  {
+   "pair_id": 505,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 25,
+   "t_a": 186,
+   "t_b": 185
+  },
+  {
+   "pair_id": 506,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 31,
+   "t_a": 192,
+   "t_b": 191
+  },
+  {
+   "pair_id": 507,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 34,
+   "t_a": 195,
+   "t_b": 194
+  },
+  {
+   "pair_id": 508,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 36,
+   "t_a": 197,
+   "t_b": 196
+  },
+  {
+   "pair_id": 509,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 40,
+   "t_a": 201,
+   "t_b": 200
+  },
+  {
+   "pair_id": 510,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 41,
+   "t_a": 202,
+   "t_b": 201
+  },
+  {
+   "pair_id": 511,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 46,
+   "t_a": 207,
+   "t_b": 206
+  },
+  {
+   "pair_id": 512,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 47,
+   "t_a": 208,
+   "t_b": 207
+  },
+  {
+   "pair_id": 513,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 48,
+   "t_a": 209,
+   "t_b": 208
+  },
+  {
+   "pair_id": 514,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 70,
+   "t_a": 231,
+   "t_b": 230
+  },
+  {
+   "pair_id": 515,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 74,
+   "t_a": 235,
+   "t_b": 234
+  },
+  {
+   "pair_id": 516,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 75,
+   "t_a": 236,
+   "t_b": 235
+  },
+  {
+   "pair_id": 517,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 78,
+   "t_a": 239,
+   "t_b": 238
+  },
+  {
+   "pair_id": 518,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 81,
+   "t_a": 242,
+   "t_b": 241
+  },
+  {
+   "pair_id": 519,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 83,
+   "t_a": 244,
+   "t_b": 243
+  },
+  {
+   "pair_id": 520,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 521,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 522,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 523,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 524,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 525,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 526,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 527,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 528,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 529,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 530,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 531,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 532,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 533,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 534,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 535,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 536,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 537,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 538,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 539,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 540,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 167,
+   "t_b": 165
+  },
+  {
+   "pair_id": 541,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 173,
+   "t_b": 171
+  },
+  {
+   "pair_id": 542,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 13,
+   "t_a": 174,
+   "t_b": 172
+  },
+  {
+   "pair_id": 543,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 177,
+   "t_b": 175
+  },
+  {
+   "pair_id": 544,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 179,
+   "t_b": 177
+  },
+  {
+   "pair_id": 545,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 20,
+   "t_a": 181,
+   "t_b": 179
+  },
+  {
+   "pair_id": 546,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 182,
+   "t_b": 180
+  },
+  {
+   "pair_id": 547,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 22,
+   "t_a": 183,
+   "t_b": 181
+  },
+  {
+   "pair_id": 548,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 34,
+   "t_a": 195,
+   "t_b": 193
+  },
+  {
+   "pair_id": 549,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 39,
+   "t_a": 200,
+   "t_b": 198
+  },
+  {
+   "pair_id": 550,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 42,
+   "t_a": 203,
+   "t_b": 201
+  },
+  {
+   "pair_id": 551,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 44,
+   "t_a": 205,
+   "t_b": 203
+  },
+  {
+   "pair_id": 552,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 45,
+   "t_a": 206,
+   "t_b": 204
+  },
+  {
+   "pair_id": 553,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 47,
+   "t_a": 208,
+   "t_b": 206
+  },
+  {
+   "pair_id": 554,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 49,
+   "t_a": 210,
+   "t_b": 208
+  },
+  {
+   "pair_id": 555,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 58,
+   "t_a": 219,
+   "t_b": 217
+  },
+  {
+   "pair_id": 556,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 62,
+   "t_a": 223,
+   "t_b": 221
+  },
+  {
+   "pair_id": 557,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 63,
+   "t_a": 224,
+   "t_b": 222
+  },
+  {
+   "pair_id": 558,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 67,
+   "t_a": 228,
+   "t_b": 226
+  },
+  {
+   "pair_id": 559,
+   "object": "soft_scrub",
+   "cond_a": "MassHeavy_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 72,
+   "t_a": 233,
+   "t_b": 231
+  },
+  {
+   "pair_id": 560,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 561,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 562,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 563,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 564,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 565,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 566,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 567,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 568,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 569,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 570,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 571,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 572,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 573,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 574,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 575,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 576,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 577,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 578,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 579,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 580,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 1,
+   "t_a": 160,
+   "t_b": 161
+  },
+  {
+   "pair_id": 581,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 164,
+   "t_b": 165
+  },
+  {
+   "pair_id": 582,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 168,
+   "t_b": 169
+  },
+  {
+   "pair_id": 583,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 11,
+   "t_a": 170,
+   "t_b": 171
+  },
+  {
+   "pair_id": 584,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 17,
+   "t_a": 176,
+   "t_b": 177
+  },
+  {
+   "pair_id": 585,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 177,
+   "t_b": 178
+  },
+  {
+   "pair_id": 586,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 180,
+   "t_b": 181
+  },
+  {
+   "pair_id": 587,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 28,
+   "t_a": 187,
+   "t_b": 188
+  },
+  {
+   "pair_id": 588,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 29,
+   "t_a": 188,
+   "t_b": 189
+  },
+  {
+   "pair_id": 589,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 34,
+   "t_a": 193,
+   "t_b": 194
+  },
+  {
+   "pair_id": 590,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 35,
+   "t_a": 194,
+   "t_b": 195
+  },
+  {
+   "pair_id": 591,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 36,
+   "t_a": 195,
+   "t_b": 196
+  },
+  {
+   "pair_id": 592,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 38,
+   "t_a": 197,
+   "t_b": 198
+  },
+  {
+   "pair_id": 593,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 58,
+   "t_a": 217,
+   "t_b": 218
+  },
+  {
+   "pair_id": 594,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 59,
+   "t_a": 218,
+   "t_b": 219
+  },
+  {
+   "pair_id": 595,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 68,
+   "t_a": 227,
+   "t_b": 228
+  },
+  {
+   "pair_id": 596,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 76,
+   "t_a": 235,
+   "t_b": 236
+  },
+  {
+   "pair_id": 597,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 77,
+   "t_a": 236,
+   "t_b": 237
+  },
+  {
+   "pair_id": 598,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 78,
+   "t_a": 237,
+   "t_b": 238
+  },
+  {
+   "pair_id": 599,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMCenter",
+   "family": "carry",
+   "step_rel": 79,
+   "t_a": 238,
+   "t_b": 239
+  },
+  {
+   "pair_id": 600,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 601,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 602,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 603,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 604,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 605,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 8,
+   "t_a": 138,
+   "t_b": 138
+  },
+  {
+   "pair_id": 606,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 607,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 608,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 609,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 610,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 611,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 612,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 613,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 17,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 614,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 615,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 616,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 617,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 618,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 619,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 620,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 0,
+   "t_a": 159,
+   "t_b": 160
+  },
+  {
+   "pair_id": 621,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 8,
+   "t_a": 167,
+   "t_b": 168
+  },
+  {
+   "pair_id": 622,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 9,
+   "t_a": 168,
+   "t_b": 169
+  },
+  {
+   "pair_id": 623,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 169,
+   "t_b": 170
+  },
+  {
+   "pair_id": 624,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 13,
+   "t_a": 172,
+   "t_b": 173
+  },
+  {
+   "pair_id": 625,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 26,
+   "t_a": 185,
+   "t_b": 186
+  },
+  {
+   "pair_id": 626,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 30,
+   "t_a": 189,
+   "t_b": 190
+  },
+  {
+   "pair_id": 627,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 31,
+   "t_a": 190,
+   "t_b": 191
+  },
+  {
+   "pair_id": 628,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 32,
+   "t_a": 191,
+   "t_b": 192
+  },
+  {
+   "pair_id": 629,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 35,
+   "t_a": 194,
+   "t_b": 195
+  },
+  {
+   "pair_id": 630,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 39,
+   "t_a": 198,
+   "t_b": 199
+  },
+  {
+   "pair_id": 631,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 45,
+   "t_a": 204,
+   "t_b": 205
+  },
+  {
+   "pair_id": 632,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 48,
+   "t_a": 207,
+   "t_b": 208
+  },
+  {
+   "pair_id": 633,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 49,
+   "t_a": 208,
+   "t_b": 209
+  },
+  {
+   "pair_id": 634,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 52,
+   "t_a": 211,
+   "t_b": 212
+  },
+  {
+   "pair_id": 635,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 61,
+   "t_a": 220,
+   "t_b": 221
+  },
+  {
+   "pair_id": 636,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 69,
+   "t_a": 228,
+   "t_b": 229
+  },
+  {
+   "pair_id": 637,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 75,
+   "t_a": 234,
+   "t_b": 235
+  },
+  {
+   "pair_id": 638,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 76,
+   "t_a": 235,
+   "t_b": 236
+  },
+  {
+   "pair_id": 639,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 81,
+   "t_a": 240,
+   "t_b": 241
+  },
+  {
+   "pair_id": 640,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 641,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 642,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 643,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 644,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 645,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 646,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 647,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 648,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 649,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 650,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 651,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 652,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 653,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 654,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 655,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 656,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 657,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 658,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 659,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 660,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 14,
+   "t_a": 173,
+   "t_b": 173
+  },
+  {
+   "pair_id": 661,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 175,
+   "t_b": 175
+  },
+  {
+   "pair_id": 662,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 24,
+   "t_a": 183,
+   "t_b": 183
+  },
+  {
+   "pair_id": 663,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 29,
+   "t_a": 188,
+   "t_b": 188
+  },
+  {
+   "pair_id": 664,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 30,
+   "t_a": 189,
+   "t_b": 189
+  },
+  {
+   "pair_id": 665,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 39,
+   "t_a": 198,
+   "t_b": 198
+  },
+  {
+   "pair_id": 666,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 40,
+   "t_a": 199,
+   "t_b": 199
+  },
+  {
+   "pair_id": 667,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 42,
+   "t_a": 201,
+   "t_b": 201
+  },
+  {
+   "pair_id": 668,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 46,
+   "t_a": 205,
+   "t_b": 205
+  },
+  {
+   "pair_id": 669,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 53,
+   "t_a": 212,
+   "t_b": 212
+  },
+  {
+   "pair_id": 670,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 57,
+   "t_a": 216,
+   "t_b": 216
+  },
+  {
+   "pair_id": 671,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 59,
+   "t_a": 218,
+   "t_b": 218
+  },
+  {
+   "pair_id": 672,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 60,
+   "t_a": 219,
+   "t_b": 219
+  },
+  {
+   "pair_id": 673,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 69,
+   "t_a": 228,
+   "t_b": 228
+  },
+  {
+   "pair_id": 674,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 71,
+   "t_a": 230,
+   "t_b": 230
+  },
+  {
+   "pair_id": 675,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 72,
+   "t_a": 231,
+   "t_b": 231
+  },
+  {
+   "pair_id": 676,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 74,
+   "t_a": 233,
+   "t_b": 233
+  },
+  {
+   "pair_id": 677,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 77,
+   "t_a": 236,
+   "t_b": 236
+  },
+  {
+   "pair_id": 678,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 78,
+   "t_a": 237,
+   "t_b": 237
+  },
+  {
+   "pair_id": 679,
+   "object": "soft_scrub",
+   "cond_a": "MassLight_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 85,
+   "t_a": 244,
+   "t_b": 244
+  },
+  {
+   "pair_id": 680,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 681,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 1,
+   "t_a": 131,
+   "t_b": 131
+  },
+  {
+   "pair_id": 682,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 683,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 684,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 685,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 686,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 687,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 688,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 689,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 690,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 691,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 692,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 693,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 17,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 694,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 695,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 696,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 697,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 698,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 699,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 700,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 4,
+   "t_a": 164,
+   "t_b": 164
+  },
+  {
+   "pair_id": 701,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 166,
+   "t_b": 166
+  },
+  {
+   "pair_id": 702,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 170,
+   "t_b": 170
+  },
+  {
+   "pair_id": 703,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 172,
+   "t_b": 172
+  },
+  {
+   "pair_id": 704,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 15,
+   "t_a": 175,
+   "t_b": 175
+  },
+  {
+   "pair_id": 705,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 178,
+   "t_b": 178
+  },
+  {
+   "pair_id": 706,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 25,
+   "t_a": 185,
+   "t_b": 185
+  },
+  {
+   "pair_id": 707,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 28,
+   "t_a": 188,
+   "t_b": 188
+  },
+  {
+   "pair_id": 708,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 30,
+   "t_a": 190,
+   "t_b": 190
+  },
+  {
+   "pair_id": 709,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 32,
+   "t_a": 192,
+   "t_b": 192
+  },
+  {
+   "pair_id": 710,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 35,
+   "t_a": 195,
+   "t_b": 195
+  },
+  {
+   "pair_id": 711,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 40,
+   "t_a": 200,
+   "t_b": 200
+  },
+  {
+   "pair_id": 712,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 47,
+   "t_a": 207,
+   "t_b": 207
+  },
+  {
+   "pair_id": 713,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 51,
+   "t_a": 211,
+   "t_b": 211
+  },
+  {
+   "pair_id": 714,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 54,
+   "t_a": 214,
+   "t_b": 214
+  },
+  {
+   "pair_id": 715,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 63,
+   "t_a": 223,
+   "t_b": 223
+  },
+  {
+   "pair_id": 716,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 65,
+   "t_a": 225,
+   "t_b": 225
+  },
+  {
+   "pair_id": 717,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 69,
+   "t_a": 229,
+   "t_b": 229
+  },
+  {
+   "pair_id": 718,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 77,
+   "t_a": 237,
+   "t_b": 237
+  },
+  {
+   "pair_id": 719,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMDown",
+   "family": "carry",
+   "step_rel": 82,
+   "t_a": 242,
+   "t_b": 242
+  },
+  {
+   "pair_id": 720,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 721,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 722,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 4,
+   "t_a": 134,
+   "t_b": 134
+  },
+  {
+   "pair_id": 723,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 724,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 725,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 726,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 727,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 728,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 729,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 12,
+   "t_a": 142,
+   "t_b": 142
+  },
+  {
+   "pair_id": 730,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 731,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 732,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 733,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 734,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 735,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 20,
+   "t_a": 150,
+   "t_b": 150
+  },
+  {
+   "pair_id": 736,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 737,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 738,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 739,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 740,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 5,
+   "t_a": 165,
+   "t_b": 164
+  },
+  {
+   "pair_id": 741,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 170,
+   "t_b": 169
+  },
+  {
+   "pair_id": 742,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 172,
+   "t_b": 171
+  },
+  {
+   "pair_id": 743,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 178,
+   "t_b": 177
+  },
+  {
+   "pair_id": 744,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 26,
+   "t_a": 186,
+   "t_b": 185
+  },
+  {
+   "pair_id": 745,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 32,
+   "t_a": 192,
+   "t_b": 191
+  },
+  {
+   "pair_id": 746,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 36,
+   "t_a": 196,
+   "t_b": 195
+  },
+  {
+   "pair_id": 747,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 40,
+   "t_a": 200,
+   "t_b": 199
+  },
+  {
+   "pair_id": 748,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 41,
+   "t_a": 201,
+   "t_b": 200
+  },
+  {
+   "pair_id": 749,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 49,
+   "t_a": 209,
+   "t_b": 208
+  },
+  {
+   "pair_id": 750,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 51,
+   "t_a": 211,
+   "t_b": 210
+  },
+  {
+   "pair_id": 751,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 56,
+   "t_a": 216,
+   "t_b": 215
+  },
+  {
+   "pair_id": 752,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 57,
+   "t_a": 217,
+   "t_b": 216
+  },
+  {
+   "pair_id": 753,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 61,
+   "t_a": 221,
+   "t_b": 220
+  },
+  {
+   "pair_id": 754,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 64,
+   "t_a": 224,
+   "t_b": 223
+  },
+  {
+   "pair_id": 755,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 65,
+   "t_a": 225,
+   "t_b": 224
+  },
+  {
+   "pair_id": 756,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 66,
+   "t_a": 226,
+   "t_b": 225
+  },
+  {
+   "pair_id": 757,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 67,
+   "t_a": 227,
+   "t_b": 226
+  },
+  {
+   "pair_id": 758,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 76,
+   "t_a": 236,
+   "t_b": 235
+  },
+  {
+   "pair_id": 759,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMCenter",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 84,
+   "t_a": 244,
+   "t_b": 243
+  },
+  {
+   "pair_id": 760,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 0,
+   "t_a": 130,
+   "t_b": 130
+  },
+  {
+   "pair_id": 761,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 2,
+   "t_a": 132,
+   "t_b": 132
+  },
+  {
+   "pair_id": 762,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 3,
+   "t_a": 133,
+   "t_b": 133
+  },
+  {
+   "pair_id": 763,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 5,
+   "t_a": 135,
+   "t_b": 135
+  },
+  {
+   "pair_id": 764,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 6,
+   "t_a": 136,
+   "t_b": 136
+  },
+  {
+   "pair_id": 765,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 7,
+   "t_a": 137,
+   "t_b": 137
+  },
+  {
+   "pair_id": 766,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 9,
+   "t_a": 139,
+   "t_b": 139
+  },
+  {
+   "pair_id": 767,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 10,
+   "t_a": 140,
+   "t_b": 140
+  },
+  {
+   "pair_id": 768,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 11,
+   "t_a": 141,
+   "t_b": 141
+  },
+  {
+   "pair_id": 769,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 13,
+   "t_a": 143,
+   "t_b": 143
+  },
+  {
+   "pair_id": 770,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 14,
+   "t_a": 144,
+   "t_b": 144
+  },
+  {
+   "pair_id": 771,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 15,
+   "t_a": 145,
+   "t_b": 145
+  },
+  {
+   "pair_id": 772,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 16,
+   "t_a": 146,
+   "t_b": 146
+  },
+  {
+   "pair_id": 773,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 17,
+   "t_a": 147,
+   "t_b": 147
+  },
+  {
+   "pair_id": 774,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 18,
+   "t_a": 148,
+   "t_b": 148
+  },
+  {
+   "pair_id": 775,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 19,
+   "t_a": 149,
+   "t_b": 149
+  },
+  {
+   "pair_id": 776,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 21,
+   "t_a": 151,
+   "t_b": 151
+  },
+  {
+   "pair_id": 777,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 22,
+   "t_a": 152,
+   "t_b": 152
+  },
+  {
+   "pair_id": 778,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 23,
+   "t_a": 153,
+   "t_b": 153
+  },
+  {
+   "pair_id": 779,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "anchor",
+   "step_rel": 24,
+   "t_a": 154,
+   "t_b": 154
+  },
+  {
+   "pair_id": 780,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 6,
+   "t_a": 166,
+   "t_b": 165
+  },
+  {
+   "pair_id": 781,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 7,
+   "t_a": 167,
+   "t_b": 166
+  },
+  {
+   "pair_id": 782,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 10,
+   "t_a": 170,
+   "t_b": 169
+  },
+  {
+   "pair_id": 783,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 12,
+   "t_a": 172,
+   "t_b": 171
+  },
+  {
+   "pair_id": 784,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 16,
+   "t_a": 176,
+   "t_b": 175
+  },
+  {
+   "pair_id": 785,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 18,
+   "t_a": 178,
+   "t_b": 177
+  },
+  {
+   "pair_id": 786,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 19,
+   "t_a": 179,
+   "t_b": 178
+  },
+  {
+   "pair_id": 787,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 21,
+   "t_a": 181,
+   "t_b": 180
+  },
+  {
+   "pair_id": 788,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 36,
+   "t_a": 196,
+   "t_b": 195
+  },
+  {
+   "pair_id": 789,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 41,
+   "t_a": 201,
+   "t_b": 200
+  },
+  {
+   "pair_id": 790,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 48,
+   "t_a": 208,
+   "t_b": 207
+  },
+  {
+   "pair_id": 791,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 56,
+   "t_a": 216,
+   "t_b": 215
+  },
+  {
+   "pair_id": 792,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 59,
+   "t_a": 219,
+   "t_b": 218
+  },
+  {
+   "pair_id": 793,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 60,
+   "t_a": 220,
+   "t_b": 219
+  },
+  {
+   "pair_id": 794,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 61,
+   "t_a": 221,
+   "t_b": 220
+  },
+  {
+   "pair_id": 795,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 63,
+   "t_a": 223,
+   "t_b": 222
+  },
+  {
+   "pair_id": 796,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 66,
+   "t_a": 226,
+   "t_b": 225
+  },
+  {
+   "pair_id": 797,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 69,
+   "t_a": 229,
+   "t_b": 228
+  },
+  {
+   "pair_id": 798,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 73,
+   "t_a": 233,
+   "t_b": 232
+  },
+  {
+   "pair_id": 799,
+   "object": "soft_scrub",
+   "cond_a": "MassMedium_CoMDown",
+   "cond_b": "MassMedium_CoMUp",
+   "family": "carry",
+   "step_rel": 79,
+   "t_a": 239,
+   "t_b": 238
+  }
+ ]
+}
