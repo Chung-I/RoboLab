@@ -30,7 +30,8 @@ check batch before commit (113 checks, 113 pass; Task-6 report).
    information was available in the raw signals, and π0.5 does not linearly encode it.**
 2. **Causally, no site carries condition-specific content**: 0/160 patching cells (0/80
    collapsed; 26 ineligible by design) pass the frozen thresholds; unrelated-donor patches
-   beat matched patches at every site (1.4–10×, always > 1×). What moves actions is input
+   beat matched patches at every site (always > 1×; 1.4–10× where the matched effect is
+   appreciable, |median proj| ≥ 0.1). What moves actions is input
    passthrough (wrist-image tokens early; state tokens post-liftoff). Object identity, by
    contrast, is at ceiling (BA 1.000, all 18 layers) and identity-swapped patches dominate.
    CoM: null but **uncertified** (data-regime limitation). Wrench/contact: decodable but
@@ -293,7 +294,8 @@ Top-5 sites, carry family (reseed floors 0.17/0.17; text baseline 0.03):
   δ (25th pct 0.031); median aggregation mitigates, and no pair was degenerate.
 - **The degradation floors double as the identity-channel patching experiment**: the
   unrelated donor is the other object's episode, so those patches inject identity-swapped
-  content. They move actions 1.4–10× more than matched condition patches — causally
+  content. They move actions more than matched condition patches at every eligible site
+  (1.4–10× on cells with appreciable matched effect, |median proj| ≥ 0.1) — causally
   completing §3.3's picture: identity-level content drives action formation; within-object
   mass/CoM content influences actions only through what the raw inputs already carry.
 - Methods note: `torch.compile` silently skips per-call forward hooks (a PG17 patch hook was
