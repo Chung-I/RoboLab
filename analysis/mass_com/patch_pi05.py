@@ -81,7 +81,7 @@ from pathlib import Path
 # a PG-17 patch hook fired 0x under compile). The harness registers and
 # removes hooks around every inference, so it must run fully eager; set
 # before any torch import. All runs share the same eager numerics.
-os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+os.environ["TORCHDYNAMO_DISABLE"] = "1"
 
 import numpy as np
 
@@ -700,8 +700,9 @@ def mode_assemble(args):
 
     # harness null check: every PG17 row must be exactly zero-effect
     pg17 = df[(df.site_kind == "pg") & (df.layer == 17)]
-    n_bad = int((pg17.total != 0).sum())
-    print(f"PG17 inertness check: {len(pg17)} rows, {n_bad} with total != 0")
+    n_bad = int(((pg17.total != 0) | (pg17.deg_total != 0)).sum())
+    print(f"PG17 inertness check: {len(pg17)} rows, {n_bad} with "
+          f"total != 0 or deg_total != 0")
     if n_bad:
         print("WARNING: PG17 rows moved actions — harness assumption broken")
 

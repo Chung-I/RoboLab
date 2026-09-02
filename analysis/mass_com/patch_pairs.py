@@ -39,7 +39,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-LIFTOFF_THRESH_M = 0.05  # amendment-3 airborne threshold (z >= init + 0.05 m)
+from probe_labels import CARRY_LIFT_M as LIFTOFF_THRESH_M  # amendment-3
+# airborne threshold (z >= init + 0.05 m); shared with probe_labels' carry
+# mask so the two never drift apart (adj final-review 3).
 _EPS = 1e-12
 
 PAIR_COLUMNS = ["object", "cond_a", "cond_b", "family", "step_rel", "t_a", "t_b"]

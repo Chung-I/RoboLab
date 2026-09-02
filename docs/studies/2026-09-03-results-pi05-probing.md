@@ -232,7 +232,7 @@ text, state} + expert layers {0,6,12,17} × suffix, re-applied at every denoisin
 [adj 10]). Metric = signed projection of the induced action shift onto δ = a_corrupt − a_clean,
 with the full panel (resid, total, per-dim, per-step) [adj 9/19]. Floors per pair: reseed
 (fresh noise z2, no patch) and degradation (same-site patch from the *other object's* episode)
-[adj 18]; baseline = per-pair max |proj| over text sites (the non-hypothesized block — the
+[adj 18]; baseline = per-pair signed max proj over text sites (the frozen rule uses the signed max, the weaker and therefore conservative baseline; the non-hypothesized block — the
 instruction is identical within object) [adj 12/19]. Frozen pass rule: median proj > 0.10,
 > 3× median |reseed_proj|, > median |deg_proj|, > text baseline, and > 0 in BOTH directions.
 
@@ -369,6 +369,13 @@ the data that rule would judge existed.
 
 ## 7. Honest limitations
 
+0. **A pre-registered analysis was descoped without a recorded decision:** the plan's Splits
+   bullet called for an object-disjoint transfer split (train carton → test scrub and vice
+   versa) as an additionally reported number [adj 31]. It was never implemented in any task
+   and its absence went unnoticed until the final whole-branch review. Its stakes are low
+   post-amendment-1 (the primary mass target is within-object by construction, and every
+   probe cell is already null on the episode-grouped split), but the omission is disclosed
+   here rather than silently absorbed; a future corpus revision should restore it.
 1. **n = 10 replay episodes** (5 conditions × 2 objects, one replay each). GroupKFold leaves
    2 episodes per test fold; per-episode-constant targets (mass, CoM) have 3 within-object
    levels total. The certificates and nulls are honest under this regime, but it is a small
@@ -385,8 +392,10 @@ the data that rule would judge existed.
 4. **Linear probes + one small GRU certificate.** "Not linearly encoded" is the certified
    claim; a nonlinear probe family could in principle find structure a ridge probe cannot.
    The GRU certificate also trails the ridge on this corpus (6 fit episodes), so recurrent
-   gates are best-effort; the mass carry gate passed on the linear certificate, which is the
-   right yardstick for a *linear* probe null.
+   gates are best-effort; note that amendment 3 §2's literal recurrent reading (R² ≥ 0.3)
+   FAILS on carry (GRU 0.147) — the certified null rests on the linear certificate (0.548),
+   which the plan's Global Constraints pre-register as the yardstick for a *linear* probe
+   null ("linear probe results are read against the *linear* certificate").
 5. **Passthrough ambiguity.** The random-init bound at 4 key layers (not all 18) brackets
    wrench/contact decodability as mostly input passthrough, but a frozen random network is a
    generous passthrough model (random features of a real input); "≈ 0.05–0.15 above bound"

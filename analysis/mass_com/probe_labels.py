@@ -39,7 +39,7 @@ Masks: ``precontact`` = ds precontact_mask, ``window`` = ds in_window_mask,
 the object is airborne: object_root_pose z >= initial z + 0.05 m, computed
 per episode from the ftmap. The carry mask exists because the pre-registered
 window misses the carry phase in this corpus (scrub lift-off at steps
-158-161 is after its window end 155; the heavy-carton replay drops the
+159-161 is after its window end 155; the heavy-carton replay drops the
 object mid-window), while airborne wrench_fz ~ -m*g is strictly monotone in
 mass — the mask overlaps ``window``/``late`` by design (it is a physical
 phase, not a partition member). Carton episodes have an empty ``late`` mask

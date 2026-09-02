@@ -1,0 +1,23 @@
+{
+ "pair_id": 0,
+ "batch_size": 16,
+ "checks": {
+  "crn_repeat_bit_identical_pg3": {
+   "ok": true,
+   "detail": "max_abs_move_vs_clean=1.01e-03"
+  },
+  "crn_repeat_bit_identical_expert6": {
+   "ok": true,
+   "detail": "max_abs_move_vs_clean=2.59e-03"
+  },
+  "row_position_invariance_bit_identical": {
+   "ok": true,
+   "detail": ""
+  },
+  "pg17_inert_cross_batch_bit_identical": {
+   "ok": true,
+   "detail": ""
+  }
+ },
+ "result": "PASS"
+}

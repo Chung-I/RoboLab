@@ -112,6 +112,21 @@ def test_group_kfold_matches_sklearn():
         np.testing.assert_array_equal(np.sort(te_a), np.sort(te_b))
 
 
+def test_group_kfold_matches_sklearn_tied_group_sizes():
+    # tied-size groups mirroring the real corpus: five groups of 60 steps,
+    # five of 25 (adj final-review item 5) -- sklearn's greedy largest-group-
+    # first bin packing can behave differently with ties than with the
+    # distinct sizes above, so this must be checked fold-for-fold too.
+    sizes = [60] * 5 + [25] * 5
+    groups = np.repeat(np.arange(10), sizes)
+    ours = group_kfold_splits(groups, n_splits=5)
+    ref = list(GroupKFold(n_splits=5).split(np.zeros((len(groups), 1)), groups=groups))
+    assert len(ours) == len(ref) == 5
+    for (tr_a, te_a), (tr_b, te_b) in zip(ours, ref):
+        np.testing.assert_array_equal(np.sort(tr_a), np.sort(tr_b))
+        np.testing.assert_array_equal(np.sort(te_a), np.sort(te_b))
+
+
 # ------------------------------------------------------------- ridge maths
 
 def test_ridge_fit_predict_matches_sklearn():
@@ -172,6 +187,43 @@ def test_rank_accuracy_only_within_object_pairs():
 def test_rank_accuracy_no_valid_pairs_is_nan():
     y = np.ones(4)
     assert np.isnan(rank_accuracy(y, np.arange(4.0), np.zeros(4, dtype=int)))
+
+
+def test_rank_accuracy_matches_run_probes_implementation():
+    """rank_accuracy is duplicated (certificates.py + run_probes.py, adj
+    final-review item 4); the two implementations must agree on every
+    synthetic case, including ties and the no-informative-pairs NaN case."""
+    from analysis.mass_com.run_probes import rank_accuracy as rank_accuracy_rp
+
+    rng = np.random.default_rng(0)
+
+    def _check(y, pred, obj):
+        a = rank_accuracy(y, pred, obj)
+        b = rank_accuracy_rp(y, pred, obj)
+        if np.isnan(a) or np.isnan(b):
+            assert np.isnan(a) and np.isnan(b)
+        else:
+            assert a == pytest.approx(b)
+
+    # random cases across multiple objects with repeated true/pred values
+    for _ in range(20):
+        n = 12
+        obj = rng.integers(0, 3, size=n)
+        y = rng.integers(0, 3, size=n).astype(np.float64)  # ties in y
+        pred = rng.integers(0, 3, size=n).astype(np.float64)  # ties in pred
+        _check(y, pred, obj)
+
+    # explicit ties case: predictions tied where truth differs -> incorrect
+    y = np.array([1.0, 2.0, 3.0])
+    pred = np.array([5.0, 5.0, 5.0])
+    obj = np.zeros(3, dtype=int)
+    _check(y, pred, obj)
+
+    # explicit no-informative-pairs NaN case (single object, constant truth)
+    y = np.ones(5)
+    pred = np.arange(5.0)
+    obj = np.zeros(5, dtype=int)
+    _check(y, pred, obj)
 
 
 # --------------------------------------------- amendment 3 + JSON hygiene
