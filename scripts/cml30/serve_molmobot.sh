@@ -12,5 +12,5 @@ export PATH="$HOME/.local/bin:$PATH"  # uv lives here; non-interactive shells mi
 source "$(dirname "$0")/preflight.sh"
 export CUDA_VISIBLE_DEVICES=$GPU
 export HF_HOME=/tmp2/chungyili/.cache/huggingface
-exec env PYTHONPATH=. python launch_scripts/serve_molmo.py \
+exec env PYTHONPATH=. .venv/bin/python launch_scripts/serve_molmo.py \
   --hf-repo allenai/MolmoBot-DROID --action-type joint_pos --serve-full-chunk
