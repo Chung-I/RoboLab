@@ -106,6 +106,9 @@ class _PypiMsgpackWebsocketClient:
             raise RuntimeError(f"Error in inference server:\n{resp}")
         return self._msgpack.unpackb(resp, object_hook=self._mn.decode)
 
+    def close(self) -> None:
+        self._ws.close()
+
 
 class MolmoBotDroidJointposClient(InferenceClient):
     # Stock server returns one action per response (see wire-format findings
@@ -236,6 +239,19 @@ class MolmoBotDroidJointposClient(InferenceClient):
             if j >= 0:
                 frames.append(buf[j])
         return np.stack(frames) if len(frames) > 1 else frames[0]
+
+    def close(self) -> None:
+        """Close the websocket. The MolmoBot server serializes connections
+        behind a semaphore, so a lingering socket from a finished eval cell
+        deadlocks the next cell's connection (observed live: cell 2 parked at
+        0/450 for 25 min behind cell 1's zombie). websockets.sync connections
+        keep a background thread alive, so GC never closes them implicitly."""
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:  # noqa: BLE001 - teardown must not raise
+                logger.warning("websocket close failed", exc_info=True)
+            self._client = None
 
     def reset(self, *, env_id: int | None = None) -> None:
         if env_id is None:

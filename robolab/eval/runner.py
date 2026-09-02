@@ -286,6 +286,10 @@ def run_evaluation(
             env.reset_eval_state()
             run_idx += 1
 
+        try:
+            client.close()  # free server-side per-connection resources
+        except Exception:  # noqa: BLE001 - teardown must not mask eval results
+            pass
         env.close()
 
     summarize_experiment_results(episode_results, show_timing=True)

@@ -176,3 +176,13 @@ def test_codec_dialects_do_not_interoperate_and_pypi_roundtrips():
                            object_hook=pypi_mn.decode)
     assert isinstance(same["qpos"]["arm"], np.ndarray)
     assert np.allclose(same["qpos"]["arm"], payload["qpos"]["arm"])
+
+
+def test_close_shuts_websocket_and_clears_client(monkeypatch):
+    c, ws = _two_frame_client(monkeypatch)
+    ws.closed = False
+    ws.close = lambda: setattr(ws, "closed", True)
+    c.infer(_fake_raw_obs_marked(1), "t", env_id=0)  # establishes connection
+    c.close()
+    assert ws.closed and c._client is None
+    c.close()  # idempotent
