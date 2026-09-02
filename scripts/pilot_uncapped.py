@@ -87,7 +87,7 @@ def _register_single_medium_cell() -> None:
         tasks="oj_carton_in_crate_task.py",
         env_postfix="_PilotUncappedMedium",
         events_cfg=(lambda m=mass: make_object_physics_events_cfg(
-            "orange_juice_carton", mass_kg=m, com_offset_z_m=0.0)),
+            "orange_juice_carton", mass_kg=m)),
         observations_cfg=ObservationCfg(),
         actions_cfg=DroidJointPositionActionCfg(),
         robot_cfg=DroidCfg,
