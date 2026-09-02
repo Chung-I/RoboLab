@@ -1529,7 +1529,7 @@ uv run python scripts/calibrate_mass.py --task SoftScrubInBinTask  --object soft
 # 2. Phase 1a (cml30: bash scripts/cml30/serve_pi05.sh; local:)
 uv run python policies/pi0_family/run_mass_variation.py --policy pi05 \
     --remote-host cml30.csie.ntu.edu.tw --remote-port 8000 \
-    --num-envs 16 --num-runs 1 --record-image-data --headless
+    --num-envs 16 --num-runs 1 --headless
 # Phase 0 cap check: rerun ONE medium cell uncapped by temporarily setting
 # episode_length_s=60 on the task, compare time-to-success p95 vs 30 s (spec Phase 0.4)
 
@@ -1548,6 +1548,12 @@ uv run python policies/molmobot/run.py \
 uv run python -m analysis.mass_com.metrics output/<pi05_folder> --wandb --run-name pi05-phase1
 uv run python -m analysis.mass_com.metrics output/<molmobot_folder> --wandb --run-name molmobot-phase1
 
+# NOTE (Phase-1 execution, 2026-09-02): --record-image-data is DROPPED from Phase 1 —
+# the recorder accumulates per-step camera tensors on the GPU (isaaclab episode_data
+# torch.cat), ~60 GB/cell at 16 envs x 450 steps x 720p, OOMing the 32 GB 5090 at
+# step ~142. Probe observations come from Phase 2's single-env replays (which fit);
+# Phase-1 action logs are still recorded and can be replayed later if the secondary
+# ecological probe corpus is wanted.
 # 5. commit + push results summaries; Plan 2 (replay corpus + activation capture) starts here
 ```
 
