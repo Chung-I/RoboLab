@@ -1,0 +1,340 @@
+{
+  "checkpoint_path": "/home/chungyili/.cache/openpi/pytorch/pi05_droid_jointpos",
+  "config_name": "pi05_droid_jointpos_polaris",
+  "capture_git_sha": "a6285443e4796008b314c02b9b3c8c76c94a2cf1-dirty",
+  "seed": 0,
+  "noise": {
+    "rng": "np.random.default_rng(0).standard_normal",
+    "shape": [
+      15,
+      32
+    ],
+    "dtype": "float32"
+  },
+  "num_denoise_steps": 10,
+  "layers": {
+    "prefix": [
+      "paligemma.language_model.layers.0",
+      "paligemma.language_model.layers.1",
+      "paligemma.language_model.layers.2",
+      "paligemma.language_model.layers.3",
+      "paligemma.language_model.layers.4",
+      "paligemma.language_model.layers.5",
+      "paligemma.language_model.layers.6",
+      "paligemma.language_model.layers.7",
+      "paligemma.language_model.layers.8",
+      "paligemma.language_model.layers.9",
+      "paligemma.language_model.layers.10",
+      "paligemma.language_model.layers.11",
+      "paligemma.language_model.layers.12",
+      "paligemma.language_model.layers.13",
+      "paligemma.language_model.layers.14",
+      "paligemma.language_model.layers.15",
+      "paligemma.language_model.layers.16",
+      "paligemma.language_model.layers.17"
+    ],
+    "expert": [
+      "gemma_expert.model.layers.0",
+      "gemma_expert.model.layers.1",
+      "gemma_expert.model.layers.2",
+      "gemma_expert.model.layers.3",
+      "gemma_expert.model.layers.4",
+      "gemma_expert.model.layers.5",
+      "gemma_expert.model.layers.6",
+      "gemma_expert.model.layers.7",
+      "gemma_expert.model.layers.8",
+      "gemma_expert.model.layers.9",
+      "gemma_expert.model.layers.10",
+      "gemma_expert.model.layers.11",
+      "gemma_expert.model.layers.12",
+      "gemma_expert.model.layers.13",
+      "gemma_expert.model.layers.14",
+      "gemma_expert.model.layers.15",
+      "gemma_expert.model.layers.16",
+      "gemma_expert.model.layers.17"
+    ],
+    "note": "acts[:, l, p, :]: p in {0,1} from prefix layer l (D=2048); p=2 from expert layer l (D=1024, zero-padded to 2048). Post-block residual stream (GemmaDecoderLayer output).",
+    "prefix_hidden_dim": 2048,
+    "expert_hidden_dim": 1024
+  },
+  "positions": [
+    {
+      "index": 0,
+      "name": "last_prefix_token",
+      "definition": "prefix stream, token LANG_OFFSET + n_lang_valid - 1 (last valid language token of 'Task: ..., State: ...;\\nAction: ')"
+    },
+    {
+      "index": 1,
+      "name": "image_tokens_mean",
+      "definition": "prefix stream, mean over tokens [0,512) (the two valid cameras; padded right-wrist cam [512,768) excluded)"
+    },
+    {
+      "index": 2,
+      "name": "first_suffix_token",
+      "definition": "expert stream, action token 0, captured at the first denoise step (t=1.0, x_t = fixed noise)"
+    }
+  ],
+  "token_blocks": {
+    "img_cam1": [
+      0,
+      256
+    ],
+    "img_cam2": [
+      256,
+      512
+    ],
+    "img_pad_right_wrist": [
+      512,
+      768
+    ],
+    "lang_slots": [
+      768,
+      968
+    ],
+    "suffix": [
+      0,
+      15
+    ],
+    "note": "img/lang ranges index the prefix token sequence (len 968); suffix indexes the expert stream (len 15). text/state/tail sub-blocks of the language region vary per step (state digit count changes); per-step absolute ranges are stored in each acts.npz (lang_text_ranges, lang_state_ranges, lang_tail_ranges); step-0 values per condition are under per_condition.lang_blocks_step0."
+  },
+  "f16_clip": {
+    "clip_value": 65504.0,
+    "note": "activations are clipped to the finite float16 range before saving; per-condition clipped-element counts are in per_condition.n_f16_clipped_elems (observed: ~1 elem/step, layer 17 at last_prefix_token, a Gemma massive-activation dim slightly above 65504 in bf16)"
+  },
+  "determinism_gate": {
+    "steps": [
+      0,
+      97
+    ],
+    "bit_identical": true,
+    "max_abs_diff_acts": 0.0,
+    "max_abs_diff_actions": 0.0,
+    "result": "PASS"
+  },
+  "per_condition": {
+    "orange_juice_carton/MassLight_CoMCenter": {
+      "T": 157,
+      "prompt": "Put the orange juice carton in the grey bin",
+      "wall_time_s": 46.1,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 49,
+      "n_f16_clipped_elems": 4295,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          783
+        ],
+        "state": [
+          783,
+          811
+        ],
+        "tail": [
+          811,
+          816
+        ]
+      }
+    },
+    "orange_juice_carton/MassMedium_CoMCenter": {
+      "T": 157,
+      "prompt": "Put the orange juice carton in the grey bin",
+      "wall_time_s": 44.8,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 49,
+      "n_f16_clipped_elems": 4265,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          783
+        ],
+        "state": [
+          783,
+          811
+        ],
+        "tail": [
+          811,
+          816
+        ]
+      }
+    },
+    "orange_juice_carton/MassHeavy_CoMCenter": {
+      "T": 157,
+      "prompt": "Put the orange juice carton in the grey bin",
+      "wall_time_s": 46.5,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 50,
+      "n_f16_clipped_elems": 3548,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          783
+        ],
+        "state": [
+          783,
+          811
+        ],
+        "tail": [
+          811,
+          816
+        ]
+      }
+    },
+    "orange_juice_carton/MassMedium_CoMUp": {
+      "T": 157,
+      "prompt": "Put the orange juice carton in the grey bin",
+      "wall_time_s": 44.9,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 49,
+      "n_f16_clipped_elems": 4179,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          783
+        ],
+        "state": [
+          783,
+          811
+        ],
+        "tail": [
+          811,
+          816
+        ]
+      }
+    },
+    "orange_juice_carton/MassMedium_CoMDown": {
+      "T": 157,
+      "prompt": "Put the orange juice carton in the grey bin",
+      "wall_time_s": 44.7,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 49,
+      "n_f16_clipped_elems": 4204,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          783
+        ],
+        "state": [
+          783,
+          811
+        ],
+        "tail": [
+          811,
+          816
+        ]
+      }
+    },
+    "soft_scrub/MassLight_CoMCenter": {
+      "T": 245,
+      "prompt": "Put the cleaning bottle in the grey bin",
+      "wall_time_s": 77.6,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 50,
+      "n_f16_clipped_elems": 6994,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          782
+        ],
+        "state": [
+          782,
+          809
+        ],
+        "tail": [
+          809,
+          814
+        ]
+      }
+    },
+    "soft_scrub/MassMedium_CoMCenter": {
+      "T": 245,
+      "prompt": "Put the cleaning bottle in the grey bin",
+      "wall_time_s": 76.4,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 50,
+      "n_f16_clipped_elems": 5050,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          782
+        ],
+        "state": [
+          782,
+          809
+        ],
+        "tail": [
+          809,
+          814
+        ]
+      }
+    },
+    "soft_scrub/MassHeavy_CoMCenter": {
+      "T": 245,
+      "prompt": "Put the cleaning bottle in the grey bin",
+      "wall_time_s": 75.5,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 50,
+      "n_f16_clipped_elems": 10254,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          782
+        ],
+        "state": [
+          782,
+          809
+        ],
+        "tail": [
+          809,
+          814
+        ]
+      }
+    },
+    "soft_scrub/MassMedium_CoMUp": {
+      "T": 245,
+      "prompt": "Put the cleaning bottle in the grey bin",
+      "wall_time_s": 77.6,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 50,
+      "n_f16_clipped_elems": 4728,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          782
+        ],
+        "state": [
+          782,
+          809
+        ],
+        "tail": [
+          809,
+          814
+        ]
+      }
+    },
+    "soft_scrub/MassMedium_CoMDown": {
+      "T": 245,
+      "prompt": "Put the cleaning bottle in the grey bin",
+      "wall_time_s": 82.9,
+      "n_lang_valid_min": 46,
+      "n_lang_valid_max": 50,
+      "n_f16_clipped_elems": 6427,
+      "lang_blocks_step0": {
+        "text": [
+          768,
+          782
+        ],
+        "state": [
+          782,
+          809
+        ],
+        "tail": [
+          809,
+          814
+        ]
+      }
+    }
+  },
+  "output_contract": {
+    "acts": "(T, 18, 3, 2048) float16",
+    "actions_out": "(T, 15, 8) float32"
+  }
+}
