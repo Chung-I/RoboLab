@@ -331,13 +331,31 @@ def extract_step_acts(prefix_records, expert_records, n_lang_valid: int) -> tupl
 # ---------------------------------------------------------------------------
 
 
-def load_policy(checkpoint: str, config_name: str, device: str):
+def load_policy(checkpoint: str, config_name: str, device: str,
+                random_init: bool = False):
     from openpi.policies import policy_config as _policy_config
     from openpi.training import config as _config
 
     cfg = _config.get_config(config_name)
     ckpt = Path(checkpoint).expanduser()
-    policy = _policy_config.create_trained_policy(cfg, ckpt, pytorch_device=device)
+    if random_init:
+        # Untrained-copy bound (Plan-3 Task 4): a fresh PI0Pytorch(config)
+        # with its seeded random initialization, no checkpoint weights.
+        # create_trained_policy is reused for its transform / norm-stats /
+        # device plumbing (identical to the trained capture), but the
+        # safetensors weight load inside load_pytorch is stubbed to a no-op.
+        import safetensors.torch as _st
+
+        orig_load_model = _st.load_model
+        torch.manual_seed(SEED)
+        try:
+            _st.load_model = lambda model, path, **kw: ([], [])
+            policy = _policy_config.create_trained_policy(
+                cfg, ckpt, pytorch_device=device)
+        finally:
+            _st.load_model = orig_load_model
+    else:
+        policy = _policy_config.create_trained_policy(cfg, ckpt, pytorch_device=device)
     assert policy._is_pytorch_model, "expected the converted PyTorch checkpoint"
     return policy
 
@@ -534,6 +552,7 @@ def build_meta(args, lm_names, ex_names, per_condition, gate_verdict,
     return {
         "checkpoint_path": str(Path(args.checkpoint).expanduser()),
         "config_name": args.config_name,
+        "random_init": bool(getattr(args, "random_init", False)),
         "capture_git_sha": git_sha(),
         "seed": SEED,
         "noise": {"rng": "np.random.default_rng(0).standard_normal", "shape": [ACTION_HORIZON, ACTION_DIM_PADDED], "dtype": "float32"},
@@ -590,6 +609,11 @@ def main():
     ap.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT)
     ap.add_argument("--config-name", default=DEFAULT_CONFIG_NAME)
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--random-init", action="store_true",
+                    help="fresh PI0Pytorch(config) with seeded random weights "
+                         "(no checkpoint load); same capture grid — the "
+                         "untrained-copy bound of Plan-3 Task 4. Output meta "
+                         "is marked random_init: true.")
     ap.add_argument("--no-wandb", action="store_true")
     args = ap.parse_args()
 
@@ -597,8 +621,10 @@ def main():
     out_root = Path(args.out)
     conditions = args.conditions or [f"{o}/{c}" for o in OBJECTS for c in CONDITIONS]
 
-    print(f"Loading policy {args.config_name} from {args.checkpoint} ...", flush=True)
-    policy = load_policy(args.checkpoint, args.config_name, args.device)
+    print(f"Loading policy {args.config_name} from {args.checkpoint} "
+          f"(random_init={args.random_init}) ...", flush=True)
+    policy = load_policy(args.checkpoint, args.config_name, args.device,
+                         random_init=args.random_init)
     tap_lm, tap_ex, lm_names, ex_names = attach_taps(policy)
     tokenize_meta = make_tokenizer_meta_fn(policy)
     noise = fixed_noise()
@@ -608,9 +634,11 @@ def main():
         import wandb
         wandb_run = wandb.init(
             project="mass-com-vla-probing", job_type="capture",
-            name="pi05-capture" + ("-gate" if args.test_determinism else ""),
+            name="pi05-capture" + ("-random-init" if args.random_init else "")
+                 + ("-gate" if args.test_determinism else ""),
             config={"checkpoint": str(Path(args.checkpoint).expanduser()),
                     "config_name": args.config_name, "seed": SEED,
+                    "random_init": args.random_init,
                     "noise_shape": [ACTION_HORIZON, ACTION_DIM_PADDED],
                     "conditions": conditions, "git_sha": git_sha()})
 
