@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """One-shot meta.json refresh for an existing Task-5 capture (no model rerun).
 
+One-shot migration script: superseded by capture_pi05.build_meta, which now
+emits all of these fields natively — new captures never need this.
+
 Recomputes, from the shipped acts.npz files:
   - per-condition f16 clip tables (per_condition.<cond>.f16_clip_table)
   - the corpus-wide aggregate clip table (f16_clip.aggregate)

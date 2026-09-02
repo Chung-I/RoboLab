@@ -34,8 +34,31 @@ import numpy as np
 
 OBJECT_IDS = {"orange_juice_carton": 0, "soft_scrub": 1}
 COM_AXIS_IDX = {"x": 0, "y": 1, "z": 2}
-# Calibrated mass levels (kg): carton light/medium/heavy, scrub light/medium/heavy.
-CALIBRATED_MASS_LEVELS = (0.2625, 0.875, 1.4875, 0.1275, 0.425, 0.7225)
+
+# Phase-0 calibration output (single source of truth for mass levels; never
+# re-hardcode calibrated values). Anchored at the repo root, not the cwd:
+# parents: [0]=mass_com, [1]=analysis, [2]=<repo root>.
+CALIBRATION_PATH = (
+    Path(__file__).resolve().parents[2] / "output/calibration/mass_levels.json")
+
+
+def load_calibrated_mass_levels(path: Path | None = None) -> tuple[float, ...]:
+    """Allowed mass values (kg) from the Phase-0 calibration file.
+
+    Flattens every non-metadata object's level values (light/medium/heavy).
+    Raises FileNotFoundError if the calibration file is missing — the probe
+    dataset must never be validated against uncalibrated defaults.
+    """
+    path = CALIBRATION_PATH if path is None else Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Calibration file {path} not found. Run scripts/calibrate_mass.py "
+            "(Plan-2 Phase 0) before assembling the probe dataset.")
+    data = json.loads(path.read_text())
+    return tuple(
+        float(v)
+        for obj, entry in data.items() if not obj.startswith("_")
+        for k, v in entry.items() if not k.startswith("_"))
 
 SCRUB_DRIFT_CAVEAT = (
     "Scrub replay-corpus episodes were built with --source-mode states, so the "
@@ -45,8 +68,12 @@ SCRUB_DRIFT_CAVEAT = (
     "use post-precontact_boundary (or post-anchor windowed) per-step drift instead."
 )
 
-# ft.npz per-step arrays consumed, and scalar keys carried per condition.
-FT_ARRAYS = ("wrench", "contact_force", "joint_pos_achieved", "drift")
+# ft.npz per-step arrays consumed (all T-consistency-checked against acts),
+# and scalar keys carried per condition. "actions" is loaded only for the
+# length check: build_replay_corpus truncates it to the executed step count
+# on early termination, so a mismatch here means a corrupt corpus run.
+FT_ARRAYS = ("wrench", "contact_force", "joint_pos_achieved", "drift",
+             "actions")
 FT_SCALARS = ("mass_kg", "com_axis", "com_offset_m", "anchor_step",
               "precontact_boundary", "matched_window_N")
 
@@ -123,7 +150,7 @@ def verify(out: dict, cond_dicts: list[dict]) -> None:
     for k in ("mass_kg", "com_offset_m", "wrench", "contact_force_norm",
               "joint_pos", "drift"):
         assert np.isfinite(out[k]).all(), f"NaN/Inf in label {k}"
-    levels = np.float32(CALIBRATED_MASS_LEVELS)
+    levels = np.float32(load_calibrated_mass_levels())
     for ep_id, c in enumerate(cond_dicts):
         rows = out["episode_id"] == ep_id
         ep_mass = np.unique(out["mass_kg"][rows])
@@ -164,8 +191,29 @@ def spot_check_alignment(out: dict, cond_dicts: list[dict],
     return picks
 
 
+def _git_provenance() -> tuple[str, bool]:
+    """(HEAD sha, dirty?) of the repo containing this file.
+
+    dirty is True when `git status --porcelain` is non-empty — i.e. the sha
+    alone does not pin the code/data state that produced the artifact. On any
+    git failure returns ("unknown", True) (conservatively dirty).
+    """
+    cwd = Path(__file__).resolve().parent
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+            cwd=cwd, check=True).stdout.strip()
+        dirty = bool(subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True,
+            cwd=cwd, check=True).stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown", True
+    return sha, dirty
+
+
 def build_meta(out: dict, cond_dicts: list[dict], acts_meta: dict,
-               acts_meta_path: str, picks: list[dict]) -> dict:
+               acts_meta_path: str, picks: list[dict],
+               build_note: str = "") -> dict:
     episodes = []
     for ep_id, c in enumerate(cond_dicts):
         episodes.append({
@@ -181,12 +229,7 @@ def build_meta(out: dict, cond_dicts: list[dict], acts_meta: dict,
             "com_offset_m": float(c["com_offset_m"]),
             "sources": {"acts": c["acts_path"], "ft": c["ft_path"]},
         })
-    try:
-        git_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
-            cwd=Path(__file__).resolve().parent, check=True).stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        git_sha = "unknown"
+    git_sha, git_dirty = _git_provenance()
     return {
         "model": "pi05",
         "N": int(out["acts"].shape[0]),
@@ -202,6 +245,8 @@ def build_meta(out: dict, cond_dicts: list[dict], acts_meta: dict,
         "scrub_drift_caveat": SCRUB_DRIFT_CAVEAT,
         "sources": {"activations_meta": acts_meta_path},
         "git_sha": git_sha,
+        "git_dirty": git_dirty,
+        "build_note": build_note,
         "alignment_spot_checks": picks,
         "labels": ["mass_kg", "com_offset_m", "com_axis_idx", "wrench",
                    "contact_force_norm", "joint_pos", "drift",
@@ -232,6 +277,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--corpus", default="output/replay_corpus")
     ap.add_argument("--out", default="output/probe_dataset")
     ap.add_argument("--no-wandb", action="store_true")
+    ap.add_argument("--build-note", default="",
+                    help="Free-text provenance note recorded in meta.json "
+                         "(e.g. why this build/rebuild happened).")
     args = ap.parse_args(argv)
 
     acts_root, corpus_root = Path(args.acts), Path(args.corpus)
@@ -263,7 +311,8 @@ def main(argv: list[str] | None = None) -> None:
 
     npz_path = out_dir / "pi05.npz"
     np.savez(npz_path, **out)
-    meta = build_meta(out, cond_dicts, acts_meta, str(acts_meta_path), picks)
+    meta = build_meta(out, cond_dicts, acts_meta, str(acts_meta_path), picks,
+                      build_note=args.build_note)
     meta_path = out_dir / "meta.json"
     meta_path.write_text(json.dumps(meta, indent=2))
     size_mb = npz_path.stat().st_size / 1e6

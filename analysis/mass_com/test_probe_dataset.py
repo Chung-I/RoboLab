@@ -6,6 +6,7 @@ Pure-numpy tests on synthetic mini-inputs (2 fake conditions, T=4/5).
 Run: uv run --no-sync pytest analysis/mass_com/test_probe_dataset.py -v
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -158,24 +159,67 @@ def test_verify_rejects_nan_label(cond_dicts):
         bpd.verify(out, cond_dicts)
 
 
-def test_load_condition_roundtrip(tmp_path, cond_dicts):
-    src = cond_dicts[0]
+def test_load_calibrated_mass_levels(tmp_path):
+    p = tmp_path / "mass_levels.json"
+    p.write_text(json.dumps({
+        "orange_juice_carton": {"light": 0.1, "medium": 0.2, "heavy": 0.3},
+        "_provenance": {"orange_juice_carton": {"knee_kg": 0.2}},
+        "soft_scrub": {"light": 0.4, "medium": 0.5, "heavy": 0.6,
+                       "_note": "metadata keys are skipped"},
+    }))
+    assert sorted(bpd.load_calibrated_mass_levels(p)) == [
+        0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+
+
+def test_load_calibrated_mass_levels_missing_raises(tmp_path):
+    with pytest.raises(FileNotFoundError, match="calibrate_mass"):
+        bpd.load_calibrated_mass_levels(tmp_path / "nope.json")
+
+
+def test_default_calibration_file_backs_verify():
+    # verify() reads the repo's Phase-0 calibration output; the fixture masses
+    # (carton light 0.2625, scrub heavy 0.7225) must come from that file.
+    levels = bpd.load_calibrated_mass_levels()
+    assert len(levels) == 6
+    assert any(np.isclose(levels, 0.2625, atol=1e-6))
+    assert any(np.isclose(levels, 0.7225, atol=1e-6))
+
+
+def _write_cond_npzs(tmp_path, src, actions_T=None):
+    T = src["acts"].shape[0]
     acts_dir = tmp_path / "acts" / src["object"] / src["condition"]
     ft_dir = tmp_path / "corpus" / src["object"] / src["condition"]
     acts_dir.mkdir(parents=True)
     ft_dir.mkdir(parents=True)
     np.savez(acts_dir / "acts.npz", acts=src["acts"],
-             actions_out=np.zeros((4, 15, 8), np.float32))
+             actions_out=np.zeros((T, 15, 8), np.float32))
     np.savez(ft_dir / "ft.npz",
              wrench=src["wrench"], contact_force=src["contact_force"],
-             applied_torque=np.zeros((4, 7), np.float32),
+             applied_torque=np.zeros((T, 7), np.float32),
              joint_pos_achieved=src["joint_pos_achieved"],
-             object_root_pose=np.zeros((4, 7), np.float32),
-             actions=np.zeros((4, 8), np.float32), drift=src["drift"],
+             object_root_pose=np.zeros((T, 7), np.float32),
+             actions=np.zeros((actions_T if actions_T is not None else T, 8),
+                              np.float32),
+             drift=src["drift"],
              mass_kg=src["mass_kg"], com_axis=src["com_axis"],
              com_offset_m=src["com_offset_m"], anchor_step=src["anchor_step"],
              precontact_boundary=src["precontact_boundary"],
              matched_window_N=src["matched_window_N"])
+
+
+def test_load_condition_rejects_actions_length_mismatch(tmp_path, cond_dicts):
+    # An untruncated commanded action stream (early-terminated replay) must
+    # fail the FT_ARRAYS T-consistency check, not slip through silently.
+    src = cond_dicts[0]
+    _write_cond_npzs(tmp_path, src, actions_T=src["acts"].shape[0] + 3)
+    with pytest.raises(ValueError, match=r"ft\[actions\]"):
+        bpd.load_condition(tmp_path / "acts", tmp_path / "corpus",
+                           src["object"], src["condition"])
+
+
+def test_load_condition_roundtrip(tmp_path, cond_dicts):
+    src = cond_dicts[0]
+    _write_cond_npzs(tmp_path, src)
     cond = bpd.load_condition(tmp_path / "acts", tmp_path / "corpus",
                               src["object"], src["condition"])
     np.testing.assert_array_equal(cond["acts"], src["acts"])

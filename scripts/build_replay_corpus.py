@@ -231,7 +231,12 @@ def main() -> None:
         # by RobolabEnv._reset_idx on freeze).
         end_episode(env)
 
-        actions_arr = np.asarray(actions_np, dtype=np.float32)
+        # On env.all_terminated the step loop breaks early, so only the first
+        # len(logs[...]) commanded actions were executed. Truncate the action
+        # stream to the executed step count so every per-step array in ft.npz
+        # shares one T (build_probe_dataset checks this for all FT_ARRAYS).
+        n_exec = len(logs["joint_pos_achieved"])
+        actions_arr = np.asarray(actions_np, dtype=np.float32)[:n_exec]
         joint_pos_achieved = np.stack(logs["joint_pos_achieved"]).astype(np.float32)
         wrench = np.stack(logs["wrench"]).astype(np.float32)
         applied_torque = np.stack(logs["applied_torque"]).astype(np.float32)
@@ -248,6 +253,14 @@ def main() -> None:
         contact_norm = np.linalg.norm(contact_force, axis=1)
         boundary = precontact_boundary(actions_arr, contact_norm)
         matched_n = matched_window(drift, anchor_step, threshold=0.05)
+
+        per_step = {"wrench": wrench, "contact_force": contact_force,
+                    "applied_torque": applied_torque,
+                    "joint_pos_achieved": joint_pos_achieved,
+                    "object_root_pose": object_root_pose,
+                    "actions": actions_arr, "drift": drift}
+        bad = {k: len(v) for k, v in per_step.items() if len(v) != n_exec}
+        assert not bad, f"per-step ft.npz length mismatch (executed T={n_exec}): {bad}"
 
         ft_path = os.path.join(out_dir, "ft.npz")
         np.savez(

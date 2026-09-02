@@ -33,6 +33,7 @@ docs/doxygen/xml/*
 # Data
 **/data/
 **/output/
+wandb/
 videos/
 misc/paper/last_frames/
 *.code-workspace
