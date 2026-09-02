@@ -76,10 +76,26 @@ class MolmoBotDroidJointposClient(InferenceClient):
         # applied per executed step against the CURRENT qpos, mirroring
         # RealRobotVLAPolicy.get_action (configure_real_robot.py:172-182).
         self._max_joint_delta: np.ndarray | None = None
+        # Multi-frame history contract, adopted from server metadata at connect
+        # (full-chunk servers advertise input_window_size / obs_step_delta).
+        # window 1 => plain single-frame requests, no buffering.
+        self._window: int = 1
+        self._delta: int = 8
+        self._frame_buf: dict[int, dict[str, "deque"]] = {}
+        self._packing_env_id: int = 0
         self._host, self._port = remote_host, remote_port
         self._client = None  # lazy: unit tests never open a socket
 
     def infer(self, obs, instruction, *, env_id: int = 0) -> dict:
+        # Buffer frames while the server's history contract is unknown (before
+        # the first query) and whenever it is multi-frame. Never connect here:
+        # the connection happens lazily in _infer_with_retry, and the first
+        # request legitimately packs a single frame -- correct episode-start
+        # semantics for multi-frame servers, and the only shape single-frame
+        # servers ever need.
+        if self._client is None or self._window > 1:
+            self._push_frames(obs, env_id)
+        self._packing_env_id = env_id
         result = super().infer(obs, instruction, env_id=env_id)
         if self._max_joint_delta is not None:
             action = result["action"]
@@ -98,6 +114,15 @@ class MolmoBotDroidJointposClient(InferenceClient):
         from openpi_client.websocket_client_policy import WebsocketClientPolicy
         return WebsocketClientPolicy(host=self._host, port=self._port)
 
+    def _adopt_server_metadata(self) -> None:
+        """Full-chunk servers advertise their history contract at connect."""
+        meta = self._client.get_server_metadata() or {}
+        if meta.get("full_chunk"):
+            self._window = int(meta.get("input_window_size", 1))
+            self._delta = int(meta.get("obs_step_delta", 8))
+            if not self._horizon_overridden:
+                self.open_loop_horizon = int(meta.get("execute_horizon", 8))
+
     def _infer_with_retry(self, request: dict, max_retries: int = 3) -> dict:
         """Call server, reconnecting up to ``max_retries`` times on connection drop.
 
@@ -108,6 +133,7 @@ class MolmoBotDroidJointposClient(InferenceClient):
 
         if self._client is None:
             self._client = self._connect()
+            self._adopt_server_metadata()
 
         for attempt in range(max_retries):
             try:
@@ -124,9 +150,52 @@ class MolmoBotDroidJointposClient(InferenceClient):
                     self.__class__.__name__, e, attempt + 1, max_retries,
                 )
                 self._client = self._connect()
+                self._adopt_server_metadata()
                 # Flush chunk cache so all envs re-request on next step
                 self._chunks.clear()
                 self._counters.clear()
+
+    def _push_frames(self, raw_obs, env_id: int) -> None:
+        """Append this step's resized camera frames to the per-env history ring.
+
+        Ring length (window-1)*delta + 1 holds exactly the span the model's
+        frame_idx arithmetic reads (e.g. window 2, delta 8 -> frames t-8..t)."""
+        from collections import deque
+        # Before the first server response the window is unknown; buffer a
+        # generous default span so no frames are lost, then shrink/grow to the
+        # advertised contract (rebuilding preserves buffered frames).
+        maxlen = max((self._window - 1) * self._delta + 1, 9)
+        bufs = self._frame_buf.setdefault(env_id, {
+            "exo_camera_1": deque(maxlen=maxlen),
+            "wrist_camera": deque(maxlen=maxlen),
+        })
+        if bufs["exo_camera_1"].maxlen != maxlen:
+            bufs = {cam: deque(buf, maxlen=maxlen) for cam, buf in bufs.items()}
+            self._frame_buf[env_id] = bufs
+        ex = self._extract_observation(raw_obs, env_id=env_id)
+        bufs["exo_camera_1"].append(
+            image_tools.resize_with_pad(ex["right_image"], 360, 640))
+        bufs["wrist_camera"].append(
+            image_tools.resize_with_pad(ex["wrist_image"], 360, 640))
+
+    def _history_stack(self, cam: str) -> np.ndarray:
+        """Frames the model wants: positions len-1-(window-1-i)*delta, oldest
+        first; invalid (pre-episode) positions dropped, mirroring the stock
+        server path near episode start."""
+        buf = self._frame_buf[self._packing_env_id][cam]
+        frames = []
+        for i in range(self._window):
+            j = len(buf) - 1 - (self._window - 1 - i) * self._delta
+            if j >= 0:
+                frames.append(buf[j])
+        return np.stack(frames) if len(frames) > 1 else frames[0]
+
+    def reset(self, *, env_id: int | None = None) -> None:
+        if env_id is None:
+            self._frame_buf.clear()
+        else:
+            self._frame_buf.pop(env_id, None)
+        super().reset(env_id=env_id)
 
     # ---- required hooks (mirrors Pi0DroidJointposClient) ----
     def _extract_observation(self, raw_obs: dict, *, env_id: int = 0) -> dict:
@@ -148,8 +217,12 @@ class MolmoBotDroidJointposClient(InferenceClient):
                 "arm": np.asarray(extracted_obs["joint_position"], np.float32)[:7],
                 "gripper": np.asarray(extracted_obs["gripper_position"], np.float32).reshape(-1),
             },
-            "exo_camera_1": image_tools.resize_with_pad(extracted_obs["right_image"], 360, 640),
-            "wrist_camera": image_tools.resize_with_pad(extracted_obs["wrist_image"], 360, 640),
+            "exo_camera_1": (self._history_stack("exo_camera_1")
+                             if self._window > 1 and self._packing_env_id in self._frame_buf
+                             else image_tools.resize_with_pad(extracted_obs["right_image"], 360, 640)),
+            "wrist_camera": (self._history_stack("wrist_camera")
+                             if self._window > 1 and self._packing_env_id in self._frame_buf
+                             else image_tools.resize_with_pad(extracted_obs["wrist_image"], 360, 640)),
         }
 
     def _query_server(self, request: dict) -> dict:

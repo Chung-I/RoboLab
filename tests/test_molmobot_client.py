@@ -92,3 +92,69 @@ def test_per_step_clamp_noop_when_within_limit(monkeypatch):
     monkeypatch.setattr(c, "_query_server", lambda req: resp)
     a = c.infer(_fake_raw_obs(), "task", env_id=0)["action"]
     assert a[0] == pytest.approx(0.1)
+
+
+class _StubWs:
+    """Stands in for WebsocketClientPolicy: canned metadata + request capture."""
+
+    def __init__(self, metadata, response):
+        self._meta, self._resp = metadata, response
+        self.requests = []
+
+    def get_server_metadata(self):
+        return self._meta
+
+    def infer(self, request):
+        self.requests.append(request)
+        return self._resp
+
+
+def _fake_raw_obs_marked(marker):
+    o = _fake_raw_obs()
+    o["image_obs"]["over_shoulder_left_camera"] = torch.full(
+        (1, 720, 1280, 3), marker, dtype=torch.uint8)
+    o["image_obs"]["wrist_cam"] = torch.full(
+        (1, 720, 1280, 3), marker, dtype=torch.uint8)
+    return o
+
+
+def _two_frame_client(monkeypatch, horizon=None):
+    c = MolmoBotDroidJointposClient(remote_host="localhost", remote_port=9,
+                                    open_loop_horizon=horizon)
+    ws = _StubWs(
+        metadata={"full_chunk": True, "input_window_size": 2,
+                  "obs_step_delta": 8, "execute_horizon": 8},
+        response={"arm": np.zeros((16, 7), np.float32),
+                  "gripper": np.zeros((16, 1), np.float32),
+                  "full_chunk": True, "execute_horizon": 8},
+    )
+    monkeypatch.setattr(c, "_connect", lambda: ws)
+    return c, ws
+
+
+def test_metadata_adopts_window_delta_and_horizon(monkeypatch):
+    c, ws = _two_frame_client(monkeypatch)
+    c.infer(_fake_raw_obs_marked(1), "t", env_id=0)
+    assert (c._window, c._delta) == (2, 8)
+    assert c.open_loop_horizon == 8
+
+
+def test_first_query_sends_single_frame_then_two_frame_stack(monkeypatch):
+    c, ws = _two_frame_client(monkeypatch, horizon=1)  # query every step
+    for t in range(10):
+        c.infer(_fake_raw_obs_marked(t * 10), "t", env_id=0)
+    first, ninth = ws.requests[0], ws.requests[8]
+    assert first["exo_camera_1"].ndim == 3          # t=0: no t-8 frame yet
+    assert ninth["exo_camera_1"].shape[0] == 2       # t=8: stack [t-8, t]
+    assert int(ninth["exo_camera_1"][0, 0, 0, 0]) == 0    # oldest = t0 marker
+    assert int(ninth["exo_camera_1"][1, 0, 0, 0]) == 80   # newest = t8 marker
+    assert ninth["wrist_camera"].shape[0] == 2
+
+
+def test_reset_clears_frame_history(monkeypatch):
+    c, ws = _two_frame_client(monkeypatch, horizon=1)
+    for t in range(9):
+        c.infer(_fake_raw_obs_marked(t), "t", env_id=0)
+    c.reset(env_id=0)
+    c.infer(_fake_raw_obs_marked(99), "t", env_id=0)
+    assert ws.requests[-1]["exo_camera_1"].ndim == 3  # fresh episode: 1 frame
