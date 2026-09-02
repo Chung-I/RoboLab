@@ -221,3 +221,14 @@ Rationale documented before any full-sweep or non-diagnostic result was seen; sm
 2. **RMSE in physical units (secondary):** for wrench targets (wrench_norm, wrench_resist, contact_norm), report pooled held-out RMSE in Newtons alongside R².
 3. **Degenerate guard tightened:** a cell whose masked target variance < 1e-12 (or a clf cell with a single class present) is flagged `degenerate=True` and its metrics set to NaN — never scored. Applies retroactively to the known constant cell (contact_norm/precontact ≡ 0); its R²=1.0 entries are relabeled degenerate in the shipped parquet by a documented refresh script, not hand-edited.
 4. Interpretation rule: secondaries may STRENGTHEN a null or positive stated on the primary ("not even rankable"), never establish a claim the primary doesn't support.
+
+## Pre-registration amendment 3 (2026-09-03, carry mask)
+
+**Trigger:** Task-4 review's physics investigation (control-side evidence only; no model-side result was consulted). The pre-registered `window` mask misses the carry phase: scrub first lift-off is at steps 158–160 in all 5 conditions but its window ends at 155 (zero airborne steps in-window); the heavy-carton replay drops the object mid-window (airborne 115–138 of [97,157)), mixing carry and post-drop rows. Yet airborne wrench_fz ≈ −m·g within 5–20%, strictly monotone in mass in all 10 conditions — the information channel exists precisely where the mask isn't looking.
+
+**Amendment (binding):**
+1. New phase mask `carry`: steps where the object is airborne — object_root_pose z ≥ initial z + 0.05 m (per episode, from ft.npz; threshold chosen from the control data's clear bimodality, before any model-side carry-phase result is computed). Added to the mask set for certificates, probes, and the random-init bound; masks {precontact, window, late, all} keep their existing definitions and results.
+2. The mass certificate gate (R² ≥ 0.3 recurrent) is evaluated ADDITIONALLY on `carry`; the pre-registered `window` gate result (FAIL) remains reported with its mechanism.
+3. The Task-3 probe grid gains `carry` cells for all 19 targets (same machinery, same guards); the mass-null claim in T6 is stated on `carry` (where the certificate has its only chance of passing) with `window` reported alongside.
+4. Heavy-carton mid-window drop and scrub post-window lift-off are corpus facts to be stated in T6; the drop event is itself mass-caused physics and its rows stay in `window` (no row surgery).
+5. Interpretation is sequential and pre-committed: if the carry certificate PASSES and the carry probe stays null → certified null ("information available, not linearly encoded"). If the carry certificate FAILS even on airborne rows → the null stays uncertified (data-regime limitation), stated as such. No third path.
