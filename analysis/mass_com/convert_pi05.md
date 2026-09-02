@@ -147,6 +147,48 @@ bar (> 0.1 rad mean) that would BLOCK. The converted PyTorch weights are
 faithful to the JAX checkpoint within the tolerance expected from a
 float32-to-bf16 precision change and are cleared for replay-corpus capture.
 
+## Local capture environment fixes (Task 5)
+
+Two one-time fixes were needed before the local machine's openpi venv
+(`~/Codes/openpi/.venv`, openpi @ `215abfb`) could run the converted
+checkpoint for activation capture (`analysis/mass_com/capture_pi05.py`).
+Both mutate the venv only — no openpi source commits.
+
+1. **`transformers_replace` was not applied locally** (the Task-4 precedent
+   above applied it on cml30's fork checkout only). Symptom:
+   `ImportError: cannot import name 'check' from 'transformers.models.siglip'`,
+   and `PI0Pytorch.__init__` refuses to construct without the patch. The
+   installed `transformers==4.53.2` matches the pin, so only the copy step
+   was needed:
+
+   ```bash
+   cp -r ~/Codes/openpi/src/openpi/models_pytorch/transformers_replace/* \
+       ~/Codes/openpi/.venv/lib/python3.11/site-packages/transformers/
+   # verify:
+   ~/Codes/openpi/.venv/bin/python -c "from transformers.models.siglip import check; \
+       print(check.check_whether_transformers_replace_is_installed_correctly())"  # True
+   ```
+
+2. **torch was the cu126 build, which has no sm_120 kernels** — the local
+   RTX 5090 (compute capability 12.0) failed every GPU op with
+   `CUDA error: no kernel image is available for execution on the device`
+   (supported archs of cu126 wheels stop at sm_90). Swapped to the cu128
+   build of the *same* torch/torchvision versions:
+
+   ```bash
+   uv pip install --python ~/Codes/openpi/.venv/bin/python \
+       --index-url https://download.pytorch.org/whl/cu128 \
+       "torch==2.7.1+cu128" "torchvision==0.22.1+cu128"
+   # verify:
+   ~/Codes/openpi/.venv/bin/python -c "import torch; \
+       x = torch.randn(64,64,device='cuda',dtype=torch.bfloat16); \
+       print((x@x).float().abs().sum().item() > 0)"  # True
+   ```
+
+   Note: re-running `uv sync` inside `~/Codes/openpi` would revert both fixes
+   (reinstalling cu126 torch and a clean transformers); reapply them after any
+   sync.
+
 ## Checkpoint locations
 
 - JAX (source, unmodified): cml30

@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Pi0.5 activation capture over the replay corpus (Plan-2 Task 5).
 
-Runs with the openpi venv (~/Codes/openpi/.venv), NOT the RoboLab venv:
+Runs with the openpi venv (~/Codes/openpi/.venv), NOT the RoboLab venv.
+The venv needs two one-time fixes on this machine (transformers_replace
+applied into site-packages, torch cu126 -> cu128 for the RTX 5090's sm_120);
+exact commands are documented in analysis/mass_com/convert_pi05.md, section
+"Local capture environment fixes (Task 5)".
 
-    ~/Codes/openpi/.venv/bin/python analysis/mass_com/capture_pi05.py \
+    ~/Codes/openpi/.venv/bin/python analysis/mass_com/capture_pi05.py \\
         --corpus output/replay_corpus --out output/activations/pi05
 
 For every corpus step it rebuilds the exact observation the live
@@ -175,6 +179,79 @@ def to_f16_clipped(vec: np.ndarray) -> tuple[np.ndarray, int]:
     vec = np.asarray(vec, dtype=np.float32)
     n_clipped = int((np.abs(vec) > F16_MAX).sum())
     return np.clip(vec, -F16_MAX, F16_MAX).astype(np.float16), n_clipped
+
+
+def compute_clip_table(acts: np.ndarray, top_n: int = 10) -> dict:
+    """Summarize f16-saturated elements of an acts array (T, L, P, D).
+
+    Saved activations were clipped to +-F16_MAX, so |value| == F16_MAX marks a
+    (near-certainly) clipped element. Returns:
+      total              -- clipped element count over the whole array
+      per_layer_position -- [{layer, position, count}] for nonzero cells,
+                            sorted by count desc
+      top_dims           -- [{layer, position, dim, n_steps_clipped,
+                            frac_steps}] top `top_n` dims by step count
+    """
+    T = acts.shape[0]
+    mask = np.abs(acts) >= np.float16(F16_MAX)
+    total = int(mask.sum())
+    if total == 0:
+        return {"total": 0, "per_layer_position": [], "top_dims": []}
+    per_lp = mask.sum(axis=(0, 3))  # (L, P)
+    per_layer_position = [
+        {"layer": int(l), "position": int(p), "count": int(per_lp[l, p])}
+        for l, p in zip(*np.nonzero(per_lp))
+    ]
+    per_layer_position.sort(key=lambda e: (-e["count"], e["layer"], e["position"]))
+    per_dim = mask.sum(axis=0)  # (L, P, D) -> steps clipped per (l, p, d)
+    idx = np.nonzero(per_dim)
+    entries = [
+        {"layer": int(l), "position": int(p), "dim": int(d),
+         "n_steps_clipped": int(per_dim[l, p, d]),
+         "frac_steps": round(float(per_dim[l, p, d]) / T, 4)}
+        for l, p, d in zip(*idx)
+    ]
+    entries.sort(key=lambda e: (-e["n_steps_clipped"], e["layer"], e["position"], e["dim"]))
+    return {"total": total, "per_layer_position": per_layer_position,
+            "top_dims": entries[:top_n]}
+
+
+def aggregate_clip_tables(acts_npz_paths, top_n: int = 10) -> dict:
+    """Aggregate f16-clip statistics across several acts.npz files.
+
+    Same schema as compute_clip_table, with counts summed over all files and
+    frac_steps relative to the total step count.
+    """
+    per_lp = None
+    per_dim = None
+    total_steps = 0
+    for path in acts_npz_paths:
+        with np.load(path) as z:
+            acts = z["acts"]
+        mask = np.abs(acts) >= np.float16(F16_MAX)
+        total_steps += acts.shape[0]
+        if per_lp is None:
+            per_lp = np.zeros(mask.shape[1:3], dtype=np.int64)
+            per_dim = np.zeros(mask.shape[1:], dtype=np.int64)
+        per_lp += mask.sum(axis=(0, 3))
+        per_dim += mask.sum(axis=0)
+    if per_lp is None or per_lp.sum() == 0:
+        return {"total_steps": total_steps, "total": 0,
+                "per_layer_position": [], "top_dims": []}
+    per_layer_position = [
+        {"layer": int(l), "position": int(p), "count": int(per_lp[l, p])}
+        for l, p in zip(*np.nonzero(per_lp))
+    ]
+    per_layer_position.sort(key=lambda e: (-e["count"], e["layer"], e["position"]))
+    entries = [
+        {"layer": int(l), "position": int(p), "dim": int(d),
+         "n_steps_clipped": int(per_dim[l, p, d]),
+         "frac_steps": round(float(per_dim[l, p, d]) / total_steps, 4)}
+        for l, p, d in zip(*np.nonzero(per_dim))
+    ]
+    entries.sort(key=lambda e: (-e["n_steps_clipped"], e["layer"], e["position"], e["dim"]))
+    return {"total_steps": total_steps, "total": int(per_lp.sum()),
+            "per_layer_position": per_layer_position, "top_dims": entries[:top_n]}
 
 
 def capture_positions(n_lang_valid: int) -> dict:
@@ -384,6 +461,7 @@ def capture_condition(policy, tap_lm, tap_ex, tokenize_meta, cond_dir: Path,
         "n_lang_valid_min": int(n_valid_arr.min()),
         "n_lang_valid_max": int(n_valid_arr.max()),
         "n_f16_clipped_elems": int(total_clipped),
+        "f16_clip_table": compute_clip_table(acts_all),
         "lang_blocks_step0": {k: [int(v) for v in ranges[k][0]] for k in ranges},
     }
 
@@ -451,7 +529,8 @@ def git_sha() -> str:
         return "unknown"
 
 
-def build_meta(args, lm_names, ex_names, per_condition, gate_verdict) -> dict:
+def build_meta(args, lm_names, ex_names, per_condition, gate_verdict,
+               aggregate_clip=None) -> dict:
     return {
         "checkpoint_path": str(Path(args.checkpoint).expanduser()),
         "config_name": args.config_name,
@@ -467,9 +546,12 @@ def build_meta(args, lm_names, ex_names, per_condition, gate_verdict) -> dict:
             "expert_hidden_dim": EXPERT_D,
         },
         "positions": [
-            {"index": 0, "name": "last_prefix_token", "definition": "prefix stream, token LANG_OFFSET + n_lang_valid - 1 (last valid language token of 'Task: ..., State: ...;\\nAction: ')"},
-            {"index": 1, "name": "image_tokens_mean", "definition": "prefix stream, mean over tokens [0,512) (the two valid cameras; padded right-wrist cam [512,768) excluded)"},
-            {"index": 2, "name": "first_suffix_token", "definition": "expert stream, action token 0, captured at the first denoise step (t=1.0, x_t = fixed noise)"},
+            {"index": 0, "name": "last_prefix_token", "stream": "paligemma", "valid_dims": [0, PREFIX_D],
+             "definition": "prefix stream, token LANG_OFFSET + n_lang_valid - 1 (last valid language token of 'Task: ..., State: ...;\\nAction: ')"},
+            {"index": 1, "name": "image_tokens_mean", "stream": "paligemma", "valid_dims": [0, PREFIX_D],
+             "definition": "prefix stream, mean over tokens [0,512) (the two valid cameras; padded right-wrist cam [512,768) excluded)"},
+            {"index": 2, "name": "first_suffix_token", "stream": "expert", "valid_dims": [0, EXPERT_D],
+             "definition": "expert stream (gemma_300m, D=1024; dims 1024:2048 are constant zero padding — dim k here is NOT the same feature as dim k at positions 0/1), action token 0, captured at the first denoise step (t=1.0, x_t = fixed noise). Load via analysis/mass_com/acts_io.load_acts to get pre-sliced arrays."},
         ],
         "token_blocks": {
             "img_cam1": list(IMG_BLOCKS["img_cam1"]),
@@ -477,11 +559,14 @@ def build_meta(args, lm_names, ex_names, per_condition, gate_verdict) -> dict:
             "img_pad_right_wrist": list(IMG_BLOCKS["img_pad_right_wrist"]),
             "lang_slots": [LANG_OFFSET, PREFIX_LEN],
             "suffix": [0, ACTION_HORIZON],
+            "text": "per-step: lang_text_ranges (T,2) in each acts.npz; step-0: per_condition.<cond>.lang_blocks_step0.text",
+            "state": "per-step: lang_state_ranges (T,2) in each acts.npz; step-0: per_condition.<cond>.lang_blocks_step0.state",
             "note": "img/lang ranges index the prefix token sequence (len 968); suffix indexes the expert stream (len 15). text/state/tail sub-blocks of the language region vary per step (state digit count changes); per-step absolute ranges are stored in each acts.npz (lang_text_ranges, lang_state_ranges, lang_tail_ranges); step-0 values per condition are under per_condition.lang_blocks_step0.",
         },
         "f16_clip": {
             "clip_value": F16_MAX,
-            "note": "activations are clipped to the finite float16 range before saving; per-condition clipped-element counts are in per_condition.n_f16_clipped_elems (observed: ~1 elem/step, layer 17 at last_prefix_token, a Gemma massive-activation dim slightly above 65504 in bf16)",
+            "note": "activations are clipped to the finite float16 range before saving. Per-condition breakdowns: per_condition.<cond>.f16_clip_table {total, per_layer_position, top_dims}; totals also in per_condition.<cond>.n_f16_clipped_elems; corpus-wide aggregate under f16_clip.aggregate.",
+            "aggregate": aggregate_clip,
         },
         "determinism_gate": gate_verdict,
         "per_condition": per_condition,
@@ -560,7 +645,11 @@ def main():
             wandb_run.log({"condition": cond, "T": stats["T"],
                            "wall_time_s": stats["wall_time_s"]})
 
-    meta = build_meta(args, lm_names, ex_names, per_condition, gate_verdict)
+    acts_paths = [out_root / c / "acts.npz" for c in per_condition
+                  if (out_root / c / "acts.npz").exists()]
+    aggregate_clip = aggregate_clip_tables(acts_paths)
+    meta = build_meta(args, lm_names, ex_names, per_condition, gate_verdict,
+                      aggregate_clip=aggregate_clip)
     out_root.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")
     print(f"Wrote {meta_path}", flush=True)

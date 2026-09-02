@@ -134,6 +134,33 @@ def test_to_f16_clipped_no_clip():
     np.testing.assert_allclose(out.astype(np.float32), v, atol=1e-3)
 
 
+# ---------------------------------------------------------------- clip table
+
+
+def test_compute_clip_table_counts_and_top_dims():
+    T, L, P, D = 5, 2, 3, 8
+    acts = np.zeros((T, L, P, D), dtype=np.float16)
+    f16max = np.float16(np.finfo(np.float16).max)
+    acts[:, 1, 0, 3] = f16max          # dim 3 saturated on all 5 steps
+    acts[0, 1, 0, 5] = -f16max         # dim 5 on 1 step
+    acts[2, 0, 2, 1] = f16max          # different layer/pos
+    table = cap.compute_clip_table(acts)
+    assert table["total"] == 7
+    per_lp = {(e["layer"], e["position"]): e["count"] for e in table["per_layer_position"]}
+    assert per_lp == {(1, 0): 6, (0, 2): 1}
+    top = table["top_dims"]
+    assert top[0] == {"layer": 1, "position": 0, "dim": 3,
+                      "n_steps_clipped": 5, "frac_steps": 1.0}
+    assert {(e["layer"], e["position"], e["dim"]) for e in top} == {
+        (1, 0, 3), (1, 0, 5), (0, 2, 1)}
+
+
+def test_compute_clip_table_empty():
+    acts = np.zeros((3, 2, 3, 4), dtype=np.float16)
+    table = cap.compute_clip_table(acts)
+    assert table == {"total": 0, "per_layer_position": [], "top_dims": []}
+
+
 # ---------------------------------------------------------------- LayerTap
 
 
