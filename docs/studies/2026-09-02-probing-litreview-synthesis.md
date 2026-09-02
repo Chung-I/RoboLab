@@ -55,3 +55,52 @@ Already deep-read: Swann, Lu, Jenner, PokeWorld, DynaMITE. Next, by relevance x 
 | 6 | What Frozen VLAs Already Know About Success (2605.28527) | 0 | 0.0 | frozen-VLA probing precedent; too new for citations |
 
 Field traction notes: the VLA base models dominate raw traction (OpenVLA 3171, pi0 2515, pi0.5 1666 @ 98/mo); the interp-of-VLA niche is tiny and young (Swann 10, Lu 14, Molinari 5, Embodied Interp 2) — consistent with the review's "greenfield" claim and good news for novelty. Full ranked table: scratchpad litreview-citations/03_ranked.jsonl.
+
+---
+
+# Batch 2 deep reads (6 papers, 2026-09-02): recommended next reads, verified
+
+## Verification verdicts
+
+| paper | exists | corrections to our priors |
+|---|---|---|
+| MolmoAct2 (2605.02881) | yes (29 authors, AI2) | sibling to MolmoBot, NOT same pipeline; reader also fetched MolmoBot's own paper (2603.16861) — the better source for our hooks |
+| Heimersheim & Nanda (2404.15255) | yes | tutorial only; no coverage of continuous outputs, window patching, or iterative patching — don't cite it for those |
+| Present but Not Remembered (2607.03372) | yes (UNSW) | models are Octo/CronusVLA; pi0.5 EXPLICITLY excluded (single-frame) -> our "history-ablated pi0.5" control has no analogue there; open-loop only, tiny effects vs a 3x null floor |
+| Nanda Othello linear (2309.00941) | yes | numbers verbatim; the mine/yours frame came from a symmetry argument, not a search |
+| Haon steering (2509.00328) | yes (Berkeley) | models are pi0-FAST + OpenVLA, NOT pi0.5; steering only, no patching; method needs an LM head (Molmo backbone yes, pi0.5 prefix only); their neurons contain ZERO mass/weight concepts |
+| Frozen-VLA success (2605.28527) | yes | target is discounted value regression, not success classification; no layer sweep, no calibration, token position unstated |
+
+## MolmoBot capture facts (from MolmoBot's own paper 2603.16861 §4.1 — replaces Plan-2 Task-6 step-1 guesswork)
+
+- Backbone Molmo2-4B (Qwen3-4B): 36 LLM decoder layers; SigLIP2 ViT FROZEN; 192 image tokens per (view, frame) via 2x2 attention pooling; frames encoded independently (all temporal fusion in the LLM).
+- qpos -> single-layer MLP -> ONE state token at the END of the VLM sequence (prime probe position: only proprio entry point).
+- Action head: 36-layer DiT, per-layer cross-attention to the SAME-layer LLM hidden states (residual stream IS the causal conduit -> hook block outputs, not KV); AdaLN flow-time conditioning (fix or record flow timestep t or features aren't comparable).
+- Vision attention BIDIRECTIONAL, text causal -> accumulated computation lives in the text/state tail; aligns with pi0.5's prefix/suffix split for cross-model comparison.
+- No depth/waypoint reasoning tokens in our checkpoint (MolmoAct2-Think only).
+- Capture positions: state token; last instruction token; per-(view,frame) image-token means kept separate (t vs t-8 difference = the motion signal); a few object-patch tokens. Plus DiT-block hooks as a separate family. Optional: k/v_proj at layers 9/18/27/36 (MolmoAct2 Table 10: KV-conditioning beat hidden-state conditioning 95.9 vs 94.0).
+
+## Merged additional design adjustments (17-31, continuing the batch-1 list)
+
+**Patching (Heimersheim & Nanda + Haon)**
+17. Run BOTH directions (noising = necessity, denoising = sufficiency) on every pair - symmetric pairs make it free; disagreement detects OR-redundant mass encoding (vision + proprio channels) that noising alone reports as "not read here". [HN §2.3-2.4]
+18. Degradation control: patch with unrelated-episode activations; if generic damage scores positive on the delta-projection, delta-hat is confounded with the mean-regression direction -> orthogonalize. [HN §4.2]
+19. Metric panel, not one number: signed projection + orthogonal residual + total ||da|| + per-dim/per-timestep breakdowns; distributions not pooled means (sign flips cancel). Replace bare per-pair max baseline with null-position quantiles + the same-mass-different-trial floor (absorbs pose/phase drift; stronger than reseed-only). [HN §4]
+20. Corruption menu as a matched table: (target) same object/different mass; (controls) different object/same mass; same mass/different trial; vision-only vs proprio-only mass evidence; wide variation reserved for confirmatory runs. [HN §2.6]
+21. Layer-sweep language discipline: denoising bump = sufficient cross-section, NOT "computed here"; conclusions phrased as Pareto sufficiency, never minimality. [HN §3.1-3.2]
+22. Haon's three controls verbatim: random-direction, PROMPT-MODIFICATION ("the heavy carton..." - if prompting reproduces the effect the direction buys nothing), magnitude sweep. Pre-register both mass directions; expect asymmetric effects (their "low"/"slow" worked, "high"/"fast" didn't). [Haon §5.2, Fig. 7]
+23. Embedding-basis (logit-lens over FFN down-proj rows) as a free hypothesis generator on the Molmo backbone + pi0.5 prefix; frozen {heavy,light} embedding-difference direction as a baseline probes must beat. Expectation set low: no lexicalized mass neurons found in prior work. [Haon App. B]
+24. Late-backbone intervention sites upstream of the expert's cross-attention (their early-layer steering was ~inert: mu 0.007 vs 0.086 late). [Haon Fig. 7]
+
+**Probing (Nanda + PnR + Frozen-VLA)**
+25. Flat layer curve = suspect the FRAME before concluding a null (linear-absolute Othello was flat at 75% while mine/yours linear hit 99.6). Pre-registered reparameterization list, all run, full table reported, discovery/confirmation split by held-out objects + the other embodiment: mass {m, 1/m, log m, slip margin mg/(mu F_grip), gravity-comp torque J^T mg}; CoM {p_CoM - p_grasp in gripper frame on jaw/normal/approach axes, extent-normalized, gravitational moment r x mg}; wrench {gripper vs world frame, signed relative to commanded action, residual = measured - free-motion prediction}; + contact/no-contact 3-class. [Nanda Table 1, §6.1]
+26. Causal edits must span MULTIPLE layers (single-layer fails via self-repair; Nanda App. B) - consistent with Swann's every-denoising-step broadcast (adj. 10).
+27. A4-style residualization: report mass-decode residualized against a current-frame-only probe (mass correlates with object identity/size legible in frame t); otherwise "encoded" is unfalsifiable. [PnR §3.2]
+28. Self-swap null floor for every stochastic-head measurement (their floor was 3x the signal); live-hook positive control inside the null (mismatched injection must hurt while on-target effect is measured). [PnR §3.2, App. G]
+29. Temporal-shuffle control as the cheapest decisive first experiment on MolmoBot: swap frame order [t, t-8]; order-blindness => it cannot be reading signed deflection. Binary (full) corruptions, not graded. Two orthogonal interventions (content swap + attention knockout of readout->history keys) for any deploy claim. [PnR Tables 8/17, §3.2]
+30. Success/value as a FREE auxiliary anchor target from replay logs - reported against a random-projection floor at matched dimensionality AND DINOv2/CLIP features (else it's dataset geometry, not VLA knowledge: 0.39 random vs 0.51 DINOv2 vs 0.55 best-VLA in their Table 1). Matched-pair ordering control grouped by (object, phase) with a label margin - kills the phase-clock confound by construction. [FVLA §3.3, Table 1]
+31. Expect the pi0.5 flow expert to probe near-empty for value-like/property signals (pi0 collapsed to R^2 0.07 vs pi0.5 backbone 0.55) - report backbone-vs-expert contrast as a finding; make the object/task-disjoint split the headline (their RobotWin transfer: demo 0.87 -> task -0.93); do the layer sweep + calibration they skipped. [FVLA §4.2, Table 5]
+
+## Study-positioning note
+
+PnR §4.5 names our exact experiment as future work ("closed-loop study measuring whether injecting present-irreducible information improves non-Markov task success"); their A4 residualizes only against raw frames, leaving abstract history - hidden physical properties post-contact - explicitly untested. Combined with batch 1's greenfield verdict, the positioning is: first hidden-physical-property probe of live manipulation policies, with the strictest control stack yet assembled in this niche (selectivity + certificates + passthrough bounds + residualization + matched-pair ordering + dual-direction patching with degradation controls).
