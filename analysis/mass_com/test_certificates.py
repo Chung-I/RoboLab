@@ -20,6 +20,8 @@ from sklearn.linear_model import Ridge
 from sklearn.model_selection import GroupKFold
 
 from analysis.mass_com.certificates import (
+    CERT_MASKS,
+    GATE_MASKS,
     K_WINDOW,
     certificate_input_channels,
     group_kfold_splits,
@@ -28,6 +30,7 @@ from analysis.mass_com.certificates import (
     raw_windows,
     ridge_certificate_cell,
     ridge_fit_predict,
+    sanitize_json,
 )
 
 
@@ -169,6 +172,33 @@ def test_rank_accuracy_only_within_object_pairs():
 def test_rank_accuracy_no_valid_pairs_is_nan():
     y = np.ones(4)
     assert np.isnan(rank_accuracy(y, np.arange(4.0), np.zeros(4, dtype=int)))
+
+
+# --------------------------------------------- amendment 3 + JSON hygiene
+
+def test_carry_mask_is_evaluated_for_certificates_and_gates():
+    # amendment 3: carry joins the certificate masks and the gate masks
+    # (window stays first: its pre-registered verdict is still reported)
+    assert "carry" in CERT_MASKS
+    assert GATE_MASKS == ("window", "carry")
+
+
+def test_sanitize_json_replaces_nonfinite_with_null():
+    import json
+
+    obj = {
+        "ok": 1.5,
+        "bad": float("-inf"),
+        "nested": {"nan": float("nan"), "list": [1.0, float("inf"), "s"]},
+        "ints": 3,
+    }
+    clean = sanitize_json(obj)
+    assert clean["bad"] is None
+    assert clean["nested"]["nan"] is None
+    assert clean["nested"]["list"] == [1.0, None, "s"]
+    assert clean["ok"] == 1.5 and clean["ints"] == 3
+    # the result must serialize under strict RFC-8259 rules
+    json.dumps(clean, allow_nan=False)
 
 
 # ------------------------------------------------- no-circularity channels

@@ -56,11 +56,18 @@ ALPHAS = (10.0 ** np.arange(-2, 5)).tolist()  # 1e-2 .. 1e4, as the probes
 IMG_SIZE = 64
 
 CERT_TARGETS = ["mass_log_c", "com_signed", "wrench_norm", "wrench_resist"]
-CERT_MASKS = ["window", "all"]
+# `carry` added by Pre-registration amendment 3 (airborne rows: the corpus
+# phase where wrench_fz ~ -m*g is strictly monotone in mass — the window
+# mask misses it: scrub lifts off after its window ends, the heavy carton
+# drops mid-window).
+CERT_MASKS = ["window", "carry", "all"]
 WRENCH_TARGETS = {"wrench_norm", "wrench_resist"}
 GATES = {"mass_log_c": 0.3, "com_signed": 0.3,
          "wrench_norm": 0.5, "wrench_resist": 0.5}
-GATE_MASK = "window"
+# Gate masks: `window` is the original pre-registered gate (its FAIL stands,
+# with the window-timing mechanism reported); `carry` is evaluated
+# ADDITIONALLY per amendment 3 and carries the sequential interpretation.
+GATE_MASKS = ("window", "carry")
 
 # GRU training hyperparameters (frozen before results were seen)
 GRU_HIDDEN = 96
@@ -202,6 +209,22 @@ def ridge_certificate_cell(X, y, groups, alphas=None, standardize=True) -> dict:
         "n_groups": int(len(np.unique(groups))),
         "preds": preds,  # pooled held-out predictions (popped before JSON)
     }
+
+
+def sanitize_json(obj):
+    """Replace non-finite floats (inf/-inf/nan) with None, recursively.
+
+    RFC 8259 JSON has no Infinity/NaN literals; python's json module would
+    emit them by default and produce a non-compliant file (the shipped
+    certificates.json initially carried ``-Infinity`` per-fold R2 entries).
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_json(v) for v in obj]
+    if isinstance(obj, float) and not np.isfinite(obj):
+        return None
+    return obj
 
 
 def rank_accuracy(y_true, y_pred, object_id) -> float:
@@ -370,12 +393,34 @@ def run_gru_certificates(episodes, raw, targets, masks, frames, object_id,
             "proprio": torch.from_numpy(raw["proprio"][m]).float().to(device),
             "wrench": torch.from_numpy(raw["wrench"][m]).float().to(device),
         }
-    # Same fold assignment as the probes: row-level GroupKFold -> episode sets.
-    row_splits = group_kfold_splits(raw["episode_id"])
-    fold_eps = [
-        (sorted(set(raw["episode_id"][tr].tolist())), sorted(set(raw["episode_id"][te].tolist())))
-        for tr, te in row_splits
-    ]
+    def masked_fold_eps(mask):
+        """Episode-level folds derived from the MASKED rows — the exact
+        partition the ridge/probe paths use (GroupKFold over masked rows).
+
+        Asserts (a) the masked-row partition is a disjoint cover of every
+        episode that has masked rows, and (b) reports whether it coincides
+        with the full-row partition (it does for window/all in this corpus;
+        for carry the size balance differs and the partitions may diverge —
+        using the masked one is what keeps the certificate CV identical to
+        the probes').
+        """
+        eid_m = raw["episode_id"][mask]
+        splits = group_kfold_splits(eid_m)
+        folds = [
+            (sorted(set(eid_m[tr].tolist())), sorted(set(eid_m[te].tolist())))
+            for tr, te in splits
+        ]
+        test_sets = [set(te) for _, te in folds]
+        covered = set().union(*test_sets)
+        assert sum(len(s) for s in test_sets) == len(covered) == len(set(eid_m.tolist())), (
+            "masked-row GroupKFold does not disjointly cover the masked episodes: "
+            f"{[sorted(s) for s in test_sets]}")
+        full_splits = group_kfold_splits(raw["episode_id"])
+        full_partition = [
+            sorted(set(raw["episode_id"][te].tolist())) for _, te in full_splits
+        ]
+        equals_full = [sorted(s) for s in test_sets] == full_partition
+        return folds, equals_full
 
     cells = []
     for target in CERT_TARGETS:
@@ -384,6 +429,7 @@ def run_gru_certificates(episodes, raw, targets, masks, frames, object_id,
         for mask_name in CERT_MASKS:
             t0 = time.time()
             mask_all = masks[mask_name]
+            fold_eps, folds_equal_full_rows = masked_fold_eps(mask_all)
             torch.manual_seed(SEED)
             np_rng = np.random.default_rng(SEED)
             pooled_true, pooled_pred, pooled_obj = [], [], []
@@ -497,7 +543,9 @@ def run_gru_certificates(episodes, raw, targets, masks, frames, object_id,
                 "r2_pooled": float(r2_pooled), **extra,
                 "r2_folds": [float(r) for r in fold_r2s],
                 "n": int(mask_all.sum()),
-                "n_groups": len(ep_ids),
+                "n_groups": len(set(raw["episode_id"][mask_all].tolist())),
+                "fold_test_episodes": [te for _, te in fold_eps],
+                "folds_equal_full_row_partition": bool(folds_equal_full_rows),
                 "epochs_per_fold": fold_epochs,
                 "budget_hit": budget_hit,
                 "input_channels": certificate_input_channels(target, "gru_raw"),
@@ -513,31 +561,35 @@ def run_gru_certificates(episodes, raw, targets, masks, frames, object_id,
 # ------------------------------------------------------------- gates + bound
 
 def evaluate_gates(cells: list[dict]) -> dict:
-    """Pre-registered gate verdicts on the window (post-anchor) mask.
+    """Pre-registered gate verdicts, per gate mask.
 
-    The binding certificate for the mass gate is the RECURRENT one (gru_raw);
-    linear probe nulls are additionally read against the linear (ridge_raw)
-    certificate — both reported.
+    ``window`` is the original pre-registered gate; ``carry`` is the
+    additional amendment-3 gate (airborne rows) and carries the sequential
+    interpretation for the mass null. The binding certificate for the mass
+    gate is the RECURRENT one (gru_raw); linear probe nulls are additionally
+    read against the linear (ridge_raw) certificate — both reported.
     """
     by = {(c["target"], c["kind"], c["mask"]): c for c in cells}
     gates = {}
     for target, gate in GATES.items():
-        rec = by.get((target, "gru_raw", GATE_MASK))
-        lin = by.get((target, "ridge_raw", GATE_MASK))
-        gates[target] = {
-            "gate": gate,
-            "mask": GATE_MASK,
-            "recurrent_r2": None if rec is None else rec["r2_pooled"],
-            "linear_r2": None if lin is None else lin["r2_pooled"],
-            "recurrent_pass": bool(rec and rec["r2_pooled"] >= gate),
-            "linear_pass": bool(lin and lin["r2_pooled"] >= gate),
-        }
-        gates[target]["pass"] = gates[target]["recurrent_pass"] or gates[target]["linear_pass"]
+        gates[target] = {}
+        for mask in GATE_MASKS:
+            rec = by.get((target, "gru_raw", mask))
+            lin = by.get((target, "ridge_raw", mask))
+            entry = {
+                "gate": gate,
+                "recurrent_r2": None if rec is None else rec["r2_pooled"],
+                "linear_r2": None if lin is None else lin["r2_pooled"],
+                "recurrent_pass": bool(rec and rec["r2_pooled"] >= gate),
+                "linear_pass": bool(lin and lin["r2_pooled"] >= gate),
+            }
+            entry["pass"] = entry["recurrent_pass"] or entry["linear_pass"]
+            gates[target][mask] = entry
     return gates
 
 
 def bound_table(trained_parquet: str, random_parquet: str,
-                targets=None, masks=("window", "all")) -> list[dict]:
+                targets=None, masks=("window", "carry", "all")) -> list[dict]:
     """Untrained-copy bound: trained vs frozen random-weights net per
     (target, mask), plus the random net's proprio ceiling (jointpos_pc1).
 
@@ -594,6 +646,7 @@ def main(argv=None):
     ap.add_argument("--max-epochs", type=int, default=MAX_EPOCHS)
     ap.add_argument("--budget-s", type=float, default=BUDGET_S)
     ap.add_argument("--no-wandb", action="store_true")
+    ap.add_argument("--wandb-name", default="phase3-certificates")
     args = ap.parse_args(argv)
 
     np.random.seed(SEED)
@@ -625,12 +678,13 @@ def main(argv=None):
                                       max_epochs=args.max_epochs,
                                       budget_s=args.budget_s)
     gates = evaluate_gates(cells)
-    for t, g in gates.items():
-        print(f"[gate] {t} (mask={g['mask']}, gate={g['gate']}): "
-              f"recurrent R2={g['recurrent_r2']} "
-              f"{'PASS' if g['recurrent_pass'] else 'FAIL'} | "
-              f"linear R2={g['linear_r2']} "
-              f"{'PASS' if g['linear_pass'] else 'FAIL'}", flush=True)
+    for t, per_mask in gates.items():
+        for mask, g in per_mask.items():
+            print(f"[gate] {t}/{mask} (gate={g['gate']}): "
+                  f"recurrent R2={g['recurrent_r2']} "
+                  f"{'PASS' if g['recurrent_pass'] else 'FAIL'} | "
+                  f"linear R2={g['linear_r2']} "
+                  f"{'PASS' if g['linear_pass'] else 'FAIL'}", flush=True)
 
     bounds = None
     if args.trained_results and args.random_results:
@@ -652,7 +706,10 @@ def main(argv=None):
                 "max_epochs": args.max_epochs, "patience": PATIENCE,
                 "budget_s": args.budget_s},
         "targets": CERT_TARGETS, "masks": CERT_MASKS,
-        "gate_mask": GATE_MASK, "gates": GATES,
+        "gate_masks": list(GATE_MASKS), "gates": GATES,
+        "preregistration_amendment": 3,
+        "carry_mask": ("object airborne: object_root_pose z >= initial z + "
+                       "0.05 m, per episode (amendment 3)"),
         "no_circularity_rule": ("wrench certificates receive no wrench input; "
                                 "mass/CoM certificates may use raw wrench"),
         "dataset": args.dataset, "corpus": args.corpus,
@@ -668,18 +725,19 @@ def main(argv=None):
     except ImportError:
         pass
 
-    out = {"config": config, "gates": gates, "cells": cells,
-           "random_init_bound": bounds}
+    out = sanitize_json({"config": config, "gates": gates, "cells": cells,
+                         "random_init_bound": bounds})
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out, indent=2) + "\n")
+    # allow_nan=False: hard-guarantee RFC-8259 compliance (no -Infinity/NaN)
+    out_path.write_text(json.dumps(out, indent=2, allow_nan=False) + "\n")
     print(f"wrote {out_path}", flush=True)
 
     if not args.no_wandb:
         import pandas as pd
         import wandb
         run = wandb.init(project="mass-com-vla-probing", job_type="analysis",
-                         name="phase3-certificates", config=config)
+                         name=args.wandb_name, config=config)
         cell_rows = [{k: (json.dumps(v) if isinstance(v, (list, dict)) else v)
                       for k, v in c.items()} for c in cells]
         run.log({"certificates": wandb.Table(dataframe=pd.DataFrame(cell_rows))})
@@ -694,8 +752,10 @@ def main(argv=None):
                             row[f"{name}_{sel_name}_{k2}"] = v2
                 flat.append(row)
             run.log({"random_init_bound": wandb.Table(dataframe=pd.DataFrame(flat))})
-        run.summary.update({f"gate/{t}/{k}": v for t, g in gates.items()
-                            for k, v in g.items() if not isinstance(v, str)})
+        run.summary.update({f"gate/{t}/{m}/{k}": v
+                            for t, per_mask in gates.items()
+                            for m, g in per_mask.items()
+                            for k, v in g.items() if v is not None})
         print("wandb url:", run.url, flush=True)
         run.finish()
     print("DONE", flush=True)

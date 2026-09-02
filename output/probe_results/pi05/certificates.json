@@ -34,15 +34,21 @@
     ],
     "masks": [
       "window",
+      "carry",
       "all"
     ],
-    "gate_mask": "window",
+    "gate_masks": [
+      "window",
+      "carry"
+    ],
     "gates": {
       "mass_log_c": 0.3,
       "com_signed": 0.3,
       "wrench_norm": 0.5,
       "wrench_resist": 0.5
     },
+    "preregistration_amendment": 3,
+    "carry_mask": "object airborne: object_root_pose z >= initial z + 0.05 m, per episode (amendment 3)",
     "no_circularity_rule": "wrench certificates receive no wrench input; mass/CoM certificates may use raw wrench",
     "dataset": "output/probe_dataset/pi05.npz",
     "corpus": "output/replay_corpus",
@@ -61,40 +67,76 @@
   },
   "gates": {
     "mass_log_c": {
-      "gate": 0.3,
-      "mask": "window",
-      "recurrent_r2": -0.9093896851045715,
-      "linear_r2": -0.5505480914995033,
-      "recurrent_pass": false,
-      "linear_pass": false,
-      "pass": false
+      "window": {
+        "gate": 0.3,
+        "recurrent_r2": -0.9093896851045715,
+        "linear_r2": -0.5505480914995033,
+        "recurrent_pass": false,
+        "linear_pass": false,
+        "pass": false
+      },
+      "carry": {
+        "gate": 0.3,
+        "recurrent_r2": 0.14653985840850703,
+        "linear_r2": 0.5477786415180554,
+        "recurrent_pass": false,
+        "linear_pass": true,
+        "pass": true
+      }
     },
     "com_signed": {
-      "gate": 0.3,
-      "mask": "window",
-      "recurrent_r2": -0.5044292711765954,
-      "linear_r2": -0.5243441875213226,
-      "recurrent_pass": false,
-      "linear_pass": false,
-      "pass": false
+      "window": {
+        "gate": 0.3,
+        "recurrent_r2": -0.5044292711765954,
+        "linear_r2": -0.5243441875213226,
+        "recurrent_pass": false,
+        "linear_pass": false,
+        "pass": false
+      },
+      "carry": {
+        "gate": 0.3,
+        "recurrent_r2": -0.49181699352964614,
+        "linear_r2": -0.6203243561357876,
+        "recurrent_pass": false,
+        "linear_pass": false,
+        "pass": false
+      }
     },
     "wrench_norm": {
-      "gate": 0.5,
-      "mask": "window",
-      "recurrent_r2": 0.19075208820847067,
-      "linear_r2": 0.5859592919972845,
-      "recurrent_pass": false,
-      "linear_pass": true,
-      "pass": true
+      "window": {
+        "gate": 0.5,
+        "recurrent_r2": 0.19075208820847067,
+        "linear_r2": 0.5859592919972845,
+        "recurrent_pass": false,
+        "linear_pass": true,
+        "pass": true
+      },
+      "carry": {
+        "gate": 0.5,
+        "recurrent_r2": -0.005785441810951308,
+        "linear_r2": 0.7801038239398514,
+        "recurrent_pass": false,
+        "linear_pass": true,
+        "pass": true
+      }
     },
     "wrench_resist": {
-      "gate": 0.5,
-      "mask": "window",
-      "recurrent_r2": 0.4088586143177275,
-      "linear_r2": 0.6522567645588118,
-      "recurrent_pass": false,
-      "linear_pass": true,
-      "pass": true
+      "window": {
+        "gate": 0.5,
+        "recurrent_r2": 0.4088586143177275,
+        "linear_r2": 0.6522567645588118,
+        "recurrent_pass": false,
+        "linear_pass": true,
+        "pass": true
+      },
+      "carry": {
+        "gate": 0.5,
+        "recurrent_r2": 0.3716853220433054,
+        "linear_r2": 0.40889852713393904,
+        "recurrent_pass": false,
+        "linear_pass": false,
+        "pass": false
+      }
     }
   },
   "cells": [
@@ -114,6 +156,28 @@
       "n": 425,
       "n_groups": 10,
       "rank_acc": 0.04311073541842773,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]",
+        "ft.wrench[6]"
+      ],
+      "wall_s": 0.0
+    },
+    {
+      "target": "mass_log_c",
+      "kind": "ridge_raw",
+      "mask": "carry",
+      "r2_pooled": 0.5477786415180554,
+      "r2_folds": [
+        -368253107701897.2,
+        -0.13848752005962628,
+        -24461584427330.01,
+        0.699929711785765,
+        -0.43861272771253534
+      ],
+      "best_alpha": 100.0,
+      "n": 603,
+      "n_groups": 10,
+      "rank_acc": 0.9833228069576498,
       "input_channels": [
         "proprio.joint_pos_achieved[7]",
         "ft.wrench[6]"
@@ -150,12 +214,33 @@
       "r2_folds": [
         -7.283182921107585,
         -7.282502977394859,
-        -Infinity,
-        -Infinity,
-        -Infinity
+        null,
+        null,
+        null
       ],
       "best_alpha": 10000.0,
       "n": 425,
+      "n_groups": 10,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]",
+        "ft.wrench[6]"
+      ],
+      "wall_s": 0.0
+    },
+    {
+      "target": "com_signed",
+      "kind": "ridge_raw",
+      "mask": "carry",
+      "r2_pooled": -0.6203243561357876,
+      "r2_folds": [
+        -1.8838250154325276,
+        null,
+        -1.8185902539217662,
+        null,
+        null
+      ],
+      "best_alpha": 10000.0,
+      "n": 603,
       "n_groups": 10,
       "input_channels": [
         "proprio.joint_pos_achieved[7]",
@@ -171,9 +256,9 @@
       "r2_folds": [
         -11.20570441103072,
         -11.143991724163282,
-        -Infinity,
-        -Infinity,
-        -Infinity
+        null,
+        null,
+        null
       ],
       "best_alpha": 10000.0,
       "n": 2010,
@@ -198,6 +283,26 @@
       ],
       "best_alpha": 0.01,
       "n": 425,
+      "n_groups": 10,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]"
+      ],
+      "wall_s": 0.0
+    },
+    {
+      "target": "wrench_norm",
+      "kind": "ridge_raw",
+      "mask": "carry",
+      "r2_pooled": 0.7801038239398514,
+      "r2_folds": [
+        0.6461559406730716,
+        0.7623436481410194,
+        0.9058031481400332,
+        -0.6476742913541578,
+        -0.11794658036823047
+      ],
+      "best_alpha": 0.01,
+      "n": 603,
       "n_groups": 10,
       "input_channels": [
         "proprio.joint_pos_achieved[7]"
@@ -247,6 +352,26 @@
     {
       "target": "wrench_resist",
       "kind": "ridge_raw",
+      "mask": "carry",
+      "r2_pooled": 0.40889852713393904,
+      "r2_folds": [
+        0.5791880314549112,
+        0.45725664037571356,
+        0.5795720877139219,
+        -0.567622943658129,
+        0.41267067993140183
+      ],
+      "best_alpha": 100.0,
+      "n": 603,
+      "n_groups": 10,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]"
+      ],
+      "wall_s": 0.0
+    },
+    {
+      "target": "wrench_resist",
+      "kind": "ridge_raw",
       "mask": "all",
       "r2_pooled": 0.355654664382543,
       "r2_folds": [
@@ -274,11 +399,34 @@
         -113403410433415.22,
         -2878034339656857.0,
         -456213706361156.75,
-        -Infinity,
+        null,
         -1048833249286007.6
       ],
       "n": 425,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         49,
         145,
@@ -292,7 +440,60 @@
         "ft.wrench[6]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 4.9
+      "wall_s": 4.7
+    },
+    {
+      "target": "mass_log_c",
+      "kind": "gru_raw",
+      "mask": "carry",
+      "r2_pooled": 0.14653985840850703,
+      "rank_acc": 0.9500025604697608,
+      "r2_folds": [
+        -212268294896337.25,
+        -1.2294392785399002,
+        -72335864259480.81,
+        -0.12706044175231956,
+        0.431306390673154
+      ],
+      "n": 603,
+      "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          3,
+          9
+        ],
+        [
+          0,
+          6
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          2,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": false,
+      "epochs_per_fold": [
+        97,
+        63,
+        80,
+        35,
+        71
+      ],
+      "budget_hit": false,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]",
+        "ft.wrench[6]",
+        "image.over_shoulder_left_camera_64x64[cnn]"
+      ],
+      "wall_s": 4.2
     },
     {
       "target": "mass_log_c",
@@ -304,11 +505,34 @@
         -176002200050396.5,
         -80155351555006.34,
         -558249308169232.0,
-        -Infinity,
+        null,
         -770016171589616.1
       ],
       "n": 2010,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         31,
         31,
@@ -322,7 +546,7 @@
         "ft.wrench[6]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 2.6
+      "wall_s": 2.8
     },
     {
       "target": "com_signed",
@@ -332,12 +556,35 @@
       "r2_folds": [
         -5.673802585569236,
         -3.5808186704793217,
-        -Infinity,
-        -Infinity,
-        -Infinity
+        null,
+        null,
+        null
       ],
       "n": 425,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         48,
         42,
@@ -351,7 +598,59 @@
         "ft.wrench[6]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 2.7
+      "wall_s": 3.0
+    },
+    {
+      "target": "com_signed",
+      "kind": "gru_raw",
+      "mask": "carry",
+      "r2_pooled": -0.49181699352964614,
+      "r2_folds": [
+        -1.1204477135634519,
+        null,
+        -2.0695807385351577,
+        null,
+        null
+      ],
+      "n": 603,
+      "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          3,
+          9
+        ],
+        [
+          0,
+          6
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          2,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": false,
+      "epochs_per_fold": [
+        50,
+        31,
+        32,
+        38,
+        31
+      ],
+      "budget_hit": false,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]",
+        "ft.wrench[6]",
+        "image.over_shoulder_left_camera_64x64[cnn]"
+      ],
+      "wall_s": 2.4
     },
     {
       "target": "com_signed",
@@ -361,12 +660,35 @@
       "r2_folds": [
         -7.978096613449077,
         -11.329924062941833,
-        -Infinity,
-        -Infinity,
-        -Infinity
+        null,
+        null,
+        null
       ],
       "n": 2010,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         31,
         31,
@@ -380,7 +702,7 @@
         "ft.wrench[6]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 1.9
+      "wall_s": 2.1
     },
     {
       "target": "wrench_norm",
@@ -396,6 +718,29 @@
       ],
       "n": 425,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         47,
         32,
@@ -408,7 +753,58 @@
         "proprio.joint_pos_achieved[7]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 2.1
+      "wall_s": 2.4
+    },
+    {
+      "target": "wrench_norm",
+      "kind": "gru_raw",
+      "mask": "carry",
+      "r2_pooled": -0.005785441810951308,
+      "r2_folds": [
+        0.5051683272612009,
+        0.1766889813605672,
+        0.7995646429433434,
+        -11.914321305594381,
+        -19.06968802997219
+      ],
+      "n": 603,
+      "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          3,
+          9
+        ],
+        [
+          0,
+          6
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          2,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": false,
+      "epochs_per_fold": [
+        31,
+        36,
+        36,
+        32,
+        33
+      ],
+      "budget_hit": false,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]",
+        "image.over_shoulder_left_camera_64x64[cnn]"
+      ],
+      "wall_s": 2.2
     },
     {
       "target": "wrench_norm",
@@ -424,6 +820,29 @@
       ],
       "n": 2010,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         123,
         125,
@@ -436,7 +855,7 @@
         "proprio.joint_pos_achieved[7]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 5.9
+      "wall_s": 6.4
     },
     {
       "target": "wrench_resist",
@@ -452,6 +871,29 @@
       ],
       "n": 425,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         67,
         90,
@@ -464,7 +906,58 @@
         "proprio.joint_pos_achieved[7]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 7.0
+      "wall_s": 7.5
+    },
+    {
+      "target": "wrench_resist",
+      "kind": "gru_raw",
+      "mask": "carry",
+      "r2_pooled": 0.3716853220433054,
+      "r2_folds": [
+        0.5847795846876988,
+        0.47261223949901154,
+        0.5595761171518944,
+        -0.7635666809282746,
+        0.3543574466257542
+      ],
+      "n": 603,
+      "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          3,
+          9
+        ],
+        [
+          0,
+          6
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          2,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": false,
+      "epochs_per_fold": [
+        33,
+        32,
+        31,
+        33,
+        208
+      ],
+      "budget_hit": false,
+      "input_channels": [
+        "proprio.joint_pos_achieved[7]",
+        "image.over_shoulder_left_camera_64x64[cnn]"
+      ],
+      "wall_s": 4.4
     },
     {
       "target": "wrench_resist",
@@ -480,6 +973,29 @@
       ],
       "n": 2010,
       "n_groups": 10,
+      "fold_test_episodes": [
+        [
+          4,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          0,
+          5
+        ]
+      ],
+      "folds_equal_full_row_partition": true,
       "epochs_per_fold": [
         89,
         109,
@@ -492,7 +1008,7 @@
         "proprio.joint_pos_achieved[7]",
         "image.over_shoulder_left_camera_64x64[cnn]"
       ],
-      "wall_s": 4.5
+      "wall_s": 5.0
     }
   ],
   "random_init_bound": [
@@ -527,6 +1043,42 @@
           "selectivity": 0.14617897745920316,
           "real": -0.7981768941761682,
           "shuffled": -0.9443558716353714,
+          "layer": 11,
+          "position": 0
+        }
+      }
+    },
+    {
+      "target": "mass_log_c",
+      "mask": "carry",
+      "trained": {
+        "by_real": {
+          "selectivity": 0.026625619825371816,
+          "real": -0.26581552633554817,
+          "shuffled": -0.29244114616092,
+          "layer": 0,
+          "position": 2
+        },
+        "by_selectivity": {
+          "selectivity": 2.156514910530523,
+          "real": -1.6361670815624314,
+          "shuffled": -3.7926819920929544,
+          "layer": 17,
+          "position": 0
+        }
+      },
+      "random": {
+        "by_real": {
+          "selectivity": 0.03921570670296365,
+          "real": -0.2663721158500165,
+          "shuffled": -0.30558782255298017,
+          "layer": 0,
+          "position": 2
+        },
+        "by_selectivity": {
+          "selectivity": 0.36956562332295495,
+          "real": -0.6655669318863373,
+          "shuffled": -1.0351325552092923,
           "layer": 11,
           "position": 0
         }
@@ -606,6 +1158,42 @@
     },
     {
       "target": "wrench_resist",
+      "mask": "carry",
+      "trained": {
+        "by_real": {
+          "selectivity": 0.5582523256990408,
+          "real": 0.47558285694280455,
+          "shuffled": -0.08266946875623629,
+          "layer": 10,
+          "position": 2
+        },
+        "by_selectivity": {
+          "selectivity": 6.195572430096981,
+          "real": -3.1430144854335476,
+          "shuffled": -9.338586915530529,
+          "layer": 17,
+          "position": 0
+        }
+      },
+      "random": {
+        "by_real": {
+          "selectivity": 0.5175327625921441,
+          "real": 0.41074640187712896,
+          "shuffled": -0.10678636071501517,
+          "layer": 11,
+          "position": 2
+        },
+        "by_selectivity": {
+          "selectivity": 1.3592866857627226,
+          "real": 0.32071636272471504,
+          "shuffled": -1.0385703230380077,
+          "layer": 17,
+          "position": 0
+        }
+      }
+    },
+    {
+      "target": "wrench_resist",
       "mask": "all",
       "trained": {
         "by_real": {
@@ -678,6 +1266,42 @@
     },
     {
       "target": "contact_norm",
+      "mask": "carry",
+      "trained": {
+        "by_real": {
+          "selectivity": 0.5756659555192779,
+          "real": 0.457575375239746,
+          "shuffled": -0.1180905802795319,
+          "layer": 2,
+          "position": 2
+        },
+        "by_selectivity": {
+          "selectivity": 3.17007231491025,
+          "real": -2.5341650748156983,
+          "shuffled": -5.704237389725948,
+          "layer": 17,
+          "position": 0
+        }
+      },
+      "random": {
+        "by_real": {
+          "selectivity": 0.5586372438914515,
+          "real": 0.4346115470620776,
+          "shuffled": -0.12402569682937395,
+          "layer": 17,
+          "position": 2
+        },
+        "by_selectivity": {
+          "selectivity": 1.2128081693977795,
+          "real": 0.20549629856029838,
+          "shuffled": -1.007311870837481,
+          "layer": 17,
+          "position": 0
+        }
+      }
+    },
+    {
+      "target": "contact_norm",
       "mask": "all",
       "trained": {
         "by_real": {
@@ -743,6 +1367,42 @@
           "selectivity": 1.7905576135868542,
           "real": 0.9940720663584139,
           "shuffled": -0.7964855472284402,
+          "layer": 17,
+          "position": 0
+        }
+      }
+    },
+    {
+      "target": "jointpos_pc1",
+      "mask": "carry",
+      "trained": {
+        "by_real": {
+          "selectivity": 1.3002859395033757,
+          "real": 0.9999815353750728,
+          "shuffled": -0.3003044041283028,
+          "layer": 6,
+          "position": 0
+        },
+        "by_selectivity": {
+          "selectivity": 2.1332908915746707,
+          "real": 0.9956126696849597,
+          "shuffled": -1.1376782218897108,
+          "layer": 17,
+          "position": 0
+        }
+      },
+      "random": {
+        "by_real": {
+          "selectivity": 1.4098906920596046,
+          "real": 0.9998963050054694,
+          "shuffled": -0.40999438705413527,
+          "layer": 0,
+          "position": 1
+        },
+        "by_selectivity": {
+          "selectivity": 2.2386271641737254,
+          "real": 0.9981859394444196,
+          "shuffled": -1.240441224729306,
           "layer": 17,
           "position": 0
         }

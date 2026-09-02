@@ -35,8 +35,16 @@ Target definitions (Global Constraints / study doc, pre-registered):
 
 Masks: ``precontact`` = ds precontact_mask, ``window`` = ds in_window_mask,
 ``late`` = ~precontact & ~window (everything after the matched window),
-``all`` = ones. Carton episodes have an empty ``late`` mask (in_window runs
-to the end of the episode) — that is an expected data fact, not a bug.
+``all`` = ones, and (Pre-registration amendment 3) ``carry`` = steps where
+the object is airborne: object_root_pose z >= initial z + 0.05 m, computed
+per episode from the ftmap. The carry mask exists because the pre-registered
+window misses the carry phase in this corpus (scrub lift-off at steps
+158-161 is after its window end 155; the heavy-carton replay drops the
+object mid-window), while airborne wrench_fz ~ -m*g is strictly monotone in
+mass — the mask overlaps ``window``/``late`` by design (it is a physical
+phase, not a partition member). Carton episodes have an empty ``late`` mask
+(in_window runs to the end of the episode) — that is an expected data fact,
+not a bug.
 """
 import os
 
@@ -55,6 +63,12 @@ EXPECTED_18 = frozenset(
 
 # box-smoothing window (steps) for the Δz -> lift_dir sign estimate.
 _LIFT_SMOOTH_WINDOW = 5
+
+# Amendment 3: airborne threshold for the `carry` mask (m above initial z).
+# Chosen from the control data's clear bimodality (resting-pose jitter is
+# millimetric; every lift in the corpus exceeds 0.076 m) before any
+# model-side carry-phase result was computed.
+CARRY_LIFT_M = 0.05
 
 
 def build_ftmap(meta: dict, corpus_root: str) -> dict:
@@ -104,6 +118,21 @@ def _lift_dir_per_row(episode_id: np.ndarray, step: np.ndarray, ftmap: dict) -> 
         ep: _lift_dir_for_episode(ft["object_root_pose"]) for ep, ft in ftmap.items()
     }
     out = np.empty(len(episode_id), dtype=np.float64)
+    for i in range(len(episode_id)):
+        out[i] = per_episode[int(episode_id[i])][int(step[i])]
+    return out
+
+
+def _carry_mask_per_row(episode_id: np.ndarray, step: np.ndarray, ftmap: dict,
+                        lift_m: float = CARRY_LIFT_M) -> np.ndarray:
+    """Amendment-3 ``carry`` mask: True where the object is airborne
+    (object_root_pose z >= initial z + ``lift_m``), joined per row via
+    episode_id/step."""
+    per_episode = {}
+    for ep, ft in ftmap.items():
+        z = np.asarray(ft["object_root_pose"])[:, 2].astype(np.float64)
+        per_episode[ep] = z >= z[0] + lift_m
+    out = np.zeros(len(episode_id), dtype=bool)
     for i in range(len(episode_id)):
         out[i] = per_episode[int(episode_id[i])][int(step[i])]
     return out
@@ -193,6 +222,7 @@ def build_targets(ds: dict, ftmap: dict, knee_by_object: dict | None = None) -> 
         "precontact": precontact,
         "window": window,
         "late": ~precontact & ~window,
+        "carry": _carry_mask_per_row(episode_id, step, ftmap),
         "all": np.ones(len(mass_m), dtype=bool),
     }
     return targets, masks

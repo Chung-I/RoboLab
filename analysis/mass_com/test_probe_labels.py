@@ -95,13 +95,20 @@ def test_targets_masks_and_reparams():
     # all three classes actually appear in the fixture (-, 0, +)
     assert set(np.unique(targets["com_axis_cls"])) == {0, 1, 2}
 
-    assert set(masks) == {"precontact", "window", "late", "all"}
+    # amendment 3: `carry` joins the mask set (5 masks)
+    assert set(masks) == {"precontact", "window", "late", "carry", "all"}
     assert np.array_equal(masks["precontact"], ds["precontact_mask"])
     assert np.array_equal(masks["window"], ds["in_window_mask"])
     assert np.array_equal(masks["late"], ~ds["precontact_mask"] & ~ds["in_window_mask"])
     assert masks["all"].all()
     assert not (masks["late"] & (masks["precontact"] | masks["window"])).any()
     assert (masks["precontact"] | masks["window"] | masks["late"]).all()
+    # carry: z >= z0 + 0.05. Episode 0 rises 0 -> 0.05 (airborne only at the
+    # final step, where z - z0 == 0.05 exactly); episode 1 falls, never
+    # airborne. carry is a phase overlay, NOT a partition member.
+    assert np.array_equal(
+        masks["carry"],
+        np.array([False] * 5 + [True] + [False] * 6))
 
     # wrench components split out in order [fx, fy, fz, tx, ty, tz]
     assert np.allclose(targets["wrench_fx"], ds["wrench"][:, 0])
@@ -139,6 +146,26 @@ def test_mass_log_c_default_knee_is_per_object_median_level():
     targets, _ = build_targets(ds, ftmap=ftmap)
     expected = np.repeat([np.log(0.3), 0.0, np.log(1.7)] * 2, 2)
     assert np.allclose(targets["mass_log_c"], expected, atol=1e-6)
+
+
+def test_carry_mask_thresholds_on_initial_z_per_episode():
+    # amendment 3: carry = object airborne (z >= z_initial + 0.05), computed
+    # per episode from the ftmap and joined by (episode_id, step) — a lifted
+    # then dropped object leaves the mask again.
+    ds = _synthetic_ds()
+    z0 = np.array([0.0, 0.02, 0.06, 0.30, 0.06, 0.02])  # up then back down
+    z1 = np.array([1.0, 1.04, 1.051, 1.06, 1.049, 1.2])  # offset baseline
+    ftmap = {}
+    for ep, zs in ((0, z0), (1, z1)):
+        pose = np.zeros((6, 7), dtype=np.float32)
+        pose[:, 2] = zs
+        pose[:, 3] = 1.0
+        ftmap[ep] = {"object_root_pose": pose}
+    _, masks = build_targets(ds, ftmap=ftmap, knee_by_object={0: 1.0, 1: 0.5})
+    np.testing.assert_array_equal(
+        masks["carry"][:6], [False, False, True, True, True, False])
+    np.testing.assert_array_equal(
+        masks["carry"][6:], [False, False, True, True, False, True])
 
 
 def test_build_targets_no_nan_or_inf():

@@ -156,12 +156,21 @@ def _cell_feasible(mask, y, task, groups):
     return not is_degenerate(y[m], task)
 
 
-def _grid_unit(unit):
-    """All (target, mask) cells for one (layer, position). Returns a DataFrame."""
+def _grid_unit(arg):
+    """All (target, mask) cells for one (layer, position). Returns a DataFrame.
+
+    ``arg`` is ``(unit, missing_masks)``: with ``missing_masks=None`` every
+    mask is computed; otherwise only the named masks are (mask-incremental
+    resume, amendment 3 — an existing checkpoint keeps its rows and only the
+    new mask's cells are computed and appended by ``_run_units``).
+    """
+    unit, missing = arg
     layer, position = unit
     t0 = time.time()
     X = slice_features(_G["acts"], layer, position, _G["positions_meta"], _G["excluded"])
     targets, masks, groups = _G["targets"], _G["masks"], _G["groups"]
+    if missing is not None:
+        masks = {m: masks[m] for m in missing}
     task_of = {t: ("clf" if t in CLF_TARGETS else "reg") for t in targets}
 
     feasible = {
@@ -203,14 +212,15 @@ def _grid_unit(unit):
                 rows.append(pd.DataFrame([{**base, **NAN_CELL, "degenerate": True}]))
     out = pd.concat(rows, ignore_index=True)
     out["wall_s"] = time.time() - t0
-    return unit, out
+    return arg, out
 
 
-def _objid_unit(unit):
+def _objid_unit(arg):
     """Amendment-1 point 3: object_id pre-contact decodability (the visual-
     identity channel), one clf cell per layer at position 0, mask precontact.
     Reported alongside the composite mass_log channel; NOT subject to the
     mass leakage guard (identity is legitimately visible pre-contact)."""
+    unit, _missing = arg
     layer, position = unit
     t0 = time.time()
     X = slice_features(_G["acts"], layer, position, _G["positions_meta"], _G["excluded"])
@@ -225,11 +235,12 @@ def _objid_unit(unit):
         rows = [{**base, **NAN_CELL, "degenerate": True}]
     out = pd.DataFrame(rows)
     out["wall_s"] = time.time() - t0
-    return unit, out
+    return arg, out
 
 
-def _time_unit(unit):
+def _time_unit(arg):
     """Time-resolved curves for one (layer, position) over TIME_TARGETS."""
+    unit, _missing = arg
     layer, position = unit
     t0 = time.time()
     X = slice_features(_G["acts"], layer, position, _G["positions_meta"], _G["excluded"])
@@ -248,24 +259,44 @@ def _time_unit(unit):
                 rows.append({**base, **NAN_CELL, "degenerate": True})
     out = pd.DataFrame(rows)
     out["wall_s"] = time.time() - t0
-    return unit, out
+    return arg, out
 
 
-def _run_units(units, worker, ckpt_dir, prefix, workers):
-    """Run pending units through a fork pool, checkpointing each as it lands."""
+def _run_units(units, worker, ckpt_dir, prefix, workers, mask_names=None):
+    """Run pending units through a fork pool, checkpointing each as it lands.
+
+    With ``mask_names`` (the grid path), a unit whose checkpoint exists but
+    lacks some masks is re-dispatched for ONLY the missing masks (amendment-3
+    carry cells over pre-existing checkpoints); the new rows are appended to
+    the checkpoint. Units without a checkpoint compute everything.
+    """
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     path = lambda u: ckpt_dir / f"{prefix}_L{u[0]:02d}_P{u[1]}.parquet"
-    pending = [u for u in units if not path(u).exists()]
-    print(f"[{prefix}] {len(units)} units, {len(pending)} pending", flush=True)
+    pending = []
+    for u in units:
+        if not path(u).exists():
+            pending.append((u, None))
+        elif mask_names:
+            have = set(pd.read_parquet(path(u), columns=["mask"])["mask"].unique())
+            missing = tuple(m for m in mask_names if m not in have)
+            if missing:
+                pending.append((u, missing))
+    n_partial = sum(1 for _, m in pending if m is not None)
+    print(f"[{prefix}] {len(units)} units, {len(pending)} pending "
+          f"({n_partial} mask-incremental)", flush=True)
     if pending:
         ctx = mp.get_context("fork")
         with ctx.Pool(processes=min(workers, len(pending))) as pool:
-            for unit, df in pool.imap_unordered(worker, pending):
+            for (unit, missing), df in pool.imap_unordered(worker, pending):
+                if missing is not None and path(unit).exists():
+                    df = pd.concat([pd.read_parquet(path(unit)), df],
+                                   ignore_index=True)
                 tmp = path(unit).with_suffix(".tmp.parquet")
                 df.to_parquet(tmp)
                 tmp.rename(path(unit))
+                note = "" if missing is None else f" [+masks {list(missing)}]"
                 print(f"[{prefix}] done L{unit[0]} P{unit[1]} "
-                      f"({df['wall_s'].iloc[0]:.0f}s, {len(df)} rows)", flush=True)
+                      f"({df['wall_s'].iloc[0]:.0f}s, {len(df)} rows){note}", flush=True)
     return pd.concat([pd.read_parquet(path(u)) for u in units], ignore_index=True)
 
 
@@ -310,7 +341,8 @@ def sanity_check(results, layers):
 # -------------------------------------------------------------------- figures
 
 FIG_TARGETS = ["mass_log_c", "mass_log", "com_signed", "wrench_norm", "contact_norm"]
-MASK_COLORS = {"precontact": "#1f77b4", "window": "#d62728", "late": "#2ca02c", "all": "#7f7f7f"}
+MASK_COLORS = {"precontact": "#1f77b4", "window": "#d62728", "late": "#2ca02c",
+               "carry": "#ff7f0e", "all": "#7f7f7f"}
 POS_STYLES = {0: "-", 1: ":", 2: "--"}
 POS_NAMES = {0: "last_prefix_token", 1: "image_tokens_mean", 2: "first_suffix_token"}
 
@@ -462,7 +494,8 @@ def main(argv=None):
 
     ckpt = out_dir / "checkpoints"
     grid_units = [(l, p) for l in layers for p in positions]
-    results = _run_units(grid_units, _grid_unit, ckpt, "grid", args.workers)
+    results = _run_units(grid_units, _grid_unit, ckpt, "grid", args.workers,
+                         mask_names=list(masks))
     objid_units = [(l, 0) for l in layers]
     objid = _run_units(objid_units, _objid_unit, ckpt, "objid", args.workers)
     results = pd.concat([results, objid], ignore_index=True)
@@ -489,7 +522,7 @@ def main(argv=None):
         "dataset": args.dataset, "corpus": args.corpus, "smoke": args.smoke,
         "acts_npz_override": args.acts_npz_override, "seed": SEED,
         "calibration": args.calibration, "mass_log_c_knee_by_object": knee_by_object,
-        "preregistration_amendment": 1,
+        "preregistration_amendment": 3,
         "layers": layers, "positions": positions,
         "time_targets": TIME_TARGETS, "time_layers": TIME_LAYERS,
         "time_positions": TIME_POSITIONS, "bins": make_bins(-40, 60, 10),
