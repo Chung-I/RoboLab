@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Plan-3 Task 3: pre-registered probe sweep runner + figures.
 
-Runs the full probe grid (17 targets x layers x 3 positions x 4 phase masks)
+Runs the full probe grid (18 targets x layers x 3 positions x 4 phase masks)
 and the time-resolved curves on the probe dataset, enforces the two built-in
-sanity assertions (jointpos_pc1 ceiling; mass_log pre-contact leakage guard),
+sanity assertions (jointpos_pc1 ceiling; the pre-contact leakage guard on the
+deconfounded ``mass_log_c`` per Pre-registration amendment 1 — ``mass_log``
+stays in the grid as the composite identity+mass-prior channel),
 writes ``results.parquet`` / ``timecurves.parquet`` + figures, and logs to
 wandb (project ``mass-com-vla-probing``, run ``phase3-probes``).
 
@@ -49,7 +51,7 @@ from analysis.mass_com.probe_labels import build_ftmap, build_targets
 F16_MAX = 65504.0
 CLIP_FRAC = 0.01
 CLF_TARGETS = {"com_axis_cls"}
-TIME_TARGETS = ["mass_log", "mass_inv", "wrench_norm", "com_signed", "jointpos_pc1", "step_clock"]
+TIME_TARGETS = ["mass_log_c", "mass_inv", "wrench_norm", "com_signed", "jointpos_pc1", "step_clock"]
 TIME_LAYERS = [0, 5, 11, 17]
 TIME_POSITIONS = [0, 2]
 SMOKE_LAYERS = [0, 5, 11, 17]
@@ -204,13 +206,14 @@ def sanity_check(results, layers):
         "jointpos_pc1_best_layer": int(best.layer),
         "jointpos_pc1_best_position": int(best.position),
     }
+    # Leakage guard re-scoped to the deconfounded mass_log_c (amendment 1).
     ml = results[
-        (results.target == "mass_log") & (results["mask"] == "precontact") & (results.position == 0)
+        (results.target == "mass_log_c") & (results["mask"] == "precontact") & (results.position == 0)
     ]
     worst = ml.loc[ml.selectivity.idxmax()]
     leak = {
-        "mass_log_precontact_max_selectivity": float(worst.selectivity),
-        "mass_log_precontact_argmax_layer": int(worst.layer),
+        "mass_log_c_precontact_max_selectivity": float(worst.selectivity),
+        "mass_log_c_precontact_argmax_layer": int(worst.layer),
         "n_layers_checked": int(ml.layer.nunique()),
     }
     values = {**ceiling, **leak}
@@ -220,11 +223,11 @@ def sanity_check(results, layers):
             f"SANITY FAILURE (ceiling): jointpos_pc1 best real R2 = {best.real:.4f} <= 0.9 "
             f"on mask 'all' — the pipeline cannot decode joint state the model receives. ABORT."
         )
-    assert len(ml) == len(layers), f"expected {len(layers)} precontact/pos0 mass_log cells, got {len(ml)}"
+    assert len(ml) == len(layers), f"expected {len(layers)} precontact/pos0 mass_log_c cells, got {len(ml)}"
     if not (ml.selectivity < 0.1).all():
         bad = ml[ml.selectivity >= 0.1][["layer", "real", "shuffled", "selectivity"]]
         raise SystemExit(
-            "SANITY FAILURE (leakage guard): mass_log selectivity >= 0.1 pre-contact at:\n"
+            "SANITY FAILURE (leakage guard): mass_log_c selectivity >= 0.1 pre-contact at:\n"
             f"{bad.to_string(index=False)}\nBLOCKED — do not relax; report the numbers."
         )
     return values
@@ -232,7 +235,7 @@ def sanity_check(results, layers):
 
 # -------------------------------------------------------------------- figures
 
-FIG_TARGETS = ["mass_log", "com_signed", "wrench_norm", "contact_norm"]
+FIG_TARGETS = ["mass_log_c", "mass_log", "com_signed", "wrench_norm", "contact_norm"]
 MASK_COLORS = {"precontact": "#1f77b4", "window": "#d62728", "late": "#2ca02c", "all": "#7f7f7f"}
 POS_STYLES = {0: "-", 1: ":", 2: "--"}
 POS_NAMES = {0: "last_prefix_token", 1: "image_tokens_mean", 2: "first_suffix_token"}
@@ -321,6 +324,8 @@ def main(argv=None):
     ap.add_argument("--smoke", action="store_true", help="layers {0,5,11,17} only")
     ap.add_argument("--acts-npz-override", default=None,
                     help="npz with an 'acts' array replacing the dataset's (e.g. random-init pass)")
+    ap.add_argument("--calibration", default="output/calibration/mass_levels.json",
+                    help="calibrated per-object mass levels; 'medium' is the mass_log_c knee")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--no-wandb", action="store_true")
     args = ap.parse_args(argv)
@@ -338,8 +343,15 @@ def main(argv=None):
         assert override.shape == ds["acts"].shape, (override.shape, ds["acts"].shape)
         ds["acts"] = override
 
+    levels = json.loads(Path(args.calibration).read_text())
+    knee_by_object = {
+        oid: float(levels[name]["medium"])
+        for name, oid in meta["object_id_mapping"].items()
+    }
+    print(f"mass_log_c knees (calibrated medium): {knee_by_object}", flush=True)
+
     ftmap = build_ftmap(meta, args.corpus)
-    targets, masks = build_targets(ds, ftmap)
+    targets, masks = build_targets(ds, ftmap, knee_by_object=knee_by_object)
 
     excl = excluded_clip_dims(ds["acts"], layer=17, position=0)
     if not args.acts_npz_override:
@@ -376,6 +388,8 @@ def main(argv=None):
     config = {
         "dataset": args.dataset, "corpus": args.corpus, "smoke": args.smoke,
         "acts_npz_override": args.acts_npz_override, "seed": SEED,
+        "calibration": args.calibration, "mass_log_c_knee_by_object": knee_by_object,
+        "preregistration_amendment": 1,
         "layers": layers, "positions": positions,
         "time_targets": TIME_TARGETS, "time_layers": TIME_LAYERS,
         "time_positions": TIME_POSITIONS, "bins": make_bins(-40, 60, 10),

@@ -8,7 +8,15 @@ and 4 phase masks used by every probe cell in Task 3. Pure numpy, no model
 or activations touched here.
 
 Target definitions (Global Constraints / study doc, pre-registered):
-- mass: ``m``, ``1/m``, ``log m``.
+- mass: ``m``, ``1/m``, ``log m``; plus (Pre-registration amendment 1) the
+  PRIMARY deconfounded target ``mass_log_c = log m - log knee(object)``,
+  where ``knee(object)`` is the calibrated medium mass level per object.
+  Mass levels are proportional per object (0.3/1.0/1.7 x knee), so
+  ``mass_log_c`` has the identical support {log 0.3, 0, log 1.7} for both
+  objects — hidden within-object mass, deconfounded from visual identity by
+  construction. ``knee_by_object`` maps object_id -> knee kg; when omitted
+  the knee is derived as the median unique mass per object (equal to the
+  calibrated medium by construction of the corpus).
 - CoM: signed offset along the per-object axis (already signed in the
   dataset), ``|offset|``, and a 3-class sign label {-1,0,+1} -> {0,1,2}.
 - wrench: the 6 mount-frame components ``[fx,fy,fz,tx,ty,tz]`` (column
@@ -34,9 +42,9 @@ import os
 
 import numpy as np
 
-EXPECTED_17 = frozenset(
+EXPECTED_18 = frozenset(
     {
-        "mass_m", "mass_inv", "mass_log",
+        "mass_m", "mass_inv", "mass_log", "mass_log_c",
         "com_signed", "com_abs", "com_axis_cls",
         "wrench_fx", "wrench_fy", "wrench_fz",
         "wrench_tx", "wrench_ty", "wrench_tz",
@@ -119,14 +127,26 @@ def _pc1(x: np.ndarray) -> np.ndarray:
     return centered @ vt[0]
 
 
-def build_targets(ds: dict, ftmap: dict) -> tuple[dict, dict]:
-    """Build the 17 pre-registered probe targets and 4 phase masks.
+def _derive_knee_by_object(mass_m: np.ndarray, object_id: np.ndarray) -> dict:
+    """Median unique mass per object == the calibrated medium level, because
+    the corpus mass levels are {0.3, 1.0, 1.7} x knee per object."""
+    return {
+        int(o): float(np.median(np.unique(mass_m[object_id == o])))
+        for o in np.unique(object_id)
+    }
+
+
+def build_targets(ds: dict, ftmap: dict, knee_by_object: dict | None = None) -> tuple[dict, dict]:
+    """Build the 18 pre-registered probe targets and 4 phase masks.
 
     ``ds`` is the probe-dataset dict (or an equivalent synthetic fixture)
     with at least: mass_kg, com_offset_m, wrench (N,6), contact_force_norm,
-    joint_pos (N,7), precontact_mask, in_window_mask, episode_id, step.
-    ``ftmap`` is ``episode_id -> ft dict`` with at least object_root_pose
-    (T,7), as produced by ``build_ftmap``.
+    joint_pos (N,7), precontact_mask, in_window_mask, episode_id, step
+    (plus object_id when more than one object is present, for
+    ``mass_log_c``). ``ftmap`` is ``episode_id -> ft dict`` with at least
+    object_root_pose (T,7), as produced by ``build_ftmap``.
+    ``knee_by_object`` maps object_id -> calibrated medium mass (kg); None
+    derives it from the data (see ``_derive_knee_by_object``).
     """
     mass_m = ds["mass_kg"].astype(np.float64)
     com_signed = ds["com_offset_m"].astype(np.float64)
@@ -141,10 +161,16 @@ def build_targets(ds: dict, ftmap: dict) -> tuple[dict, dict]:
     wrench_fz = wrench[:, 2]
     wrench_resist = -wrench_fz * lift_dir
 
+    object_id = np.asarray(ds.get("object_id", np.zeros(len(mass_m), dtype=np.int64)))
+    if knee_by_object is None:
+        knee_by_object = _derive_knee_by_object(mass_m, object_id)
+    knee_per_row = np.array([knee_by_object[int(o)] for o in object_id], dtype=np.float64)
+
     targets = {
         "mass_m": mass_m,
         "mass_inv": 1.0 / mass_m,
         "mass_log": np.log(mass_m),
+        "mass_log_c": np.log(mass_m) - np.log(knee_per_row),
         "com_signed": com_signed,
         "com_abs": np.abs(com_signed),
         "com_axis_cls": com_axis_cls,

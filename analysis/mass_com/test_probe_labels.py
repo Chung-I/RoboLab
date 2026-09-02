@@ -6,9 +6,10 @@ import pytest
 
 from analysis.mass_com.probe_labels import build_ftmap, build_targets
 
-# Frozen independently of the implementation module (see study doc Task 2).
-EXPECTED_17 = {
-    "mass_m", "mass_inv", "mass_log",
+# Frozen independently of the implementation module (see study doc Task 2,
+# as extended by Pre-registration amendment 1: mass_log_c, 17 -> 18).
+EXPECTED_18 = {
+    "mass_m", "mass_inv", "mass_log", "mass_log_c",
     "com_signed", "com_abs", "com_axis_cls",
     "wrench_fx", "wrench_fy", "wrench_fz",
     "wrench_tx", "wrench_ty", "wrench_tz",
@@ -44,6 +45,7 @@ def _synthetic_ds():
     return {
         "episode_id": episode_id,
         "step": step,
+        "object_id": np.array([0] * 6 + [1] * 6, dtype=np.int64),
         "mass_kg": mass_kg,
         "com_offset_m": com_offset_m,
         "wrench": wrench,
@@ -75,14 +77,19 @@ def _synthetic_ftmap():
 
 def test_targets_masks_and_reparams():
     ds = _synthetic_ds()
-    targets, masks = build_targets(ds, ftmap=_synthetic_ftmap())
+    targets, masks = build_targets(
+        ds, ftmap=_synthetic_ftmap(), knee_by_object={0: 1.0, 1: 0.5}
+    )
 
-    assert set(targets) == EXPECTED_17
+    assert set(targets) == EXPECTED_18
     for k, v in targets.items():
         assert v.shape == (12,), f"{k} has shape {v.shape}"
 
     assert np.allclose(targets["mass_inv"], 1 / targets["mass_m"])
     assert np.allclose(targets["mass_log"], np.log(targets["mass_m"]))
+    # amendment 1: mass_log_c = mass_log - log(knee(object))
+    assert np.allclose(targets["mass_log_c"][:6], np.log(2.0) - np.log(1.0))
+    assert np.allclose(targets["mass_log_c"][6:], np.log(0.5) - np.log(0.5))
     assert np.allclose(targets["com_abs"], np.abs(targets["com_signed"]))
     assert set(np.unique(targets["com_axis_cls"])) <= {0, 1, 2}
     # all three classes actually appear in the fixture (-, 0, +)
@@ -115,6 +122,23 @@ def test_targets_masks_and_reparams():
     assert np.isclose(targets["step_clock"][0], 0.0)
 
     assert np.isfinite(targets["jointpos_pc1"]).all()
+
+
+def test_mass_log_c_default_knee_is_per_object_median_level():
+    # 0.3/1.0/1.7 x knee levels per object; with knee_by_object=None the knee
+    # is derived as the median unique mass per object, so mass_log_c has the
+    # identical support {log 0.3, 0, log 1.7} for both objects.
+    ds = _synthetic_ds()
+    ds["episode_id"] = np.arange(12) // 2
+    ds["step"] = np.tile([0, 1], 6).astype(np.int64)
+    ds["object_id"] = np.array([0] * 6 + [1] * 6, dtype=np.int64)
+    ds["mass_kg"] = np.repeat(
+        [0.3 * 2.0, 1.0 * 2.0, 1.7 * 2.0, 0.3 * 0.5, 1.0 * 0.5, 1.7 * 0.5], 2
+    ).astype(np.float32)
+    ftmap = {ep: {"object_root_pose": _synthetic_ftmap()[0]["object_root_pose"][:2]} for ep in range(6)}
+    targets, _ = build_targets(ds, ftmap=ftmap)
+    expected = np.repeat([np.log(0.3), 0.0, np.log(1.7)] * 2, 2)
+    assert np.allclose(targets["mass_log_c"], expected, atol=1e-6)
 
 
 def test_build_targets_no_nan_or_inf():
