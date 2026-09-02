@@ -212,3 +212,12 @@ def test_targets_masks_and_reparams():
 4. Headline mass claims (probes AND patching) use `mass_log_c` (and `mass_inv`/`mass_m` within-object analogues are NOT added — one primary avoids a garden of forking paths; `mass_log` composite is the only secondary).
 
 Rationale documented before any full-sweep or non-diagnostic result was seen; smoke parquets were quarantined during the decision.
+
+## Pre-registration amendment 2 (2026-09-03, secondary metrics + degenerate guard)
+
+**Trigger:** methods review after the Task-3 full sweep (user-approved). R²+selectivity remains the PRIMARY metric everywhere — this amendment adds pre-declared secondaries and a guard; no primary claim may switch to a secondary metric post hoc.
+
+1. **Ranking accuracy for `mass_log_c` (secondary):** pairwise ordering accuracy over held-out episode pairs of the same object — fraction of (row_i, row_j) pairs with different mass levels where the probe's predicted values order the true levels correctly (chance 0.5). Computed from the SAME ridge predictions the R² cells already produce (no new fits), per (layer, position, mask), reported alongside R² for mass_log_c only.
+2. **RMSE in physical units (secondary):** for wrench targets (wrench_norm, wrench_resist, contact_norm), report pooled held-out RMSE in Newtons alongside R².
+3. **Degenerate guard tightened:** a cell whose masked target variance < 1e-12 (or a clf cell with a single class present) is flagged `degenerate=True` and its metrics set to NaN — never scored. Applies retroactively to the known constant cell (contact_norm/precontact ≡ 0); its R²=1.0 entries are relabeled degenerate in the shipped parquet by a documented refresh script, not hand-edited.
+4. Interpretation rule: secondaries may STRENGTHEN a null or positive stated on the primary ("not even rankable"), never establish a claim the primary doesn't support.
