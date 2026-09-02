@@ -16,6 +16,13 @@ buffer and produces corrupted actions. Until the server is patched to return
 the full chunk per request (see the study runbook), run MolmoBot evaluations
 with `--num-envs 1`.
 
+**Patched-server mode:** launch the server from the `serve/full-chunk`
+branch of the `Chung-I/MolmoBot` fork with `--serve-full-chunk`; serving
+is then stateless, so run with `--allow-multi-env --num-envs 16`. The
+client detects the mode from the response and adopts the server's
+`execute_horizon` (8) and per-step `relative_max_joint_delta` clamp
+automatically.
+
 ## Install the client
 
 `openpi_client` is required. If it is not already installed in the RoboLab

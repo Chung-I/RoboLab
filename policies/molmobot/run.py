@@ -10,12 +10,15 @@ Registers only the 10 study envs (2 tasks x 5 mass/CoM conditions; spec
 Operational constraint: the MolmoBot server keeps per-session state (an
 internal 16-step action buffer advanced one action per request). Running
 this runner with --num-envs N>1 multiplexes N interleaved env streams into
-that single buffer and produces corrupted actions. Until the server is
-patched to return the full chunk per request (see the study runbook), run
-MolmoBot evaluations with ``--num-envs 1 --num-runs 16``. This runner
-*enforces* that: anything but ``--num-envs 1`` exits immediately unless
-``--allow-multi-env`` is passed (pass it only after the server patch lands,
-when BOTH models run at ``--num-envs 16``).
+that single buffer and produces corrupted actions. With the STOCK server, run
+``--num-envs 1 --num-runs 16``; this runner *enforces* that (anything but
+``--num-envs 1`` exits immediately unless ``--allow-multi-env`` is passed).
+
+The server patch has landed: branch ``serve/full-chunk`` on the
+``Chung-I/MolmoBot`` fork adds ``--serve-full-chunk``, making serving
+stateless. Against a full-chunk server, pass ``--allow-multi-env
+--num-envs 16``; the client detects the mode from the response and adopts
+the server's ``execute_horizon`` (8) and per-step delta clamp automatically.
 """
 
 import argparse

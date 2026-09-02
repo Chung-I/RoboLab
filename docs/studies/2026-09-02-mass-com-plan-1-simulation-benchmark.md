@@ -1536,9 +1536,9 @@ uv run python policies/pi0_family/run_mass_variation.py --policy pi05 \
 # 3. Phase 1b (cml30: stop pi05, bash scripts/cml30/serve_molmobot.sh; local:)
 uv run python policies/molmobot/run.py \
     --remote-host cml30.csie.ntu.edu.tw --remote-port 8000 \
-    --num-envs 1 --num-runs 16 --record-image-data --headless
+    --num-envs 16 --num-runs 1 --allow-multi-env --record-image-data --headless
 
-# Preferred: patch the MolmoBot server at cml30 setup to return the full 16-step
+# DONE: the MolmoBot server is patched (branch serve/full-chunk on the Chung-I/MolmoBot fork, --serve-full-chunk flag); serve with scripts/cml30/serve_molmobot.sh. Originally: patch the MolmoBot server at cml30 setup to return the full 16-step
 # chunk per request, then run BOTH models at --num-envs 16; if infeasible, run
 # BOTH models at --num-envs 1 for batching symmetry (controller ruling I5).
 # (policies/molmobot/run.py enforces --num-envs 1 unless --allow-multi-env is

@@ -60,16 +60,39 @@ logger = logging.getLogger(__name__)
 
 
 class MolmoBotDroidJointposClient(InferenceClient):
-    # Single-action-per-response server (see wire-format findings above) ->
-    # requery every env step.
+    # Stock server returns one action per response (see wire-format findings
+    # above) -> requery every env step. A --serve-full-chunk server announces
+    # itself in the response and the client auto-adopts its execute_horizon
+    # (8) and per-step delta clamp; see _unpack_response and infer.
     DEFAULT_HORIZON: int = 1
 
     def __init__(self, remote_host: str = "localhost", remote_port: int = 8000,
                  open_loop_horizon: int | None = None):
         super().__init__()
         self.open_loop_horizon = int(open_loop_horizon or self.DEFAULT_HORIZON)
+        # Explicit horizon wins over server-advertised execute_horizon.
+        self._horizon_overridden = open_loop_horizon is not None
+        # Adopted from a full-chunk server response (relative_max_joint_delta);
+        # applied per executed step against the CURRENT qpos, mirroring
+        # RealRobotVLAPolicy.get_action (configure_real_robot.py:172-182).
+        self._max_joint_delta: np.ndarray | None = None
         self._host, self._port = remote_host, remote_port
         self._client = None  # lazy: unit tests never open a socket
+
+    def infer(self, obs, instruction, *, env_id: int = 0) -> dict:
+        result = super().infer(obs, instruction, env_id=env_id)
+        if self._max_joint_delta is not None:
+            action = result["action"]
+            qpos = (obs["proprio_obs"]["arm_joint_pos"][env_id]
+                    .clone().detach().cpu().numpy().astype(np.float32)[:7])
+            deltas = action[:7] - qpos
+            scale = np.abs(deltas) / self._max_joint_delta
+            peak = float(np.max(scale))
+            if peak > 1.0:
+                action = action.copy()
+                action[:7] = qpos + deltas / peak
+                result["action"] = action
+        return result
 
     def _connect(self):
         from openpi_client.websocket_client_policy import WebsocketClientPolicy
@@ -133,6 +156,15 @@ class MolmoBotDroidJointposClient(InferenceClient):
         return self._infer_with_retry(request)
 
     def _unpack_response(self, response: dict) -> np.ndarray:
+        if response.get("full_chunk"):
+            # Stateless full-chunk server (serve_molmo.py --serve-full-chunk):
+            # adopt its execution semantics unless the caller pinned a horizon,
+            # and its per-step delta clamp (applied in infer()).
+            if not self._horizon_overridden:
+                self.open_loop_horizon = int(response.get("execute_horizon", 8))
+            max_delta = response.get("relative_max_joint_delta")
+            if max_delta is not None:
+                self._max_joint_delta = np.asarray(max_delta, np.float32)
         arm = np.atleast_2d(np.asarray(response["arm"], np.float32))      # (T, 7)
         grip = np.asarray(response["gripper"], np.float32).reshape(arm.shape[0], -1)[:, :1]
         # MolmoBot gripper is 0-255 (0=open, 255=closed); RoboLab wants 0-1
