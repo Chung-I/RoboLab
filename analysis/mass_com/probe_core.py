@@ -17,7 +17,20 @@ per-step phase clock), whole-group *blocks* of labels are swapped between
 groups instead of a per-sample shuffle, which would destroy the group-coherent
 temporal structure the control is meant to preserve; group lengths are padded
 (by repeating the last value) or trimmed to fit, since groups need not be
-equal length in general even though the fixtures here are.
+equal length in general even though the fixtures here are. This block swap
+assumes each group's rows are already in time order (contiguous, step-
+ascending) in ``X``/``y``/``groups`` — true of every caller in this study
+(the probe dataset and the synthetic fixtures are built that way) — since it
+copies same-offset runs of values between groups without re-sorting by step.
+
+``shuffled`` re-searches ALPHAS independently for each of N_SHUFFLES
+permutation draws (never reuses ``real``'s alpha): fixing the null to the
+signal's alpha is anti-conservative, since a permuted label has no real
+structure for a low (weakly regularized) alpha to overfit *to* on the test
+fold, other than fold-partition noise — exactly the kind of noise a
+low-alpha fit is best at chasing. Letting each draw pick its own best alpha
+gives the null its fair (and typically higher, more regularized) optimum,
+so ``shuffled`` isn't deflated and ``selectivity`` isn't inflated.
 """
 
 import numpy as np
@@ -104,35 +117,41 @@ def _floor(y, groups, task):
 def run_probe_cell(X, y, groups, task="reg", seed=0):
     """One probe cell: real signal, group-coherent shuffled control, floor.
 
-    Returns a dict with keys ``real, shuffled, floor, selectivity, n,
-    n_groups``. ``task="reg"``: ridge, metric R² (pooled held-out
-    predictions). ``task="clf"``: logistic, metric balanced accuracy.
+    Returns a dict with keys ``real, shuffled, shuffled_std, floor,
+    selectivity, n, n_groups``. ``task="reg"``: ridge, metric R² (pooled
+    held-out predictions). ``task="clf"``: logistic, metric balanced
+    accuracy.
 
-    ``shuffled`` is averaged over N_SHUFFLES independent group-coherent
-    permutations (regularization strength fixed to whatever ``real`` picked,
-    not re-searched per permutation). A single permutation's pooled R² is
-    high-variance when there are only a handful of groups (10-20, the regime
-    this study runs in): which specific group-level values land in the
-    held-out folds shifts the mean-predictor baseline by as much as the
-    ridge model's actual fit, so one draw can make ``selectivity`` look
-    nonzero for a target with provably no signal. Averaging over several
-    permutations is the standard fix for a small-sample permutation control.
+    ``shuffled`` is the mean over N_SHUFFLES independent group-coherent
+    permutations, each with its own independent ALPHAS search (see module
+    docstring for why the alpha is not shared with ``real``); ``shuffled_std``
+    is that mean's sample std, surfaced so a small selectivity isn't read as
+    "no signal" when it's actually within the null's own draw-to-draw noise.
+    A single permutation's pooled score is high-variance when there are only
+    a handful of groups (10-20, the regime this study runs in): which
+    specific group-level values land in the held-out folds shifts the
+    mean-predictor baseline by as much as the model's actual fit, so one draw
+    can make ``selectivity`` look nonzero for a target with provably no
+    signal. Averaging over several permutations is the standard fix for a
+    small-sample permutation control.
     """
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y)
     groups = np.asarray(groups)
     rng = np.random.default_rng(seed)
 
-    real, alpha = _cv_pooled_best(X, y, groups, task)
+    real, _ = _cv_pooled_best(X, y, groups, task)
     shuf_scores = [
-        _cv_pooled_at_alpha(X, _shuffle_group_coherent(y, groups, rng), groups, task, alpha)
+        _cv_pooled_best(X, _shuffle_group_coherent(y, groups, rng), groups, task)[0]
         for _ in range(N_SHUFFLES)
     ]
     shuffled = float(np.mean(shuf_scores))
+    shuffled_std = float(np.std(shuf_scores))
     floor = _floor(y, groups, task)
     return {
         "real": real,
         "shuffled": shuffled,
+        "shuffled_std": shuffled_std,
         "floor": floor,
         "selectivity": real - shuffled,
         "n": len(y),
