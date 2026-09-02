@@ -120,6 +120,19 @@ def main() -> None:
     parser.add_argument("--dump-events", action="store_true",
                         help="after each attempt_lift, print get_all_env_events(env) "
                              "(diagnostic aid for pinning event-log stage-name strings)")
+    parser.add_argument("--record", action="store_true",
+                        help="stream the full grasp-lift-hold step sequence to "
+                             "<out>/<object>_calib_record.hdf5 (RoboLab's standard recorder schema: "
+                             "data/demo_0/{actions,states,initial_state,...}), as demo_0 of a single "
+                             "episode. Recorder terms fire on every env.step() regardless of this flag "
+                             "(BaseRecorderManagerCfg default); this only opens the HDF5 file and "
+                             "flushes on exit, via the same set_hdf5_file()/end_episode() hookup "
+                             "scripts/build_replay_corpus.py and robolab/eval/episode.py use. Intended "
+                             "for objects (e.g. soft_scrub) that no eval/rollout harness has "
+                             "successfully recorded, so a source recording for replay corpus building "
+                             "must come from a calibration lift instead. Use with --masses <single "
+                             "value> --trials 1 for one clean demo; sweeping multiple masses/trials "
+                             "with --record concatenates every attempt_lift() into that same demo_0.")
     import cv2  # noqa: F401  must import before isaaclab
     from isaaclab.app import AppLauncher
     AppLauncher.add_app_launcher_args(parser)
@@ -134,7 +147,7 @@ def main() -> None:
 
     import robolab.constants  # noqa: E402
     from robolab.core.environments.factory import get_envs  # noqa: E402
-    from robolab.core.environments.runtime import create_env  # noqa: E402
+    from robolab.core.environments.runtime import create_env, end_episode  # noqa: E402
     from robolab.core.task.conditionals import object_grabbed as object_grabbed_fn  # noqa: E402
     from robolab.registrations.droid.auto_env_registrations_abs_ik import (  # noqa: E402
         auto_register_droid_abs_ik_envs,
@@ -146,6 +159,11 @@ def main() -> None:
     )
 
     robolab.constants.RECORD_IMAGE_DATA = False
+    if args.record:
+        # Route the recorder's export dir (set at env-cfg construction time, so
+        # this must happen before auto_register_droid_abs_ik_envs/create_env
+        # below) to --out, alongside this run's other calibration artifacts.
+        robolab.constants.set_output_dir(args.out)
 
     # ------------------------------------------------------------------
     # quaternion / rotation helpers (w, x, y, z)
@@ -372,6 +390,14 @@ def main() -> None:
     # so IsaacLab never truncates (and auto-resets) mid-sweep.
     env.cfg.episode_length_s = 1.0e6
     env.reset()
+    if args.record:
+        if env.recorder_manager is not None and hasattr(env.recorder_manager, "set_hdf5_file"):
+            env.recorder_manager.set_hdf5_file(f"{args.obj}_calib_record.hdf5")
+            env.recorder_manager.set_episode_index(0, env_ids=[0])
+        else:
+            print("WARNING: --record requested but recorder_manager has no set_hdf5_file "
+                  "(not a RobolabRecorderManager?); no HDF5 will be written.")
+            args.record = False
     settle()
     INIT_OBJ_POSE = env.scene[args.obj].data.root_pose_w[0].clone()
     INIT_JOINT_POS = robot.data.joint_pos[0].clone()
@@ -587,6 +613,10 @@ def main() -> None:
             ok = all(oks)
             lifted.append(ok)
             print(f"[calibrate] {args.obj} mass={current_mass:.2f} kg lifted={oks} -> {ok}")
+        if args.record:
+            end_episode(env)
+            print(f"[record] wrote {Path(args.out) / (args.obj + '_calib_record.hdf5')} "
+                  f"(demo_0, {len(step_times)} steps)")
         knee = find_knee(masses, lifted)
         levels = derive_levels(knee)
         (out / f"{args.obj}_curve.json").write_text(json.dumps(
