@@ -8,6 +8,7 @@
 # server keeps per-session chunk state and the RoboLab side must run
 # --num-envs 1 (see policies/molmobot/README.md).
 set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"  # uv lives here; non-interactive shells miss it
 source "$(dirname "$0")/preflight.sh"
 export CUDA_VISIBLE_DEVICES=$GPU
 export HF_HOME=/tmp2/chungyili/.cache/huggingface

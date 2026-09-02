@@ -3,6 +3,7 @@
 # The checkpoint dir mirrors the local cache: gs://openpi-assets-simeval/pi05_droid_jointpos
 # (downloads on first use into $OPENPI_DATA_HOME).
 set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"  # uv lives here; non-interactive shells miss it
 source "$(dirname "$0")/preflight.sh"
 export OPENPI_DATA_HOME=/tmp2/chungyili/.cache/openpi
 export CUDA_VISIBLE_DEVICES=$GPU
