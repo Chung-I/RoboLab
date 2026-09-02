@@ -54,27 +54,32 @@ def test_build_step_request_pads_vertically_for_wide_image():
 # ---------------------------------------------------------------- token block ranges
 
 
-def test_lang_block_ranges_basic():
+def test_lang_block_ranges_real_tokenizer_pattern():
+    # The PaliGemma sentencepiece vocab splits state numbers into a bare "▁"
+    # word marker followed by single-digit pieces (verified on the real
+    # tokenizer): "State: 122 24;" -> '▁State',':','▁','1','2','2','▁','2','4',';'
     pieces = [
-        "<bos>", "▁Task", ":", "▁Put", "▁the", "▁carton", ",",
+        "<bos>", "Task", ":", "▁Put", "▁the", "▁carton", ",",
+        "▁State", ":", "▁", "1", "2", "2", "▁", "2", "4",
+        ";", "\n", "Action", ":", "▁",
+    ]
+    r = cap.lang_block_ranges(pieces)
+    assert r["text"] == (0, 9)      # everything before the first state piece
+    assert r["state"] == (9, 16)    # ▁ 1 2 2 ▁ 2 4
+    assert r["tail"] == (16, 21)    # ; \n Action : ▁  (trailing ▁ not state)
+
+
+def test_lang_block_ranges_attached_digit_pieces():
+    # Also robust to vocabularies where digits attach to the marker ("▁12").
+    pieces = [
+        "<bos>", "▁Task", ":", "▁pick", "▁2", "▁cans", ",",
         "▁State", ":", "▁12", "3", "▁45", "▁0",
         ";", "▁Action", ":", "▁",
     ]
     r = cap.lang_block_ranges(pieces)
-    assert r["text"] == (0, 9)      # everything before the first state digit
+    assert r["text"] == (0, 9)      # in-text "▁2" must not start the state block
     assert r["state"] == (9, 13)    # ▁12 3 ▁45 ▁0
-    assert r["tail"] == (13, 17)    # ;\nAction:_
-
-
-def test_lang_block_ranges_digits_only_inside_state():
-    # A digit-like piece in the instruction text must not start the state
-    # block: state starts only after the "State" marker piece.
-    pieces = ["<bos>", "▁Task", ":", "▁pick", "▁2", "▁cans", ",",
-              "▁State", ":", "▁7", "▁255", ";", "▁Action", ":"]
-    r = cap.lang_block_ranges(pieces)
-    assert r["state"] == (9, 11)
-    assert r["text"] == (0, 9)
-    assert r["tail"] == (11, 14)
+    assert r["tail"] == (13, 17)
 
 
 def test_lang_block_ranges_raises_without_state_marker():

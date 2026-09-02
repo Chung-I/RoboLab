@@ -117,13 +117,25 @@ def _is_digit_piece(piece: str) -> bool:
     return stripped.isdigit()
 
 
+def _is_state_piece(pieces: list[str], i: int) -> bool:
+    """A piece belongs to the state-number block if it carries digits, or is a
+    bare "▁" word marker directly followed by a digit piece (the PaliGemma
+    vocab tokenizes " 122" as '▁','1','2','2')."""
+    p = pieces[i]
+    if _is_digit_piece(p) and p.replace("▁", "") != "":
+        return True
+    return (p.replace("▁", "") == "" and p != "" and i + 1 < len(pieces)
+            and _is_digit_piece(pieces[i + 1]) and pieces[i + 1].replace("▁", "") != "")
+
+
 def lang_block_ranges(pieces: list[str]) -> dict[str, tuple[int, int]]:
     """Split the valid language tokens of a pi05 prompt into blocks.
 
     The tokenized string is "Task: {text}, State: {ints};\\nAction: ".
     Returns ranges RELATIVE to the language block start:
       text  = [0, state_start)   (includes "Task:", the instruction, ", State:")
-      state = [state_start, state_end)  (the discretized state integers)
+      state = [state_start, state_end)  (the discretized state integers,
+              including the bare "▁" separator pieces between numbers)
       tail  = [state_end, len)   (";\\nAction: ")
     """
     marker = None
@@ -135,13 +147,13 @@ def lang_block_ranges(pieces: list[str]) -> dict[str, tuple[int, int]]:
         raise ValueError(f"no 'State' marker piece found in {pieces!r}")
     state_start = None
     for i in range(marker + 1, len(pieces)):
-        if _is_digit_piece(pieces[i]):
+        if _is_state_piece(pieces, i):
             state_start = i
             break
     if state_start is None:
         raise ValueError(f"no digit pieces after 'State' marker in {pieces!r}")
     state_end = state_start
-    while state_end < len(pieces) and _is_digit_piece(pieces[state_end]):
+    while state_end < len(pieces) and _is_state_piece(pieces, state_end):
         state_end += 1
     return {
         "text": (0, state_start),
