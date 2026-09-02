@@ -1,0 +1,347 @@
+{
+  "model": "pi05",
+  "N": 2010,
+  "acts_shape": [
+    2010,
+    18,
+    3,
+    2048
+  ],
+  "acts_dtype": "float16",
+  "acts_stored_unsliced": "acts is (N, L, P, D=2048) UNSLICED; slice each position via positions[*].valid_dims (see acts_io.load_acts) \u2014 position 2 is the action-expert stream (D=1024, dims 1024:2048 zero padding).",
+  "episodes": [
+    {
+      "episode_id": 0,
+      "object": "orange_juice_carton",
+      "condition": "MassHeavy_CoMCenter",
+      "T": 157,
+      "anchor_step": 97,
+      "precontact_boundary": 97,
+      "matched_window_N": 60,
+      "mass_kg": 1.4874999523162842,
+      "com_axis": "y",
+      "com_offset_m": 0.0,
+      "sources": {
+        "acts": "output/activations/pi05/orange_juice_carton/MassHeavy_CoMCenter/acts.npz",
+        "ft": "output/replay_corpus/orange_juice_carton/MassHeavy_CoMCenter/ft.npz"
+      }
+    },
+    {
+      "episode_id": 1,
+      "object": "orange_juice_carton",
+      "condition": "MassLight_CoMCenter",
+      "T": 157,
+      "anchor_step": 97,
+      "precontact_boundary": 97,
+      "matched_window_N": 60,
+      "mass_kg": 0.26249998807907104,
+      "com_axis": "y",
+      "com_offset_m": 0.0,
+      "sources": {
+        "acts": "output/activations/pi05/orange_juice_carton/MassLight_CoMCenter/acts.npz",
+        "ft": "output/replay_corpus/orange_juice_carton/MassLight_CoMCenter/ft.npz"
+      }
+    },
+    {
+      "episode_id": 2,
+      "object": "orange_juice_carton",
+      "condition": "MassMedium_CoMCenter",
+      "T": 157,
+      "anchor_step": 97,
+      "precontact_boundary": 97,
+      "matched_window_N": 60,
+      "mass_kg": 0.875,
+      "com_axis": "y",
+      "com_offset_m": 0.0,
+      "sources": {
+        "acts": "output/activations/pi05/orange_juice_carton/MassMedium_CoMCenter/acts.npz",
+        "ft": "output/replay_corpus/orange_juice_carton/MassMedium_CoMCenter/ft.npz"
+      }
+    },
+    {
+      "episode_id": 3,
+      "object": "orange_juice_carton",
+      "condition": "MassMedium_CoMDown",
+      "T": 157,
+      "anchor_step": 97,
+      "precontact_boundary": 97,
+      "matched_window_N": 60,
+      "mass_kg": 0.875,
+      "com_axis": "y",
+      "com_offset_m": -0.019999999552965164,
+      "sources": {
+        "acts": "output/activations/pi05/orange_juice_carton/MassMedium_CoMDown/acts.npz",
+        "ft": "output/replay_corpus/orange_juice_carton/MassMedium_CoMDown/ft.npz"
+      }
+    },
+    {
+      "episode_id": 4,
+      "object": "orange_juice_carton",
+      "condition": "MassMedium_CoMUp",
+      "T": 157,
+      "anchor_step": 97,
+      "precontact_boundary": 97,
+      "matched_window_N": 60,
+      "mass_kg": 0.875,
+      "com_axis": "y",
+      "com_offset_m": 0.019999999552965164,
+      "sources": {
+        "acts": "output/activations/pi05/orange_juice_carton/MassMedium_CoMUp/acts.npz",
+        "ft": "output/replay_corpus/orange_juice_carton/MassMedium_CoMUp/ft.npz"
+      }
+    },
+    {
+      "episode_id": 5,
+      "object": "soft_scrub",
+      "condition": "MassHeavy_CoMCenter",
+      "T": 245,
+      "anchor_step": 130,
+      "precontact_boundary": 130,
+      "matched_window_N": 25,
+      "mass_kg": 0.7225000262260437,
+      "com_axis": "z",
+      "com_offset_m": 0.0,
+      "sources": {
+        "acts": "output/activations/pi05/soft_scrub/MassHeavy_CoMCenter/acts.npz",
+        "ft": "output/replay_corpus/soft_scrub/MassHeavy_CoMCenter/ft.npz"
+      }
+    },
+    {
+      "episode_id": 6,
+      "object": "soft_scrub",
+      "condition": "MassLight_CoMCenter",
+      "T": 245,
+      "anchor_step": 130,
+      "precontact_boundary": 130,
+      "matched_window_N": 25,
+      "mass_kg": 0.1274999976158142,
+      "com_axis": "z",
+      "com_offset_m": 0.0,
+      "sources": {
+        "acts": "output/activations/pi05/soft_scrub/MassLight_CoMCenter/acts.npz",
+        "ft": "output/replay_corpus/soft_scrub/MassLight_CoMCenter/ft.npz"
+      }
+    },
+    {
+      "episode_id": 7,
+      "object": "soft_scrub",
+      "condition": "MassMedium_CoMCenter",
+      "T": 245,
+      "anchor_step": 130,
+      "precontact_boundary": 130,
+      "matched_window_N": 25,
+      "mass_kg": 0.42500001192092896,
+      "com_axis": "z",
+      "com_offset_m": 0.0,
+      "sources": {
+        "acts": "output/activations/pi05/soft_scrub/MassMedium_CoMCenter/acts.npz",
+        "ft": "output/replay_corpus/soft_scrub/MassMedium_CoMCenter/ft.npz"
+      }
+    },
+    {
+      "episode_id": 8,
+      "object": "soft_scrub",
+      "condition": "MassMedium_CoMDown",
+      "T": 245,
+      "anchor_step": 130,
+      "precontact_boundary": 130,
+      "matched_window_N": 25,
+      "mass_kg": 0.42500001192092896,
+      "com_axis": "z",
+      "com_offset_m": -0.05000000074505806,
+      "sources": {
+        "acts": "output/activations/pi05/soft_scrub/MassMedium_CoMDown/acts.npz",
+        "ft": "output/replay_corpus/soft_scrub/MassMedium_CoMDown/ft.npz"
+      }
+    },
+    {
+      "episode_id": 9,
+      "object": "soft_scrub",
+      "condition": "MassMedium_CoMUp",
+      "T": 245,
+      "anchor_step": 130,
+      "precontact_boundary": 130,
+      "matched_window_N": 25,
+      "mass_kg": 0.42500001192092896,
+      "com_axis": "z",
+      "com_offset_m": 0.05000000074505806,
+      "sources": {
+        "acts": "output/activations/pi05/soft_scrub/MassMedium_CoMUp/acts.npz",
+        "ft": "output/replay_corpus/soft_scrub/MassMedium_CoMUp/ft.npz"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "index": 0,
+      "name": "last_prefix_token",
+      "definition": "prefix stream, token LANG_OFFSET + n_lang_valid - 1 (last valid language token of 'Task: ..., State: ...;\\nAction: ')",
+      "stream": "paligemma",
+      "valid_dims": [
+        0,
+        2048
+      ]
+    },
+    {
+      "index": 1,
+      "name": "image_tokens_mean",
+      "definition": "prefix stream, mean over tokens [0,512) (the two valid cameras; padded right-wrist cam [512,768) excluded)",
+      "stream": "paligemma",
+      "valid_dims": [
+        0,
+        2048
+      ]
+    },
+    {
+      "index": 2,
+      "name": "first_suffix_token",
+      "definition": "expert stream (gemma_300m, D=1024; dims 1024:2048 are constant zero padding \u2014 dim k here is NOT the same feature as dim k at positions 0/1), action token 0, captured at the first denoise step (t=1.0, x_t = fixed noise). Load via analysis/mass_com/acts_io.load_acts to get pre-sliced arrays.",
+      "stream": "expert",
+      "valid_dims": [
+        0,
+        1024
+      ]
+    }
+  ],
+  "f16_clip": {
+    "clip_value": 65504.0,
+    "note": "activations are clipped to the finite float16 range before saving. Per-condition breakdowns: per_condition.<cond>.f16_clip_table {total, per_layer_position, top_dims}; totals also in per_condition.<cond>.n_f16_clipped_elems; corpus-wide aggregate under f16_clip.aggregate.",
+    "aggregate": {
+      "total_steps": 2010,
+      "total": 53944,
+      "per_layer_position": [
+        {
+          "layer": 17,
+          "position": 0,
+          "count": 53944
+        }
+      ],
+      "top_dims": [
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 1577,
+          "n_steps_clipped": 2010,
+          "frac_steps": 1.0
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 981,
+          "n_steps_clipped": 1486,
+          "frac_steps": 0.7393
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 1343,
+          "n_steps_clipped": 1470,
+          "frac_steps": 0.7313
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 1959,
+          "n_steps_clipped": 1257,
+          "frac_steps": 0.6254
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 1703,
+          "n_steps_clipped": 1135,
+          "frac_steps": 0.5647
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 1380,
+          "n_steps_clipped": 1128,
+          "frac_steps": 0.5612
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 1871,
+          "n_steps_clipped": 1103,
+          "frac_steps": 0.5488
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 943,
+          "n_steps_clipped": 1073,
+          "frac_steps": 0.5338
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 1120,
+          "n_steps_clipped": 1036,
+          "frac_steps": 0.5154
+        },
+        {
+          "layer": 17,
+          "position": 0,
+          "dim": 2019,
+          "n_steps_clipped": 1026,
+          "frac_steps": 0.5104
+        }
+      ]
+    }
+  },
+  "scrub_drift_caveat": "Scrub replay-corpus episodes were built with --source-mode states, so the pre-grasp segment is bit-identical across all 5 scrub conditions and dominates whole-episode drift statistics; no analysis may use whole-episode max_drift or matched_window_N as a per-condition physics signal for scrub \u2014 use post-precontact_boundary (or post-anchor windowed) per-step drift instead.",
+  "sources": {
+    "activations_meta": "output/activations/pi05/meta.json"
+  },
+  "git_sha": "f818a9b4223a05ccefd885d7f4bc90c8b59590de",
+  "git_dirty": true,
+  "build_note": "Provenance-fix regeneration (final review): identical inputs to the 90c6c51 build; meta.json now records git_dirty and build_note. git_dirty=true here only from the untracked uv.lock.",
+  "alignment_spot_checks": [
+    {
+      "episode_id": 8,
+      "object": "soft_scrub",
+      "condition": "MassMedium_CoMDown",
+      "step": 156,
+      "row": 1676
+    },
+    {
+      "episode_id": 5,
+      "object": "soft_scrub",
+      "condition": "MassHeavy_CoMCenter",
+      "step": 66,
+      "row": 851
+    },
+    {
+      "episode_id": 3,
+      "object": "orange_juice_carton",
+      "condition": "MassMedium_CoMDown",
+      "step": 6,
+      "row": 477
+    }
+  ],
+  "labels": [
+    "mass_kg",
+    "com_offset_m",
+    "com_axis_idx",
+    "wrench",
+    "contact_force_norm",
+    "joint_pos",
+    "drift",
+    "precontact_mask",
+    "in_window_mask",
+    "episode_id",
+    "step",
+    "object_id",
+    "steps_since_anchor"
+  ],
+  "com_axis_idx_mapping": {
+    "x": 0,
+    "y": 1,
+    "z": 2
+  },
+  "object_id_mapping": {
+    "orange_juice_carton": 0,
+    "soft_scrub": 1
+  }
+}

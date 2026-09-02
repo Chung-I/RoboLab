@@ -1,0 +1,169 @@
+{
+  "generated_at": "2026-09-02T11:10:27.416784+00:00",
+  "sources": {
+    "orange_juice_carton": {
+      "source_h5": "output/phase1a_pi05/OJCartonInCrateTask_MassMedium_CoMCenter/run_0.hdf5",
+      "demo": 2,
+      "source_mode": "actions",
+      "task_file": "oj_carton_in_crate_task.py",
+      "note": "pi0.5 rollout demo, log_0_env2.json: success=true, final_step=157 (reused from Task 2's choice)."
+    },
+    "soft_scrub": {
+      "source_h5": "output/calibration/soft_scrub_calib_record.hdf5",
+      "demo": 0,
+      "source_mode": "states",
+      "task_file": "soft_scrub_in_bin_task.py",
+      "note": "pi0.5 never succeeded on this task (0/16 across all 5 phase1a_pi05 SoftScrubInBinTask_* conditions), so the source is a scripted grasp-and-lift calibration recording instead: `scripts/calibrate_mass.py --task SoftScrubInBinTask --object soft_scrub --masses 0.2 --trials 1 --record --headless` (--record added for this task). Recorded in the abs-IK pose action space, hence --source-mode states."
+    }
+  },
+  "conditions": [
+    "MassLight_CoMCenter",
+    "MassMedium_CoMCenter",
+    "MassHeavy_CoMCenter",
+    "MassMedium_CoMUp",
+    "MassMedium_CoMDown"
+  ],
+  "runs": {
+    "orange_juice_carton": {
+      "MassLight_CoMCenter": {
+        "T": 157,
+        "mass_kg": 0.26249998807907104,
+        "com_axis": "y",
+        "com_offset_m": 0.0,
+        "anchor_step": 97,
+        "precontact_boundary": 97,
+        "matched_window_N": 60,
+        "max_drift": 0.010766027495265007,
+        "mean_wrench_pre": 0.1493365466594696,
+        "mean_wrench_post": 2.5833563804626465,
+        "wrench_finite": true
+      },
+      "MassMedium_CoMCenter": {
+        "T": 157,
+        "mass_kg": 0.875,
+        "com_axis": "y",
+        "com_offset_m": 0.0,
+        "anchor_step": 97,
+        "precontact_boundary": 97,
+        "matched_window_N": 60,
+        "max_drift": 0.005176209378987551,
+        "mean_wrench_pre": 0.1493365466594696,
+        "mean_wrench_post": 6.902595520019531,
+        "wrench_finite": true
+      },
+      "MassHeavy_CoMCenter": {
+        "T": 157,
+        "mass_kg": 1.4874999523162842,
+        "com_axis": "y",
+        "com_offset_m": 0.0,
+        "anchor_step": 97,
+        "precontact_boundary": 97,
+        "matched_window_N": 60,
+        "max_drift": 0.015488124452531338,
+        "mean_wrench_pre": 0.1493365466594696,
+        "mean_wrench_post": 7.461295127868652,
+        "wrench_finite": true
+      },
+      "MassMedium_CoMUp": {
+        "T": 157,
+        "mass_kg": 0.875,
+        "com_axis": "y",
+        "com_offset_m": 0.019999999552965164,
+        "anchor_step": 97,
+        "precontact_boundary": 97,
+        "matched_window_N": 60,
+        "max_drift": 0.005244361236691475,
+        "mean_wrench_pre": 0.1493365466594696,
+        "mean_wrench_post": 7.020727157592773,
+        "wrench_finite": true
+      },
+      "MassMedium_CoMDown": {
+        "T": 157,
+        "mass_kg": 0.875,
+        "com_axis": "y",
+        "com_offset_m": -0.019999999552965164,
+        "anchor_step": 97,
+        "precontact_boundary": 97,
+        "matched_window_N": 60,
+        "max_drift": 0.0053657665848731995,
+        "mean_wrench_pre": 0.1493365466594696,
+        "mean_wrench_post": 7.355020999908447,
+        "wrench_finite": true
+      }
+    },
+    "soft_scrub": {
+      "MassLight_CoMCenter": {
+        "T": 245,
+        "mass_kg": 0.1274999976158142,
+        "com_axis": "z",
+        "com_offset_m": 0.0,
+        "anchor_step": 130,
+        "precontact_boundary": 130,
+        "matched_window_N": 25,
+        "max_drift": 0.8592795729637146,
+        "mean_wrench_pre": 0.9285244345664978,
+        "mean_wrench_post": 1.627967357635498,
+        "wrench_finite": true
+      },
+      "MassMedium_CoMCenter": {
+        "T": 245,
+        "mass_kg": 0.42500001192092896,
+        "com_axis": "z",
+        "com_offset_m": 0.0,
+        "anchor_step": 130,
+        "precontact_boundary": 130,
+        "matched_window_N": 25,
+        "max_drift": 0.8592795729637146,
+        "mean_wrench_pre": 1.2626079320907593,
+        "mean_wrench_post": 3.873411178588867,
+        "wrench_finite": true
+      },
+      "MassHeavy_CoMCenter": {
+        "T": 245,
+        "mass_kg": 0.7225000262260437,
+        "com_axis": "z",
+        "com_offset_m": 0.0,
+        "anchor_step": 130,
+        "precontact_boundary": 130,
+        "matched_window_N": 25,
+        "max_drift": 0.8592795729637146,
+        "mean_wrench_pre": 1.142275094985962,
+        "mean_wrench_post": 6.160360813140869,
+        "wrench_finite": true
+      },
+      "MassMedium_CoMUp": {
+        "T": 245,
+        "mass_kg": 0.42500001192092896,
+        "com_axis": "z",
+        "com_offset_m": 0.05000000074505806,
+        "anchor_step": 130,
+        "precontact_boundary": 130,
+        "matched_window_N": 25,
+        "max_drift": 0.8592795729637146,
+        "mean_wrench_pre": 0.4387751817703247,
+        "mean_wrench_post": 3.3508620262145996,
+        "wrench_finite": true
+      },
+      "MassMedium_CoMDown": {
+        "T": 245,
+        "mass_kg": 0.42500001192092896,
+        "com_axis": "z",
+        "com_offset_m": -0.05000000074505806,
+        "anchor_step": 130,
+        "precontact_boundary": 130,
+        "matched_window_N": 25,
+        "max_drift": 0.8592795729637146,
+        "mean_wrench_pre": 1.0525538921356201,
+        "mean_wrench_post": 3.8617591857910156,
+        "wrench_finite": true
+      }
+    }
+  },
+  "verification": {
+    "n_runs": 10,
+    "t_floor_adjusted_to": 100,
+    "t_floor_note": "Both objects' source recordings are short single episodes (carton demo_2 T=157, soft_scrub calib lift T=245); the brief's 300-step floor is adjusted to 100 uniformly rather than carving out only the carton exception.",
+    "carton_medium_self_replay_drift_p95": 0.0004982114420272407,
+    "carton_medium_self_replay_drift_p95_threshold": 0.05
+  }
+}
