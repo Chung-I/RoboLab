@@ -422,3 +422,7 @@ for a future MolmoBot revisit.
 Effect on the design: all Phase 1-3 analyses proceed for π0.5 alone;
 deliverable §8.5 (cross-model comparison) is deferred; Plan 2 Task 6
 (MolmoBot capture) is dropped; everything else stands.
+
+### Data caveat (2026-09-02, post-P2-T3, binding on Plans 2–3)
+
+Scrub replay-corpus episodes were built with `--source-mode states` (actions re-derived from recorded states), so the **pre-grasp segment is bit-identical across all 5 scrub conditions** and dominates whole-episode drift statistics: `max_drift` = 0.859 rad at step 43 (boundary = 130) for every condition, `matched_window_N` = 25 identically. Reviewer-verified: post-boundary max drift ~0.30 rad *does* vary by condition and is the physics-bearing signal. **Rule:** no analysis may use whole-episode `max_drift` or `matched_window_N` as a per-condition physics signal for scrub; use post-`precontact_boundary` (or post-anchor windowed) drift instead. T7 must expose the full per-step `drift` array, never only the scalar. Carton (actions-mode source, self-replay p95 drift 0.0005 rad) is unaffected.
