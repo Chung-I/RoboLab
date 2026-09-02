@@ -31,11 +31,23 @@ fold, other than fold-partition noise — exactly the kind of noise a
 low-alpha fit is best at chasing. Letting each draw pick its own best alpha
 gives the null its fair (and typically higher, more regularized) optimum,
 so ``shuffled`` isn't deflated and ``selectivity`` isn't inflated.
+
+Performance (Task-3 authorized optimizations; no statistic changed):
+the ridge path is solved in closed form from one economy SVD of each
+training fold — ``X_c = U S V^T`` gives ``w(alpha) = V diag(s/(s^2+alpha))
+U^T y_c`` — so all ALPHAS, all N_SHUFFLES draws, and (via ``sweep``) all
+targets sharing an (X, mask) reuse the same five per-fold factorizations.
+GroupKFold split indices are computed once per (groups, mask). The logistic
+path fits sklearn's ``LogisticRegression`` unchanged, but on the rotated
+features ``Z = X_c V`` (an orthonormal change of basis, under which the L2
+penalty and hence the optimization problem are mathematically identical,
+while the dimension drops from D to <= n_train). ``sweep``'s ``task`` may be
+a single string (as before) or a dict ``{target_name: task}``.
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score, r2_score
 from sklearn.model_selection import GroupKFold
 
@@ -68,50 +80,101 @@ def _shuffle_group_coherent(y, groups, rng):
     return y_shuf
 
 
-def _fit_predict(alpha, X_tr, y_tr, X_te, task):
-    if task == "reg":
-        model = Ridge(alpha=alpha)
-    else:
-        model = LogisticRegression(C=1.0 / alpha, max_iter=1000, class_weight="balanced")
-    model.fit(X_tr, y_tr)
-    return model.predict(X_te)
-
-
 def _score(y_true, y_pred, task):
     return r2_score(y_true, y_pred) if task == "reg" else balanced_accuracy_score(y_true, y_pred)
 
 
-def _cv_pooled_at_alpha(X, y, groups, task, alpha, splits=None):
-    """Pooled held-out score for one alpha, GroupKFold(N_SPLITS) inside."""
+def _group_splits(X, groups):
+    return list(GroupKFold(n_splits=N_SPLITS).split(X, np.zeros(len(groups)), groups))
+
+
+def _fold_factors(X, groups, splits=None):
+    """Per-fold economy SVD of the centered training block, plus the test
+    block projected into the right-singular basis.
+
+    Each entry holds ``tr, te`` (row indices), ``mu`` (train column means),
+    ``U (n_tr, k), s (k,)`` from ``X_tr - mu = U S V^T``, and
+    ``G = (X_te - mu) V`` — everything ridge/logistic need, with V itself
+    (k x D) discarded. Ridge closed form: pooled test predictions at alpha
+    are ``G @ (s/(s^2+alpha) * (U^T y_c)) + y_mean`` — identical to
+    ``sklearn.Ridge(alpha, fit_intercept=True)``. Logistic: fit on
+    ``Z_tr = U*s = X_c V`` and predict on ``G`` — an orthonormal rotation of
+    the feature space, under which sklearn's L2-penalized objective is
+    unchanged.
+    """
     if splits is None:
-        splits = GroupKFold(n_splits=N_SPLITS).split(X, y, groups)
+        splits = _group_splits(X, groups)
+    factors = []
+    for tr, te in splits:
+        mu = X[tr].mean(axis=0)
+        U, s, Vt = np.linalg.svd((X[tr] - mu).astype(np.float64), full_matrices=False)
+        G = (X[te] - mu).astype(np.float64) @ Vt.T
+        factors.append({"tr": tr, "te": te, "U": U, "s": s, "G": G})
+    return factors
+
+
+def _cv_pooled_best_factored(factors, y, task):
+    """Best pooled held-out score over ALPHAS, from precomputed factors."""
+    if task == "reg":
+        y = np.asarray(y, dtype=np.float64)
+        preds = np.empty((len(ALPHAS), len(y)), dtype=np.float64)
+        for f in factors:
+            y_tr = y[f["tr"]]
+            y_mean = y_tr.mean()
+            c = f["U"].T @ (y_tr - y_mean)
+            for i, alpha in enumerate(ALPHAS):
+                shrink = f["s"] / (f["s"] ** 2 + alpha)
+                preds[i, f["te"]] = f["G"] @ (shrink * c) + y_mean
+        return max(_score(y, preds[i], task) for i in range(len(ALPHAS)))
+    best = -np.inf
+    for alpha in ALPHAS:
+        pred = np.empty(len(y), dtype=np.asarray(y).dtype)
+        for f in factors:
+            if "Ztr" not in f:
+                f["Ztr"] = f["U"] * f["s"]
+            model = LogisticRegression(C=1.0 / alpha, max_iter=1000, class_weight="balanced")
+            model.fit(f["Ztr"], y[f["tr"]])
+            pred[f["te"]] = model.predict(f["G"])
+        best = max(best, _score(y, pred, task))
+    return best
+
+
+def _floor(y, groups, task, splits=None):
+    """Predict-the-training-fold-mean (reg) / -majority-class (clf) score."""
+    if splits is None:
+        splits = _group_splits(np.zeros((len(y), 1)), groups)
     pred = np.empty(len(y), dtype=y.dtype)
     for tr, te in splits:
-        pred[te] = _fit_predict(alpha, X[tr], y[tr], X[te], task)
-    return _score(y, pred, task)
-
-
-def _cv_pooled_best(X, y, groups, task):
-    """Best (score, alpha) pooled over ALPHAS, GroupKFold(N_SPLITS) inside."""
-    splits = list(GroupKFold(n_splits=N_SPLITS).split(X, y, groups))
-    best, best_alpha = -np.inf, ALPHAS[0]
-    for alpha in ALPHAS:
-        score = _cv_pooled_at_alpha(X, y, groups, task, alpha, splits)
-        if score > best:
-            best, best_alpha = score, alpha
-    return best, best_alpha
-
-
-def _floor(y, groups, task):
-    """Predict-the-training-fold-mean (reg) / -majority-class (clf) score."""
-    pred = np.empty(len(y), dtype=y.dtype)
-    for tr, te in GroupKFold(n_splits=N_SPLITS).split(np.zeros((len(y), 1)), y, groups):
         if task == "reg":
             pred[te] = y[tr].mean()
         else:
             vals, counts = np.unique(y[tr], return_counts=True)
             pred[te] = vals[np.argmax(counts)]
     return _score(y, pred, task)
+
+
+def _cell_from_factors(factors, y, groups, task, seed):
+    """The run_probe_cell statistic evaluated on precomputed fold factors."""
+    y = np.asarray(y)
+    groups = np.asarray(groups)
+    rng = np.random.default_rng(seed)
+    real = _cv_pooled_best_factored(factors, y, task)
+    shuf_scores = [
+        _cv_pooled_best_factored(factors, _shuffle_group_coherent(y, groups, rng), task)
+        for _ in range(N_SHUFFLES)
+    ]
+    shuffled = float(np.mean(shuf_scores))
+    shuffled_std = float(np.std(shuf_scores))
+    floor = _floor(y, groups, task, splits=[(f["tr"], f["te"]) for f in factors])
+    return {
+        "real": real,
+        "shuffled": shuffled,
+        "shuffled_std": shuffled_std,
+        "floor": floor,
+        "selectivity": real - shuffled,
+        "n": len(y),
+        "n_groups": len(np.unique(groups)),
+    }
 
 
 def run_probe_cell(X, y, groups, task="reg", seed=0):
@@ -138,25 +201,8 @@ def run_probe_cell(X, y, groups, task="reg", seed=0):
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y)
     groups = np.asarray(groups)
-    rng = np.random.default_rng(seed)
-
-    real, _ = _cv_pooled_best(X, y, groups, task)
-    shuf_scores = [
-        _cv_pooled_best(X, _shuffle_group_coherent(y, groups, rng), groups, task)[0]
-        for _ in range(N_SHUFFLES)
-    ]
-    shuffled = float(np.mean(shuf_scores))
-    shuffled_std = float(np.std(shuf_scores))
-    floor = _floor(y, groups, task)
-    return {
-        "real": real,
-        "shuffled": shuffled,
-        "shuffled_std": shuffled_std,
-        "floor": floor,
-        "selectivity": real - shuffled,
-        "n": len(y),
-        "n_groups": len(np.unique(groups)),
-    }
+    factors = _fold_factors(X, groups)
+    return _cell_from_factors(factors, y, groups, task, seed)
 
 
 def time_resolved(X, y, groups, step_rel, bins, task="reg", seed=0):
@@ -174,17 +220,35 @@ def time_resolved(X, y, groups, step_rel, bins, task="reg", seed=0):
 
 def sweep(acts, targets, groups, masks, layers, positions, task="reg", seed=0):
     """Full (target, layer, position, mask) grid of ``run_probe_cell`` calls
-    over ``acts[:, layer, position, :]``. ``acts`` is upcast f16->f32 once."""
+    over ``acts[:, layer, position, :]``. ``acts`` is upcast f16->f32 once.
+
+    ``task`` is either one task string for every target (as before) or a
+    dict ``{target_name: task}``. Split indices are computed once per mask
+    and the per-fold SVD factors once per (layer, position, mask), shared
+    across all targets and shuffle draws — cell statistics are unchanged
+    (each cell still seeds its own rng with ``seed``).
+    """
     acts = np.asarray(acts, dtype=np.float32)
     groups = np.asarray(groups)
-    rows = []
-    for tname, y in targets.items():
-        y = np.asarray(y)
-        for layer in layers:
-            for position in positions:
-                X_lp = acts[:, layer, position, :]
-                for mname, mask in masks.items():
-                    mask = np.asarray(mask)
-                    cell = run_probe_cell(X_lp[mask], y[mask], groups[mask], task=task, seed=seed)
-                    rows.append({"target": tname, "layer": layer, "position": position, "mask": mname, **cell})
+    task_of = task if isinstance(task, dict) else {t: task for t in targets}
+    masks = {m: np.asarray(v) for m, v in masks.items()}
+    splits_by_mask = {m: _group_splits(np.zeros((v.sum(), 1)), groups[v]) for m, v in masks.items()}
+    cells = {}
+    for layer in layers:
+        for position in positions:
+            X_lp = acts[:, layer, position, :]
+            for mname, mask in masks.items():
+                factors = _fold_factors(X_lp[mask], groups[mask], splits=splits_by_mask[mname])
+                for tname, y in targets.items():
+                    y = np.asarray(y)
+                    cells[(tname, layer, position, mname)] = _cell_from_factors(
+                        factors, y[mask], groups[mask], task_of[tname], seed
+                    )
+    rows = [
+        {"target": t, "layer": l, "position": p, "mask": m, **cells[(t, l, p, m)]}
+        for t in targets
+        for l in layers
+        for p in positions
+        for m in masks
+    ]
     return pd.DataFrame(rows)
