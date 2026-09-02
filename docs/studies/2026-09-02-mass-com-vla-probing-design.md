@@ -404,3 +404,21 @@ Established by reading the tree and cross-checked against deepwiki for
 | pi05_droid_jointpos checkpoint cached locally, 12 GB | `~/.cache/openpi/openpi-assets-simeval/` |
 | MolmoBot-DROID 20.0 GB; MolmoBot-Pi0-DROID 7.0 GB | HuggingFace API |
 | MolmoBot serves the openpi websocket protocol with DROID joint_pos | `MolmoBot/olmo/eval/websocket_server.py`, `configure_real_robot.py:209` |
+
+---
+
+## Scope change (2026-09-02, post-Phase-1): π0.5-only
+
+MolmoBot-DROID is dropped from the experiment for now (user decision). Basis:
+Phase 1b floored (0 success, ~0 grasp, arm essentially motionless on both
+study tasks) while the serving stack was verified healthy — MolmoBot scores
+14/16 on stock BananaInBowlTask and actively manipulates in the SAME scene
+under RecycleCartonTask's instruction. The failure is task/referent-specific
+(the OJ carton sits at the table edge, partially outside the exo view;
+"the orange juice carton" fails to ground and the policy freezes). The
+2-frame full-chunk serving stack, client, and debug findings are retained
+for a future MolmoBot revisit.
+
+Effect on the design: all Phase 1-3 analyses proceed for π0.5 alone;
+deliverable §8.5 (cross-model comparison) is deferred; Plan 2 Task 6
+(MolmoBot capture) is dropped; everything else stands.
