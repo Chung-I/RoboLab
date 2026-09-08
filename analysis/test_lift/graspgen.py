@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+import types
 
 import numpy as np
 
@@ -13,6 +14,14 @@ def import_graspgenx_client():
     root = os.path.expanduser(os.environ.get("GRASPGENX_ROOT", "~/Codes/GraspGenX"))
     if root not in sys.path:
         sys.path.append(root)
+    # graspgenx/serving/__init__.py eagerly imports zmq_server, which pulls torch,
+    # diffusers and webdataset. The wire client needs none of those (its own module
+    # docstring says so). Satisfy that one import with a stub so the RoboLab venv
+    # does not have to carry the server's dependency tree.
+    stub = sys.modules.setdefault("graspgenx.serving.zmq_server",
+                                  types.ModuleType("graspgenx.serving.zmq_server"))
+    if not hasattr(stub, "GraspGenXZMQServer"):
+        stub.GraspGenXZMQServer = None
     try:
         from graspgenx.serving import zmq_client
     except ImportError as e:  # pragma: no cover
@@ -49,6 +58,10 @@ class GraspGenClient:
             return False
 
     def infer(self, points_o, num_grasps: int = 200):
+        # Uncapped candidate set. The server truncates to grasps[:0] when
+        # topk_num_grasps == 0, and forces topk = 100 when grasp_threshold == -1.0
+        # and topk_num_grasps == -1 (grasp_server.py:199). grasp_threshold = 0.0
+        # with topk_num_grasps = -1 is the only combination that returns them all.
         grasps, confs = self._get().infer(np.asarray(points_o, dtype=np.float32), gripper_name=self._gripper,
-                                          num_grasps=num_grasps, grasp_threshold=-1.0, topk_num_grasps=0)
+                                          num_grasps=num_grasps, grasp_threshold=0.0, topk_num_grasps=-1)
         return np.asarray(grasps, dtype=np.float64), np.asarray(confs, dtype=np.float32)
