@@ -75,8 +75,8 @@ from isaaclab.app import AppLauncher
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, CLEAR_DZ,  # noqa: E402
                                       CLEAR_OK_FRAC, CLOSE, GRASP_DEPTH_OFFSET, HOLD_STEPS,
-                                      LIFT_DZ, LIFT_OK_FRAC, MOVE_STEPS, OPEN, SETTLE_STEPS,
-                                      STANDOFF, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
+                                      LIFT_DZ, LIFT_OK_FRAC, MOVE_STEPS, OBJECT_MASS_KG, OPEN,
+                                      SETTLE_STEPS, STANDOFF, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
                                       branch_stage_a_schedule, decide_advance, hand_target,
                                       offset_dir_name, phase_schedule, reachable_candidates,
                                       real_hold, seed_of, tilt_deg, unreachable_after_move)
@@ -312,7 +312,8 @@ def main():
     cell = Cell(arms, seeds)
     params = GraspParams()
 
-    cell_dir = os.path.join(args.out, args.object, offset_dir_name(args.com_offset))
+    cell_name = offset_dir_name(args.com_offset, args.mass, OBJECT_MASS_KG.get(args.object))
+    cell_dir = os.path.join(args.out, args.object, cell_name)
     for arm in arms:
         os.makedirs(os.path.join(cell_dir, arm), exist_ok=True)
     set_output_dir(cell_dir)
@@ -323,7 +324,7 @@ def main():
     # the point subsample, both of which are per-env below. One registration seed is enough.
     env_name, events = register_test_lift_env(
         args.task_file, args.object, args.mass, tuple(args.com_offset),
-        postfix=f"_TLB_{args.object}_{offset_dir_name(args.com_offset)}", seed=seeds[0],
+        postfix=f"_TLB_{args.object}_{cell_name}", seed=seeds[0],
         with_camera=False)
 
     sched = phase_schedule()

@@ -16,6 +16,13 @@
 #   NWORKERS=2 bash scripts/test_lift_sweep.sh output/test_lift/sweep 5
 #   MODE=single NWORKERS=4 bash scripts/test_lift_sweep.sh output/test_lift/sweep 5
 #
+# Grid overrides (both exist for the Ruling 35 spot videos: two named cells, seed 0 only):
+#   CELLS='banana:0.04 0 0;rubiks_cube:0.03 0 0'   replace the whole object x offset grid
+#   SEEDS='0'                                      replace the seed list
+#   VIDEO_ALL=1                                    MODE=single: record every episode, not just seed 0
+# A grid entry may carry a non-default object mass as "<x y z>@<kg>", e.g. "0.04 0 0@1.5".
+# Such a cell writes to off_<axis><mag>cm_m<kg>kg, so it never collides with the default cell.
+#
 # Detached:
 #   setsid nohup bash -c 'cd /home/chungyili/Codes/RoboLab; \
 #     NWORKERS=2 bash scripts/test_lift_sweep.sh /home/chungyili/Codes/RoboLab/output/test_lift/sweep 5 \
@@ -75,20 +82,34 @@ offset_dir() {
     }'
 }
 
+# The cell directory name, i.e. what the drivers build with
+# `analysis.test_lift.batch.offset_dir_name(off, mass, OBJECT_MASS_KG[object])`: the offset
+# bucket, plus `_m<mass>kg` when the cell overrides the object's default mass. Used here only
+# for log file names, so that a heavy cell and the default cell at the same offset get
+# separate logs; the drivers name their own output directories.
+#   cell_tag "<x y z>" <mass> <default mass>
+cell_tag() {
+  local bucket; bucket=$(offset_dir "$1")
+  if awk -v m="$2" -v d="$3" 'BEGIN{ exit (m+0 == d+0) ? 0 : 1 }'; then
+    echo "off_${bucket}"
+  else
+    echo "off_${bucket}_m$(awk -v m="$2" 'BEGIN{printf "%g", m}')kg"
+  fi
+}
+
 # --------------------------------------------------------------------------------------
 # Worker mode (single): `bash scripts/test_lift_sweep.sh --job "<obj>|<taskfile>|<mass>|<off>|<arm>|<seed>|<video>"`
 # xargs re-invokes this script once per job line. OUT, YAW and PY come through the
 # environment, so the job line carries only the per-episode fields.
 # --------------------------------------------------------------------------------------
 if [[ "${1:-}" == "--job" ]]; then
-  IFS='|' read -r obj taskfile mass off arm seed video <<< "$2"
-  axis=$(offset_dir "$off")
-  log="$OUT/logs/${obj}_${axis}_${arm}_${seed}.log"
+  IFS='|' read -r obj taskfile mass off tag arm seed video <<< "$2"
+  log="$OUT/logs/${obj}_${tag}_${arm}_${seed}.log"
   mkdir -p "$(dirname "$log")"
   video_flag=()
   [[ "$video" == "video" ]] && video_flag=(--video)
   {
-    echo "=== $(date +%H:%M:%S) $obj off=[$off] arm=$arm seed=$seed ${video_flag[*]:-} ==="
+    echo "=== $(date +%H:%M:%S) $obj $tag mass=$mass off=[$off] arm=$arm seed=$seed ${video_flag[*]:-} ==="
     systemd-run --user --scope --quiet -p "MemoryMax=$MEM_MAX" -p "MemorySwapMax=$MEM_SWAP_MAX" -- \
       "$PY" -u scripts/test_lift_episode.py --task-file "$taskfile" --object "$obj" \
       --mass "$mass" --com-offset $off --arm "$arm" --seed "$seed" --out "$OUT" \
@@ -108,12 +129,11 @@ fi
 # One process runs the whole cell: ARMS_STR x SEEDS_STR envs behind one env.reset().
 # --------------------------------------------------------------------------------------
 if [[ "${1:-}" == "--cell" ]]; then
-  IFS='|' read -r obj taskfile mass off <<< "$2"
-  axis=$(offset_dir "$off")
-  log="$OUT/logs/${obj}_${axis}_cell.log"
+  IFS='|' read -r obj taskfile mass off tag <<< "$2"
+  log="$OUT/logs/${obj}_${tag}_cell.log"
   mkdir -p "$(dirname "$log")"
   {
-    echo "=== $(date +%H:%M:%S) $obj off=[$off] arms=[$ARMS_STR] seeds=[$SEEDS_STR] ==="
+    echo "=== $(date +%H:%M:%S) $obj $tag mass=$mass off=[$off] arms=[$ARMS_STR] seeds=[$SEEDS_STR] ==="
     systemd-run --user --scope --quiet -p "MemoryMax=$CELL_MEM_MAX" -p "MemorySwapMax=$MEM_SWAP_MAX" -- \
       "$PY" -u scripts/test_lift_batch.py --task-file "$taskfile" --object "$obj" \
       --mass "$mass" --com-offset $off --arms $ARMS_STR --seeds $SEEDS_STR --out "$OUT" \
@@ -144,48 +164,87 @@ export PY
 [[ -x "$PY" ]] || { echo "cannot resolve the isaac50 interpreter (got '$PY')"; exit 1; }
 
 declare -A TASK=( [banana]=banana_test_lift_task.py [rubiks_cube]=cube_test_lift_task.py )
-declare -A MASS=( [banana]=0.5 [rubiks_cube]=0.6 )
-# Per-object CoM offset lists (";"-separated, each entry is "x y z" in meters).
+
+# Object default masses come from analysis/test_lift/batch.py's OBJECT_MASS_KG, which is the
+# same dict the drivers compare a cell's --mass against when they decide whether to add the
+# _m<mass>kg suffix to the cell directory. Reading it here keeps ONE source of truth: a bash
+# copy would silently disagree with the drivers and split a cell across two directories.
+declare -A MASS
+while IFS='=' read -r k v; do [[ -n "$k" ]] && MASS[$k]=$v; done < <(
+  "$PY" -c "import sys; sys.path.insert(0, '$REPO')
+from analysis.test_lift.batch import OBJECT_MASS_KG
+[print(f'{k}={v}') for k, v in OBJECT_MASS_KG.items()]")
+[[ ${#MASS[@]} -gt 0 ]] || { echo "could not read OBJECT_MASS_KG from analysis/test_lift/batch.py"; exit 1; }
+
+# Per-object CoM offset lists (";"-separated). Each entry is "x y z" in metres, optionally
+# followed by "@<mass in kg>" to run that cell at a NON-default object mass (Ruling 34's two
+# heavy cells). A cell with a mass override writes to off_<axis><mag>cm_m<mass>kg, so it can
+# never collide with the default-mass cell at the same offset.
 declare -A OFFSETS=(
-  [banana]="0.02 0 0;0.04 0 0;0 0.02 0"
-  [rubiks_cube]="0.02 0 0;0.03 0 0;0 0.02 0"
+  [banana]="0.02 0 0;0.04 0 0;0 0.02 0;0.04 0 0@1.5"
+  [rubiks_cube]="0.02 0 0;0.03 0 0;0 0.02 0;0.03 0 0@1.8"
 )
 ARMS=(belief next_best fixed_threshold oracle top1)
 ARMS_STR="${ARMS[*]}"
-SEEDS_STR=$(seq -s ' ' 0 $((NSEEDS-1)))
+
+# Two overrides, for the Ruling 35 spot-video run (two named cells, seed 0, MODE=single):
+#   CELLS=";"-separated "<object>:<x y z>[@<mass>]" entries -- replaces the whole grid above.
+#   SEEDS=space-separated seed list -- replaces `seq 0 (NSEEDS-1)`.
+SEEDS_STR=${SEEDS:-$(seq -s ' ' 0 $((NSEEDS-1)))}
 export ARMS_STR SEEDS_STR
+
+# The grid, flattened to "<object>|<x y z>[@<mass>]" entries.
+cell_specs=()
+if [[ -n "${CELLS:-}" ]]; then
+  IFS=';' read -r -a _cells <<< "$CELLS"
+  for c in "${_cells[@]}"; do
+    [[ -n "$c" ]] || continue
+    [[ -n "${TASK[${c%%:*}]:-}" ]] || { echo "CELLS: unknown object '${c%%:*}'"; exit 1; }
+    cell_specs+=("${c%%:*}|${c#*:}")
+  done
+else
+  for obj in "${!TASK[@]}"; do
+    IFS=';' read -r -a offs <<< "${OFFSETS[$obj]}"
+    for off in "${offs[@]}"; do cell_specs+=("${obj}|${off}"); done
+  done
+fi
 
 mkdir -p "$OUT/logs"
 jobs_file="$OUT/logs/jobs.txt"
 : > "$jobs_file"
+
+n_seeds_run=$(wc -w <<< "$SEEDS_STR")
 
 case "$MODE" in
   batch)
     NWORKERS=${NWORKERS:-2}
     job_flag=--cell
     unit=cells
-    for obj in "${!TASK[@]}"; do
-      IFS=';' read -r -a offs <<< "${OFFSETS[$obj]}"
-      for off in "${offs[@]}"; do
-        echo "${obj}|${TASK[$obj]}|${MASS[$obj]}|${off}" >> "$jobs_file"
-      done
+    for spec in "${cell_specs[@]}"; do
+      obj="${spec%%|*}"; offspec="${spec#*|}"
+      if [[ "$offspec" == *"@"* ]]; then off="${offspec%@*}"; mass="${offspec#*@}"
+      else off="$offspec"; mass="${MASS[$obj]}"; fi
+      tag=$(cell_tag "$off" "$mass" "${MASS[$obj]}")
+      echo "${obj}|${TASK[$obj]}|${mass}|${off}|${tag}" >> "$jobs_file"
     done
-    n_episodes=$(( $(wc -l < "$jobs_file") * ${#ARMS[@]} * NSEEDS ))
+    n_episodes=$(( $(wc -l < "$jobs_file") * ${#ARMS[@]} * n_seeds_run ))
     cap=$CELL_MEM_MAX
     ;;
   single)
     NWORKERS=${NWORKERS:-4}
     job_flag=--job
     unit=episodes
-    for obj in "${!TASK[@]}"; do
-      IFS=';' read -r -a offs <<< "${OFFSETS[$obj]}"
-      for off in "${offs[@]}"; do
-        for arm in "${ARMS[@]}"; do
-          for s in $(seq 0 $((NSEEDS-1))); do
-            video=novideo
-            [[ "$s" -eq 0 ]] && video=video    # one video per (object, offset, arm) cell
-            echo "${obj}|${TASK[$obj]}|${MASS[$obj]}|${off}|${arm}|${s}|${video}" >> "$jobs_file"
-          done
+    for spec in "${cell_specs[@]}"; do
+      obj="${spec%%|*}"; offspec="${spec#*|}"
+      if [[ "$offspec" == *"@"* ]]; then off="${offspec%@*}"; mass="${offspec#*@}"
+      else off="$offspec"; mass="${MASS[$obj]}"; fi
+      tag=$(cell_tag "$off" "$mass" "${MASS[$obj]}")
+      for arm in "${ARMS[@]}"; do
+        for s in $SEEDS_STR; do
+          video=novideo
+          # One video per (object, offset, arm) cell. VIDEO_ALL=1 records every episode.
+          { [[ "$s" -eq 0 ]] || [[ "${VIDEO_ALL:-0}" == "1" ]]; } && video=video
+          echo "${obj}|${TASK[$obj]}|${mass}|${off}|${tag}|${arm}|${s}|${video}" >> "$jobs_file"
         done
       done
     done
@@ -200,6 +259,12 @@ n_jobs=$(wc -l < "$jobs_file")
 echo "=== sweep start $(date +%F_%H:%M:%S): MODE=$MODE, $n_jobs $unit / $n_episodes episodes, $NWORKERS workers, out=$OUT ==="
 echo "=== interpreter: $PY | mem cap: $cap (+$MEM_SWAP_MAX swap) per job ==="
 t0=$(date +%s)
+
+# DRYRUN=1 prints the job list and stops. The job lines carry the cell directory name, so
+# this is how you check a grid change (a new offset, a mass override) without booting Isaac.
+if [[ "${DRYRUN:-0}" == "1" ]]; then
+  echo "--- $jobs_file ---"; cat "$jobs_file"; exit 0
+fi
 
 # -d '\n' keeps each job line whole (the offsets contain spaces); -n 1 gives one job per
 # invocation; -P runs NWORKERS of them at a time.

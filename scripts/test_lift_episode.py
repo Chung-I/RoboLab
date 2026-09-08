@@ -96,7 +96,7 @@ from isaaclab.app import AppLauncher
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (APPROACH_Z_MAX, CLEAR_DZ, CLEAR_OK_FRAC, CLOSE,  # noqa: E402
                                       GRASP_DEPTH_OFFSET, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
-                                      MOVE_STEPS, OPEN, SETTLE_STEPS, STANDOFF,
+                                      MOVE_STEPS, OBJECT_MASS_KG, OPEN, SETTLE_STEPS, STANDOFF,
                                       TILT_MAX_DEG, decide_advance, hand_target, offset_dir_name,
                                       reachable_candidates, real_hold, tilt_deg,
                                       unreachable_after_move)
@@ -302,7 +302,8 @@ def main():
     env_name, events = register_test_lift_env(args.task_file, args.object, args.mass, tuple(args.com_offset),
                                               postfix=f"_TL_{args.arm}_{args.seed}", seed=args.seed,
                                               with_camera=bool(args.video))
-    out_dir = os.path.join(args.out, args.object, offset_dir_name(args.com_offset), args.arm)
+    cell_name = offset_dir_name(args.com_offset, args.mass, OBJECT_MASS_KG.get(args.object))
+    out_dir = os.path.join(args.out, args.object, cell_name, args.arm)
     os.makedirs(out_dir, exist_ok=True)
     set_output_dir(out_dir)
     env, _ = create_env(env_name, device=args.device, seed=args.seed, num_envs=1, use_fabric=True, events=events)

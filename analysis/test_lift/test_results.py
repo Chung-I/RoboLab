@@ -8,9 +8,10 @@ from analysis.test_lift.episode_log import EPISODE_KEYS, write_episode
 from analysis.test_lift.results import aggregate, e1_perp_error, to_markdown
 
 
-def _episode(path, arm, c_true, c_post, final_ok, n_grasps, m_prior=1.0, m_post=1.2):
+def _episode(path, arm, c_true, c_post, final_ok, n_grasps, m_prior=1.0, m_post=1.2, mass_true=0.5):
     d = {k: np.zeros(1) for k in EPISODE_KEYS}
-    d.update(object="banana", arm=arm, yaw_fix="z90", grasps_o=np.zeros((2, 4, 4)), confs=np.zeros(2),
+    d.update(object="banana", arm=arm, yaw_fix="z90", mass_true=mass_true,
+             grasps_o=np.zeros((2, 4, 4)), confs=np.zeros(2),
              com_true_o=np.array(c_true), c_prior_o=np.zeros(3), c_post_o=np.array(c_post),
              com_offset_xyz=np.array(c_true), final_ok=bool(final_ok), second_lift_ok=False,
              first_lift_ok=True, n_grasps=n_grasps, wall_s=10.0, idx_second=-1,
@@ -80,3 +81,28 @@ def test_aggregate_parses_offset_axis(tmp_path):
     assert by_key[("y", 2)]["offset_axis"] == "y"
     # sorted by (object, offset_axis, offset_cm, arm): x04 sorts before y02.
     assert [r["offset_axis"] for r in rows] == ["x", "y"]
+
+
+def test_aggregate_parses_the_mass_suffix_and_keeps_cells_apart(tmp_path):
+    """A heavy cell (off_x04cm_m1.5kg) is a separate row from the default cell (off_x04cm)."""
+    light = tmp_path / "banana" / "off_x04cm" / "belief"
+    heavy = tmp_path / "banana" / "off_x04cm_m1.5kg" / "belief"
+    light.mkdir(parents=True)
+    heavy.mkdir(parents=True)
+    _episode(light / "seed_0.npz", "belief", [0.04, 0, 0], [0.039, 0, 0], True, 2)
+    _episode(heavy / "seed_0.npz", "belief", [0.04, 0, 0], [0.038, 0, 0], False, 2)
+    rows = aggregate(str(tmp_path))
+    assert len(rows) == 2
+    by_mass = {r["mass_kg"]: r for r in rows}
+    assert set(by_mass) == {0.5, 1.5}          # 0.5 = the fixture's mass_true, 1.5 = the suffix
+    assert by_mass[1.5]["offset_cm"] == 4 and by_mass[1.5]["offset_axis"] == "x"
+    assert by_mass[0.5]["e2_final_rate"] == 1.0 and by_mass[1.5]["e2_final_rate"] == 0.0
+    assert "mass_kg" in to_markdown(rows).splitlines()[0]
+
+
+def test_aggregate_mass_kg_defaults_to_mass_true(tmp_path):
+    d = tmp_path / "rubiks_cube" / "off_x03cm" / "oracle"
+    d.mkdir(parents=True)
+    _episode(d / "seed_0.npz", "oracle", [0.03, 0, 0], [0.0, 0, 0], True, 1, mass_true=0.6)
+    rows = aggregate(str(tmp_path))
+    assert rows[0]["mass_kg"] == 0.6     # no _m<mass>kg suffix -> fall back to the episode's own mass

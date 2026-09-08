@@ -6,7 +6,7 @@ import pytest
 
 from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, BRANCH_STEPS, CLEAR_DZ,
                                       HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC, MIN_FINGER_GAP, MOVE_STEPS,
-                                      SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
+                                      OBJECT_MASS_KG, SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
                                       branch_stage_a_schedule, decide_advance, env_index, grasp_schedule,
                                       hand_target, offset_dir_name, phase_schedule, reachable_candidates,
                                       real_hold, seed_of, setdown_schedule, tilt_deg, unreachable_after_move,
@@ -126,6 +126,16 @@ def test_offset_dir_name_matches_the_single_driver_rule():
     assert offset_dir_name((0.0, 0.02, 0.0)) == "off_y02cm"
     assert offset_dir_name((0.0, 0.0, -0.03)) == "off_z03cm"
     assert offset_dir_name((0.0, 0.0, 0.0)) == "off_x00cm"
+
+
+def test_offset_dir_name_mass_suffix():
+    """The suffix appears only when the cell mass differs from the object default."""
+    assert offset_dir_name((0.04, 0, 0), 0.5, 0.5) == "off_x04cm"      # default mass: unchanged
+    assert offset_dir_name((0.04, 0, 0), 1.5, 0.5) == "off_x04cm_m1.5kg"
+    assert offset_dir_name((0.03, 0, 0), 1.8, 0.6) == "off_x03cm_m1.8kg"
+    assert offset_dir_name((0.04, 0, 0), None, 0.5) == "off_x04cm"     # mass not supplied
+    assert offset_dir_name((0.04, 0, 0), 1.5, None) == "off_x04cm"     # default not known
+    assert OBJECT_MASS_KG == {"banana": 0.5, "rubiks_cube": 0.6}
 
 
 # --------------------------------------------------------------------------- grasp geometry

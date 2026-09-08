@@ -12,10 +12,12 @@ import numpy as np
 
 from analysis.test_lift.episode_log import read_episode
 
-# New-format episode directory: off_<axis letter><2-digit magnitude>cm, e.g. off_x02cm.
+# Episode directory: off_<axis letter><2-digit magnitude>cm, optionally followed by
+# _m<mass>kg when the cell overrides the object's default mass (Ruling 34's heavy cells).
+# Examples: off_x02cm, off_x04cm_m1.5kg.
 # Pre-Task-9-fix-round-1 logs used the axis-less off_<2-digit magnitude>cm and are skipped by
 # aggregate() (they collided across axes -- see task-9-report.md concern 1 / fix round 1).
-_OFFSET_DIR_RE = re.compile(r"^off_([a-z])(\d{2})cm$")
+_OFFSET_DIR_RE = re.compile(r"^off_([a-z])(\d{2})cm(?:_m(\d+(?:\.\d+)?)kg)?$")
 
 
 def e1_perp_error(c_est, c_true, g_o) -> float:
@@ -34,11 +36,16 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
     offset) and `mag` is `round(norm(offset) * 100)`. This is parsed into two columns:
     `offset_axis` (the letter) and `offset_cm` (the integer magnitude).
 
+    A cell run at a non-default object mass carries a `_m<mass>kg` suffix (e.g.
+    `off_x04cm_m1.5kg`), so a heavy cell never collides with the default-mass cell at the
+    same offset. The suffix is parsed into the `mass_kg` column; when it is absent, `mass_kg`
+    is the mean of the episodes' own `mass_true`.
+
     Adds `n_updated` (episodes whose `m_post != m_prior`) and `e1_post_cm_updated` (E1 post
     error over updated episodes only, NaN if none) on top of the base columns.
     """
     groups = defaultdict(list)
-    for path in sorted(glob.glob(os.path.join(root, "*", "off_*cm", "*", "seed_*.npz"))):
+    for path in sorted(glob.glob(os.path.join(root, "*", "off_*", "*", "seed_*.npz"))):
         obj, off, arm = path.split(os.sep)[-4:-1]
         m = _OFFSET_DIR_RE.match(off)
         if not m:
@@ -48,9 +55,10 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
     for (obj, off, arm), eps in groups.items():
         m = _OFFSET_DIR_RE.match(off)
         axis, mag = m.group(1), int(m.group(2))
+        mass_kg = float(m.group(3)) if m.group(3) else float(np.mean([float(e["mass_true"]) for e in eps]))
         updated = [e for e in eps if float(e["m_post"]) != float(e["m_prior"])]
         rows.append(dict(
-            object=obj, offset_cm=mag, offset_axis=axis, arm=arm, n=len(eps),
+            object=obj, offset_cm=mag, offset_axis=axis, mass_kg=mass_kg, arm=arm, n=len(eps),
             e1_prior_cm=100 * np.mean([e1_perp_error(e["c_prior_o"], e["com_true_o"], g_o) for e in eps]),
             e1_post_cm=100 * np.mean([e1_perp_error(e["c_post_o"], e["com_true_o"], g_o) for e in eps]),
             e2_final_rate=float(np.mean([bool(e["final_ok"]) for e in eps])),
@@ -61,7 +69,7 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
             e1_post_cm_updated=(100 * np.mean([e1_perp_error(e["c_post_o"], e["com_true_o"], g_o) for e in updated])
                                  if updated else float("nan")),
         ))
-    rows.sort(key=lambda r: (r["object"], r["offset_axis"], r["offset_cm"], r["arm"]))
+    rows.sort(key=lambda r: (r["object"], r["offset_axis"], r["offset_cm"], r["mass_kg"], r["arm"]))
     return rows
 
 
@@ -83,7 +91,7 @@ def log_wandb(rows, project: str = "test-lift-belief-rerank", run_name: str | No
     cols = list(rows[0].keys())
     run.log({"results": wandb.Table(columns=cols, data=[[r[c] for c in cols] for r in rows])})
     for r in rows:
-        prefix = f"{r['object']}/off{r['offset_axis']}{r['offset_cm']:02d}/{r['arm']}"
+        prefix = f"{r['object']}/off{r['offset_axis']}{r['offset_cm']:02d}/m{r['mass_kg']:g}kg/{r['arm']}"
         run.summary[f"{prefix}/e1_post_cm"] = r["e1_post_cm"]
         run.summary[f"{prefix}/e2_final_rate"] = r["e2_final_rate"]
     run.finish()
@@ -99,7 +107,7 @@ if __name__ == "__main__":
     a = ap.parse_args()
     rows = aggregate(a.root)
     if not rows:
-        legacy = [p for p in glob.glob(os.path.join(a.root, "*", "off_*cm", "*", "seed_*.npz"))
+        legacy = [p for p in glob.glob(os.path.join(a.root, "*", "off_*", "*", "seed_*.npz"))
                   if not _OFFSET_DIR_RE.match(p.split(os.sep)[-3])]
         print(f"No offset-axis-encoded episode directories (off_<axis><mag>cm) found under {a.root!r}.")
         if legacy:

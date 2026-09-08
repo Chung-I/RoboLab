@@ -61,6 +61,12 @@ OPEN, CLOSE = 1.0, -1.0
 
 ARMS = ("belief", "next_best", "fixed_threshold", "oracle", "top1")
 
+#: The mass each test-lift object is registered with unless a cell overrides it. A cell that
+#: overrides it gets a ``_m<mass>kg`` suffix on its episode directory (:func:`offset_dir_name`),
+#: so a heavy cell and the default cell at the same CoM offset never write to the same place.
+#: ``scripts/test_lift_sweep.sh`` reads this dict instead of keeping its own copy.
+OBJECT_MASS_KG = {"banana": 0.5, "rubiks_cube": 0.6}
+
 
 # ---------------------------------------------------------------------------------------
 # Lockstep schedule
@@ -184,16 +190,24 @@ def decide_advance(arm: str, ok1: bool, hold_prob: float, tau_norm: float,
     raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
 
 
-def offset_dir_name(com_offset_xyz) -> str:
-    """``off_<axis letter><2-digit magnitude>cm`` -- the episode directory results.py parses.
+def offset_dir_name(com_offset_xyz, mass_kg=None, default_mass_kg=None) -> str:
+    """``off_<axis letter><2-digit magnitude>cm[_m<mass>kg]`` -- the directory results.py parses.
 
     The axis is the letter of the component with the largest absolute value ("x" when the
-    offset is all zeros); the magnitude is ``round(norm * 100)``. Identical to the rule in
-    ``scripts/test_lift_episode.py`` and the awk block in ``scripts/test_lift_sweep.sh``.
+    offset is all zeros); the magnitude is ``round(norm * 100)``.
+
+    The ``_m<mass>kg`` suffix appears ONLY when ``mass_kg`` is given AND differs from
+    ``default_mass_kg`` (the object's :data:`OBJECT_MASS_KG` entry). A heavy cell therefore
+    gets its own directory -- ``off_x04cm_m1.5kg`` beside ``off_x04cm`` -- while every cell
+    at the object's default mass keeps the name it had before Ruling 34, so sweep 1 stays
+    readable by the same aggregator.
     """
     off = np.asarray(com_offset_xyz, dtype=float)
     axis = "x" if np.allclose(off, 0) else "xyz"[int(np.argmax(np.abs(off)))]
-    return f"off_{axis}{int(round(float(np.linalg.norm(off)) * 100)):02d}cm"
+    name = f"off_{axis}{int(round(float(np.linalg.norm(off)) * 100)):02d}cm"
+    if mass_kg is not None and default_mass_kg is not None and float(mass_kg) != float(default_mass_kg):
+        name += f"_m{float(mass_kg):g}kg"
+    return name
 
 
 # ---------------------------------------------------------------------------------------
