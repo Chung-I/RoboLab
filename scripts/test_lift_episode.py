@@ -16,6 +16,11 @@ Four constraints shape this driver:
   links, while the object keeps gravity. The no-load wrist wrench is therefore
   small, but it is still measured at the pre-grasp pose and subtracted, so the
   arm's own residual bias never enters the object load.
+* The task's episode budget is 180 s (Ruling 30). It was 60 s = 900 control steps at
+  15 Hz, which a ``--frame-check`` run of 8 candidates (2028 steps) crossed at its fourth
+  attempt: ``mdp.time_out`` fired, the env auto-reset, and from there the hand sat at the
+  home pose with the differential-IK term dead and the finger gap pinned open at 0.0800,
+  which is where Task 8's apparent 2-3 cm reach shortfall came from.
 * The scene must settle before anything is measured. The tasks spawn the object
   above the table (the banana starts at z = 0.08 and comes to rest at z = 0.0212),
   so a pose read straight after ``env.reset()`` is ~6 cm stale and every grasp
@@ -65,12 +70,14 @@ lifts 3 of 8 against ``-0.50``'s 1 of 8: the oblique candidates the looser filte
 (``approach_z`` -0.75 to -0.85) either sweep the object sideways or clip its edge and spin
 it past the 15 deg tilt limit.
 
-One caveat the numbers force. Even under D, five of the eight grips rose 0.9-15.4 mm
-against the ``lift_ok`` bar of 0.9 x 20 mm = 18 mm, and three of those five (15.1, 15.2,
-15.4 mm) are real holds -- gap ~0.035 m, tilt 6-11 deg -- that the criterion rejects,
-because a loaded differential-IK hand under-delivers the commanded 2 cm by 2-5 mm. Part of
-the remaining loss is therefore in the test-lift criterion, not in the grasp, and changing
-that criterion was out of Task 8c's scope.
+Those four cells were measured against the old ``lift_ok`` bar of 0.9 x 20 mm = 18 mm.
+Under D, five of the eight grips rose 0.9-15.4 mm, and three of those five (15.1, 15.2,
+15.4 mm) were real holds -- gap ~0.035 m, tilt 6-11 deg -- that the criterion rejected,
+because a loaded differential-IK hand under-delivers the commanded 2 cm by 2-5 mm. Ruling
+29 lowered the bar to ``LIFT_OK_FRAC`` x 20 mm = 14 mm for exactly that reason. Rescoring
+D's own eight recorded attempts at 14 mm turns 3 lifts into 6; a fresh run at the new
+defaults lifts 4 of 8, where 6 of 8 cleared the rise bar and two of those were rejected by
+the 15 deg tilt limit, which is now the second binding constraint.
 """
 import argparse
 import os
@@ -137,6 +144,7 @@ from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams, hold_pro
 
 STANDOFF = 0.10       # pre-grasp distance along -approach (m)
 LIFT_DZ = 0.02        # test-lift height (m)
+LIFT_OK_FRAC = 0.7    # fraction of LIFT_DZ a test-lift must clear to count as a hold (Ruling 29)
 CLEAR_DZ = 0.15       # lift-clear height (m)
 HOLD_STEPS = 15       # 1 s at 15 Hz
 MOVE_STEPS = 45       # 3 s per motion segment
@@ -289,10 +297,14 @@ def run_grasp(rb, env, name, target7, log, R_settle):
     test-lift -- comparing the hand against ``target7`` any later would charge the
     commanded 2 cm lift to the IK.
 
-    The "real hold" test (Ruling 25): ``ok`` requires the rise to clear 90% of the
-    commanded 2 cm, the fingers to still be apart by more than 2 mm, AND the object to
-    have tilted less than ``TILT_MAX_DEG`` from its settle orientation ``R_settle`` --
-    otherwise a grasp that clips the object and spins it counts as a hold.
+    The "real hold" test (Ruling 25, bar lowered by Ruling 29): ``ok`` requires the rise to
+    clear ``LIFT_OK_FRAC`` = 70% of the commanded 2 cm, i.e. 14 mm, the fingers to still be
+    apart by more than 2 mm, AND the object to have tilted less than ``TILT_MAX_DEG`` from
+    its settle orientation ``R_settle`` -- otherwise a grasp that clips the object and spins
+    it counts as a hold. The bar was 90% until Task 8c measured what a loaded hand actually
+    delivers: three real holds (finger gap ~0.035 m, tilt 6-11 deg) rose 15.1, 15.2 and
+    15.4 mm, because the differential-IK term under-delivers the commanded 2 cm by 2-5 mm
+    once it carries the object. ``CLEAR_DZ``'s ``final_ok`` keeps ``lift_ok``'s own default.
     """
     pre = pregrasp_target(target7, STANDOFF)
     rb.step(pre, OPEN, MOVE_STEPS)
@@ -313,7 +325,8 @@ def run_grasp(rb, env, name, target7, log, R_settle):
     rb.step(up, CLOSE, MOVE_STEPS // 2)
     w_hold, hold_trace = rb.wrench_h(target7=up, grip=CLOSE)
     tilt = tilt_deg(R_settle, object_T_w(env, name)[:3, :3])
-    ok = lift_ok(env, name, z0, LIFT_DZ, frac=0.9) and rb.finger_gap() > 0.002 and tilt < TILT_MAX_DEG
+    ok = (lift_ok(env, name, z0, LIFT_DZ, frac=LIFT_OK_FRAC)
+          and rb.finger_gap() > 0.002 and tilt < TILT_MAX_DEG)
     log["wrench_bias_h"], log["wrench_hold_h"] = bias, w_hold
     log["wrench_bias_trace_h"], log["wrench_trace_h"] = bias_trace, hold_trace
     return ok, bias, w_hold, rb.hand_T_w(), z0, reach_err, tilt
@@ -338,17 +351,14 @@ def main():
     set_output_dir(out_dir)
     env, _ = create_env(env_name, device=args.device, seed=args.seed, num_envs=1, use_fabric=True, events=events)
     if args.frame_check or args.oracle_check:
-        # The task's 60 s budget is 900 control steps at 15 Hz. One --frame-check attempt
-        # costs 246 (run_grasp 164 + set_down 82), so with SETTLE_STEPS the fourth attempt
-        # reads the hand at step 903 -- three steps past ``mdp.time_out``. Measured
-        # 2026-09-08 with FRAME_CHECK_N = 8: attempts 0-2 behave, and from attempt 3 on the
-        # env has auto-reset, so every line reports the home pose (tip_z = 0.1906, finger
-        # gap pinned at the open 0.0800) with the differential-IK term dead. The normal
-        # episode path needs ~520 steps and is unaffected, so only the two diagnostic paths
-        # that chain many grasps into one reset get the larger budget.
-        # ``ManagerBasedRLEnv.max_episode_length`` is a live property of
-        # ``cfg.episode_length_s``, so this needs no change to the task file.
-        env.cfg.episode_length_s = 60.0 * max(args.frame_check_n, ORACLE_CHECK_N + 2)
+        # Ruling 30 put 180 s = 2700 control steps in the task files, which covers every
+        # mode the driver has today (8 frame-check attempts cost 60 + 8 x 246 = 2028; an
+        # --oracle-check with ORACLE_CHECK_N retries costs 1700; a normal episode ~520).
+        # This raise-only guard keeps a larger --frame-check-n safe without editing a task
+        # file: ``ManagerBasedRLEnv.max_episode_length`` is a live property of
+        # ``cfg.episode_length_s``. It never lowers the task's own budget.
+        env.cfg.episode_length_s = max(float(env.cfg.episode_length_s),
+                                       60.0 * max(args.frame_check_n, ORACLE_CHECK_N + 2))
         print(f"[budget] episode_length_s={env.cfg.episode_length_s:.0f} "
               f"max_episode_length={env.max_episode_length}", flush=True)
     t0 = time.time()

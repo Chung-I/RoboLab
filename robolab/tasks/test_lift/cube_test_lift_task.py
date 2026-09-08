@@ -53,4 +53,8 @@ class CubeTestLiftTask(Task):
     terminations = TestLiftTerminations
     contact_object_list = ["rubiks_cube"]
     instruction: str = "Test-lift the rubiks cube"
-    episode_length_s: int = 60
+    # 180 s = 2700 control steps at 15 Hz. The 60 s this used to be was 900 steps, and a
+    # --frame-check run of 8 candidates needs 2028, so `mdp.time_out` fired mid-run, the
+    # env auto-reset, and the differential-IK term never reached a target again
+    # (Task 8c, Ruling 30). No driver mode reaches 2700.
+    episode_length_s: int = 180
