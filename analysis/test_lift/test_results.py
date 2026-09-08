@@ -25,7 +25,7 @@ def test_e1_perp_error_ignores_gravity_axis():
 
 
 def test_aggregate_and_markdown(tmp_path):
-    d = tmp_path / "banana" / "off_04cm"
+    d = tmp_path / "banana" / "off_x04cm"
     for arm, c_post, ok, n in (("belief", [0.039, 0, 0], True, 2), ("next_best", [0, 0, 0], False, 2)):
         (d / arm).mkdir(parents=True)
         _episode(d / arm / "seed_0.npz", arm, [0.04, 0, 0], c_post, ok, n)
@@ -38,7 +38,7 @@ def test_aggregate_and_markdown(tmp_path):
 
 
 def test_aggregate_n_updated_mixed(tmp_path):
-    d = tmp_path / "banana" / "off_04cm" / "belief"
+    d = tmp_path / "banana" / "off_x04cm" / "belief"
     d.mkdir(parents=True)
     # Two updated episodes (m_post != m_prior), one not updated (m_post == m_prior).
     _episode(d / "seed_0.npz", "belief", [0.04, 0, 0], [0.039, 0, 0], True, 2, m_prior=1.0, m_post=1.2)
@@ -58,10 +58,25 @@ def test_aggregate_n_updated_mixed(tmp_path):
 
 
 def test_aggregate_n_updated_none(tmp_path):
-    d = tmp_path / "banana" / "off_04cm" / "next_best"
+    d = tmp_path / "banana" / "off_x04cm" / "next_best"
     d.mkdir(parents=True)
     _episode(d / "seed_0.npz", "next_best", [0.04, 0, 0], [0.0, 0, 0], False, 2, m_prior=1.0, m_post=1.0)
     rows = aggregate(str(tmp_path))
     row = rows[0]
     assert row["n_updated"] == 0
     assert math.isnan(row["e1_post_cm_updated"])
+
+
+def test_aggregate_parses_offset_axis(tmp_path):
+    dx = tmp_path / "banana" / "off_x04cm" / "belief"
+    dy = tmp_path / "banana" / "off_y02cm" / "belief"
+    dx.mkdir(parents=True)
+    dy.mkdir(parents=True)
+    _episode(dx / "seed_0.npz", "belief", [0.04, 0, 0], [0.039, 0, 0], True, 2)
+    _episode(dy / "seed_0.npz", "belief", [0, 0.02, 0], [0, 0.019, 0], True, 2)
+    rows = aggregate(str(tmp_path))
+    by_key = {(r["offset_axis"], r["offset_cm"]): r for r in rows}
+    assert by_key[("x", 4)]["offset_axis"] == "x"
+    assert by_key[("y", 2)]["offset_axis"] == "y"
+    # sorted by (object, offset_axis, offset_cm, arm): x04 sorts before y02.
+    assert [r["offset_axis"] for r in rows] == ["x", "y"]

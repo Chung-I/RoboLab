@@ -249,8 +249,10 @@ def main():
     params = GraspParams()
     env_name, events = register_test_lift_env(args.task_file, args.object, args.mass, tuple(args.com_offset),
                                               postfix=f"_TL_{args.arm}_{args.seed}", seed=args.seed)
+    _offset = np.asarray(args.com_offset, dtype=float)
+    _axis = "x" if np.allclose(_offset, 0) else "xyz"[int(np.argmax(np.abs(_offset)))]
     out_dir = os.path.join(args.out, args.object,
-                           f"off_{int(round(np.linalg.norm(args.com_offset) * 100)):02d}cm", args.arm)
+                           f"off_{_axis}{int(round(np.linalg.norm(_offset) * 100)):02d}cm", args.arm)
     os.makedirs(out_dir, exist_ok=True)
     set_output_dir(out_dir)
     env, _ = create_env(env_name, device=args.device, seed=args.seed, num_envs=1, use_fabric=True, events=events)
