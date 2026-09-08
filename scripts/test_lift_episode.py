@@ -52,6 +52,8 @@ parser.add_argument("--n-candidates", type=int, default=200)
 parser.add_argument("--frame-check", action="store_true",
                     help="grasp the top reachable candidates with the yaw fix given by --yaw-fix, report contact")
 parser.add_argument("--oracle-check", action="store_true", help="verify the wrench update recovers m and c_perp")
+parser.add_argument("--video", action="store_true",
+                    help="stream the egocentric camera to <out_dir>/seed_<k>.mp4 (off by default: no per-step image cost)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
@@ -63,6 +65,7 @@ import torch  # noqa: E402
 from robolab.constants import PACKAGE_DIR, set_output_dir  # noqa: E402
 from robolab.core.environments.runtime import create_env, end_episode  # noqa: E402
 from robolab.core.task.predicate_logic import _read_local_mesh_points  # noqa: E402
+from robolab.core.utils.video_utils import VideoWriter  # noqa: E402
 from robolab.core.world.world_state import get_world  # noqa: E402
 from robolab.registrations.test_lift import register_test_lift_env  # noqa: E402
 
@@ -86,6 +89,8 @@ SETTLE_STEPS = 60     # let the object come to rest before any pose is read
 APPROACH_Z_MAX = -0.5  # keep candidates whose world approach axis points down
 FRAME_CHECK_N = 4     # candidates tried per --frame-check invocation
 ORACLE_CHECK_N = 6    # candidates --oracle-check may try before giving up on a hold
+TILT_MAX_DEG = 15.0   # object tilt from the settle orientation allowed for a real hold (Ruling 25)
+VIDEO_FPS = 15         # control rate
 OPEN, CLOSE = 1.0, -1.0
 
 
@@ -95,11 +100,18 @@ class Robot:
         self.robot = env.scene["robot"]
         self.hand = list(self.robot.data.body_names).index("panda_hand")
         self.origin = env.scene.env_origins[0].cpu().numpy()
+        self.video = None    # set by main() when --video is given
+        self.cam_key = None
 
     def step(self, target7, grip, n):
         a = torch.tensor([[*target7, grip]], device=self.env.device, dtype=torch.float32)
         for _ in range(n):
-            self.env.step(a)
+            obs, *_ = self.env.step(a)
+            if self.video is not None:
+                frame = obs["image_obs"][self.cam_key][0]
+                if torch.is_tensor(frame):
+                    frame = frame.cpu().numpy()
+                self.video.write(frame)
 
     def hand_T_w(self):
         p = self.robot.data.body_pos_w[0, self.hand].cpu().numpy()
@@ -107,12 +119,17 @@ class Robot:
         return pose7_to_T(np.concatenate([p, q]))
 
     def wrench_h(self, n=HOLD_STEPS, target7=None, grip=CLOSE):
+        """Per-step hand-frame ``body_incoming_joint_wrench_b`` readings, and their mean.
+
+        Returns ``(mean_6, trace_(n, 6))``.
+        """
         ws = []
         for _ in range(n):
             if target7 is not None:
                 self.step(target7, grip, 1)
             ws.append(self.robot.data.body_incoming_joint_wrench_b[0, self.hand].cpu().numpy())
-        return np.mean(ws, axis=0)
+        trace = np.asarray(ws, dtype=np.float32)
+        return trace.mean(axis=0), trace
 
     def finger_gap(self):
         jp = self.robot.data.joint_pos[0].cpu().numpy()
@@ -168,32 +185,57 @@ def attempt_report(rb, env, grasp_o, T_obj_w, idx, ok, ik_err, tag):
           f"ik_err={ik_err:.4f} approach_z={appr_z:.3f} obj={np.round(obj, 4)}", flush=True)
 
 
-def lift_ok(env, name, z_before, dz):
+def lift_ok(env, name, z_before, dz, frac=0.5):
     z = env.scene[name].data.root_pose_w[0, 2].item()
-    return (z - z_before) > 0.5 * dz
+    return (z - z_before) > frac * dz
 
 
-def run_grasp(rb, env, name, target7, log):
+def tilt_deg(R_a, R_b) -> float:
+    """Angle (degrees) between two rotation matrices: arccos((trace(R_a^T R_b) - 1) / 2)."""
+    c = float(np.clip((np.trace(np.asarray(R_a).T @ np.asarray(R_b)) - 1) / 2, -1.0, 1.0))
+    return float(np.degrees(np.arccos(c)))
+
+
+def find_camera_key(image_obs) -> str:
+    """Pick the RGB camera key out of an ``obs["image_obs"]`` dict.
+
+    The registered camera has no depth, so this is normally the only key; guard against
+    the metadata suffixes anyway in case a depth-carrying camera is added later.
+    """
+    for k in image_obs:
+        if not k.endswith(("_depth", "_pos", "_quat", "_K")):
+            return k
+    raise KeyError(f"no rgb camera key found in image_obs keys={list(image_obs)}")
+
+
+def run_grasp(rb, env, name, target7, log, R_settle):
     """approach -> close -> test-lift -> hold.
 
-    Returns ``(ok, bias_h, wrench_hold_h, T_hand_w, z_table, reach_err)``. ``reach_err``
-    is measured at the grasp pose, before the fingers close and before the test-lift --
-    comparing the hand against ``target7`` any later would charge the commanded 2 cm
-    lift to the IK.
+    Returns ``(ok, bias_h, wrench_hold_h, T_hand_w, z_table, reach_err, tilt_deg)``.
+    ``reach_err`` is measured at the grasp pose, before the fingers close and before the
+    test-lift -- comparing the hand against ``target7`` any later would charge the
+    commanded 2 cm lift to the IK.
+
+    The "real hold" test (Ruling 25): ``ok`` requires the rise to clear 90% of the
+    commanded 2 cm, the fingers to still be apart by more than 2 mm, AND the object to
+    have tilted less than ``TILT_MAX_DEG`` from its settle orientation ``R_settle`` --
+    otherwise a grasp that clips the object and spins it counts as a hold.
     """
     pre = pregrasp_target(target7, STANDOFF)
     rb.step(pre, OPEN, MOVE_STEPS)
-    bias = rb.wrench_h(target7=pre, grip=OPEN)                 # no-load bias at the same orientation
+    bias, bias_trace = rb.wrench_h(target7=pre, grip=OPEN)     # no-load bias at the same orientation
     rb.step(target7, OPEN, MOVE_STEPS)
     reach_err = float(np.linalg.norm(rb.hand_T_w()[:3, 3] - rb.origin - np.asarray(target7, dtype=float)[:3]))
     rb.step(target7, CLOSE, MOVE_STEPS // 2)
     z0 = env.scene[name].data.root_pose_w[0, 2].item()
     up = lifted_target(target7, LIFT_DZ)
     rb.step(up, CLOSE, MOVE_STEPS // 2)
-    w_hold = rb.wrench_h(target7=up, grip=CLOSE)
-    ok = lift_ok(env, name, z0, LIFT_DZ) and rb.finger_gap() > 0.002
+    w_hold, hold_trace = rb.wrench_h(target7=up, grip=CLOSE)
+    tilt = tilt_deg(R_settle, object_T_w(env, name)[:3, :3])
+    ok = lift_ok(env, name, z0, LIFT_DZ, frac=0.9) and rb.finger_gap() > 0.002 and tilt < TILT_MAX_DEG
     log["wrench_bias_h"], log["wrench_hold_h"] = bias, w_hold
-    return ok, bias, w_hold, rb.hand_T_w(), z0, reach_err
+    log["wrench_bias_trace_h"], log["wrench_trace_h"] = bias_trace, hold_trace
+    return ok, bias, w_hold, rb.hand_T_w(), z0, reach_err, tilt
 
 
 def set_down(rb, target7):
@@ -213,11 +255,17 @@ def main():
     set_output_dir(out_dir)
     env, _ = create_env(env_name, device=args.device, seed=args.seed, num_envs=1, use_fabric=True, events=events)
     t0 = time.time()
+    video = None
     try:
-        env.reset()                       # the only reset in this process -- see the module docstring
+        obs, _ = env.reset()               # the only reset in this process -- see the module docstring
         rb = Robot(env)
+        if args.video:
+            cam_key = find_camera_key(obs["image_obs"])
+            video = VideoWriter(os.path.join(out_dir, f"seed_{args.seed}.mp4"), fps=VIDEO_FPS)
+            rb.video, rb.cam_key = video, cam_key
         rb.settle()                       # the object spawns above the table; let it land
         T_obj = object_T_w(env, args.object)
+        R_settle = T_obj[:3, :3].copy()   # reference orientation for the tilt test (Ruling 25)
         g_o = gravity_in_object_frame(T_obj)
         pts_o = object_points_o(env, args.object, 2048, rng)
         client = GraspGenClient(gripper_name="franka_panda")
@@ -247,7 +295,7 @@ def main():
             held = 0
             for k, i in enumerate(order):
                 tgt = grasp_to_hand_target(grasps_o[i], T_obj, rb.origin, args.yaw_fix)
-                ok, *_ = run_grasp(rb, env, args.object, tgt, {})
+                ok, *_ = run_grasp(rb, env, args.object, tgt, {}, R_settle)
                 held += bool(ok)
                 print(f"[frame-check] yaw_fix={args.yaw_fix} cand={k} idx={int(i)} "
                       f"conf={confs[i]:.3f} lift_ok={ok} finger_gap={rb.finger_gap():.4f}", flush=True)
@@ -265,7 +313,7 @@ def main():
         else:
             i1 = select_next_best_geometric(confs)
         tgt1 = grasp_to_hand_target(grasps_o[i1], T_obj, rb.origin, args.yaw_fix)
-        ok1, bias, w_hold, T_hand, z0, ik_err1 = run_grasp(rb, env, args.object, tgt1, log)
+        ok1, bias, w_hold, T_hand, z0, ik_err1, tilt1 = run_grasp(rb, env, args.object, tgt1, log, R_settle)
         log.update(idx_first=i1, first_lift_ok=ok1)
 
         if args.oracle_check:
@@ -278,7 +326,7 @@ def main():
                 set_down(rb, tgt1)
                 T_obj = object_T_w(env, args.object)
                 tgt1 = grasp_to_hand_target(grasps_o[cand], T_obj, rb.origin, args.yaw_fix)
-                ok1, bias, w_hold, T_hand, z0, ik_err1 = run_grasp(rb, env, args.object, tgt1, log)
+                ok1, bias, w_hold, T_hand, z0, ik_err1, tilt1 = run_grasp(rb, env, args.object, tgt1, log, R_settle)
                 attempt_report(rb, env, grasps_o[cand], T_obj, cand, ok1, ik_err1, "retry")
                 i1 = cand
                 if ok1:
@@ -359,7 +407,7 @@ def main():
             else:
                 i2 = select_next_best_geometric(confs, exclude=exclude2)
             tgt2 = grasp_to_hand_target(grasps_o[i2], T_obj2, rb.origin, args.yaw_fix)
-            ok2, _, _, _, z0b, ik_err2 = run_grasp(rb, env, args.object, tgt2, {})
+            ok2, _, _, _, z0b, ik_err2, _ = run_grasp(rb, env, args.object, tgt2, {}, R_settle)
             attempt_report(rb, env, grasps_o[i2], T_obj2, i2, ok2, ik_err2, "second")
             rb.step(lifted_target(tgt2, CLEAR_DZ), CLOSE, MOVE_STEPS)
             final_ok = lift_ok(env, args.object, z0b, CLEAR_DZ) and rb.finger_gap() > 0.002
@@ -369,9 +417,11 @@ def main():
         log.update(final_ok=final_ok, n_grasps=n_grasps, wall_s=time.time() - t0)
         write_episode(os.path.join(out_dir, f"seed_{args.seed}.npz"), **log)
         print(f"[episode] arm={args.arm} first_ok={ok1} advance={advance} "
-              f"final_ok={final_ok} n_grasps={n_grasps} ik_err2={ik_err2:.4f}", flush=True)
+              f"final_ok={final_ok} n_grasps={n_grasps} ik_err2={ik_err2:.4f} tilt1={tilt1:.1f}", flush=True)
         end_episode(env)
     finally:
+        if video is not None:
+            video.release()
         env.close()
 
 

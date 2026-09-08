@@ -8,7 +8,8 @@ import numpy as np
 EPISODE_KEYS = (
     "object", "arm", "mass_true", "com_true_o", "com_offset_xyz", "grasps_o", "confs",
     "idx_first", "idx_second", "m_prior", "c_prior_o", "c_prior_cov", "m_post", "c_post_o", "c_post_cov",
-    "wrench_bias_h", "wrench_hold_h", "hold_prob_first", "first_lift_ok", "second_lift_ok", "final_ok",
+    "wrench_bias_h", "wrench_hold_h", "wrench_trace_h", "wrench_bias_trace_h",
+    "hold_prob_first", "first_lift_ok", "second_lift_ok", "final_ok",
     "n_grasps", "wall_s", "yaw_fix",
 )
 

@@ -1292,7 +1292,12 @@ Arms: `belief | next_best | fixed_threshold | oracle | top1` (spec §11.3).
 
 ```bash
 mkdir -p /home/chungyili/Codes/RoboLab/output/test_lift
-setsid nohup bash -c 'cd /home/chungyili/Codes/GraspGenX; uv run python -u client-server/graspgenx_server.py --default_gripper franka_panda --host 127.0.0.1 --port 5556 > /home/chungyili/Codes/RoboLab/output/test_lift/graspgenx_server.log 2>&1' &
+setsid nohup bash -c 'cd /home/chungyili/Codes/GraspGenX; .venv/bin/python -u \
+  client-server/graspgenx_server.py \
+  --config /home/chungyili/Codes/GraspGenX/ext/graspgenx_checkpoints/release \
+  --assets_dir /home/chungyili/Codes/GraspGenX/assets \
+  --default_gripper franka_panda --host 127.0.0.1 --port 5556 \
+  > /home/chungyili/Codes/RoboLab/output/test_lift/graspgenx_server.log 2>&1' &
 sleep 40; tail -5 /home/chungyili/Codes/RoboLab/output/test_lift/graspgenx_server.log
 ps -eo pid,cmd | grep "[g]raspgenx_server.py"
 cd ~/Codes/RoboLab && uv run --extra isaac50 --extra test pytest analysis/test_lift/test_graspgen.py -v -p no:cacheprovider -m integration
