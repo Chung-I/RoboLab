@@ -62,7 +62,7 @@ SETTLE_STEPS = 60           # let the object come to rest before any pose is rea
 
 OPEN, CLOSE = 1.0, -1.0
 
-ARMS = ("belief", "next_best", "fixed_threshold", "oracle", "top1")
+ARMS = ("belief", "next_best", "fixed_threshold", "oracle", "top1", "label")
 
 #: The mass each test-lift object is registered with unless a cell overrides it. A cell that
 #: overrides it gets a ``_m<mass>kg`` suffix on its episode directory (:func:`offset_dir_name`),
@@ -133,6 +133,8 @@ def select_first(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rn
     """
     if arm not in ARMS:
         raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+    if arm == "label":
+        raise ValueError("label arm: the driver assigns the candidate")
     if arm == "oracle":
         return select_oracle(grasps_o, confs, m_true, c_true, g_hat, params, exclude=exclude)
     if arm == "belief":
@@ -259,18 +261,40 @@ def decide_advance(arm: str, ok1: bool, hold_prob: float, tau_norm: float,
     * ``fixed_threshold`` -- the test-lift held AND the measured wrist torque norm is within
       ``tau_thr``.
     * ``next_best`` / ``oracle`` -- the test-lift held.
-    * ``top1`` -- always advance. It runs the test-lift (both drivers do, for every arm) but
+    * ``top1`` / ``label`` -- always advance. It runs the test-lift (both drivers do, for every arm) but
       ignores the outcome, which is the ablation's point: no test-lift decision.
     """
     if arm == "belief":
         return bool(ok1) and float(hold_prob) >= float(pi_go)
     if arm == "fixed_threshold":
         return bool(ok1) and float(tau_norm) <= float(tau_thr)
-    if arm == "top1":
+    if arm in ("top1", "label"):
         return True
     if arm in ("next_best", "oracle"):
         return bool(ok1)
     raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+
+
+def theta_grid(half_extent_xy, masses=(0.4, 0.8, 1.5)) -> list[dict]:
+    """The 13 (mass, CoM offset) cells of spec §4.1, ids 0..12, offsets in the object frame."""
+    hx, hy = float(half_extent_xy[0]), float(half_extent_xy[1])
+    out = [dict(mass=float(m), offset=np.zeros(3)) for m in masses]
+    for frac in (0.3, 0.6):
+        for v in (np.array([hx * frac, 0, 0]), np.array([-hx * frac, 0, 0]),
+                  np.array([0, hy * frac, 0]), np.array([0, -hy * frac, 0])):
+            out.append(dict(mass=float(masses[1]), offset=v))
+    out.append(dict(mass=float(masses[2]), offset=np.array([hx * 0.6, 0, 0])))
+    out.append(dict(mass=float(masses[2]), offset=np.array([0, hy * 0.6, 0])))
+    for i, t in enumerate(out):
+        t["theta_id"] = i
+    return out
+
+
+def assign_candidates(n_cand: int, start: int, n_envs: int):
+    """Env i executes candidate start+i; envs past the last candidate repeat it and are flagged pad."""
+    raw = np.arange(int(start), int(start) + int(n_envs))
+    idx = np.minimum(raw, int(n_cand) - 1)
+    return idx, raw > int(n_cand) - 1
 
 
 def offset_dir_name(com_offset_xyz, mass_kg=None, default_mass_kg=None) -> str:

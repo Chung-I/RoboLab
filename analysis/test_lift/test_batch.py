@@ -8,11 +8,11 @@ from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, 
                                       CLEAR_DZ, FINGER_JOINTS, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
                                       MIN_FINGER_GAP, MOVE_STEPS, OBJECT_MASS_KG, R_F, R_TAU,
                                       SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
-                                      assert_finger_joints, branch_stage_a_schedule, decide_advance,
-                                      env_index, grasp_schedule, hand_target, offset_dir_name,
-                                      phase_schedule, reachable_candidates, real_hold, seed_of,
-                                      select_first, select_second, setdown_schedule, tilt_deg,
-                                      unreachable_after_move, update_allowed, world_approach_z)
+                                      assert_finger_joints, assign_candidates, branch_stage_a_schedule,
+                                      decide_advance, env_index, grasp_schedule, hand_target,
+                                      offset_dir_name, phase_schedule, reachable_candidates, real_hold,
+                                      seed_of, select_first, select_second, setdown_schedule, theta_grid,
+                                      tilt_deg, unreachable_after_move, update_allowed, world_approach_z)
 from analysis.test_lift.belief import GaussianBelief
 from analysis.test_lift.frames import HAND_YAW_FIX, grasp_to_hand_target, pose7_to_T
 from analysis.test_lift.physics import GRAVITY_G
@@ -311,6 +311,8 @@ def test_select_first_maps_each_arm_to_its_own_selector():
 def test_select_first_covers_every_arm_and_rejects_anything_else():
     grasps, confs, belief, g_hat, params = _candidate_set()
     for arm in ARMS:
+        if arm == "label":
+            continue  # label is driver-assigned and does not call select_first
         i = select_first(arm, grasps, confs, belief, 0.5, np.zeros(3), g_hat, params,
                          np.random.default_rng(0))
         assert 0 <= i < len(confs)
@@ -323,6 +325,8 @@ def test_selectors_honour_exclude_and_second_matches_first():
     grasps, confs, belief, g_hat, params = _candidate_set()
     m_true, c_true = 0.5, np.array([0.05, 0.0, 0.0])
     for arm in ARMS:
+        if arm == "label":
+            continue  # label is driver-assigned and does not call select_first
         first = select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
                              np.random.default_rng(3))
         second = select_second(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
@@ -372,3 +376,29 @@ def test_assert_finger_joints_accepts_the_franka_order():
 def test_assert_finger_joints_rejects_a_reordered_articulation():
     with pytest.raises(AssertionError):
         assert_finger_joints([*FINGER_JOINTS, "panda_joint7"])
+
+
+def test_label_arm_always_advances_and_is_driver_assigned():
+    assert "label" in ARMS
+    assert decide_advance("label", ok1=False, hold_prob=0.0, tau_norm=9.9, pi_go=0.7, tau_thr=0.15) is True
+    with pytest.raises(ValueError, match="driver assigns"):
+        select_first("label", np.eye(4)[None], np.array([1.0]), None, 0.5, np.zeros(3), np.array([0, 0, -1.0]), None, None)
+
+
+def test_theta_grid_is_13_and_spans_masses_and_offsets():
+    g = theta_grid((0.05, 0.02))
+    assert len(g) == 13 and [t["theta_id"] for t in g] == list(range(13))
+    centred = [t for t in g if np.allclose(t["offset"], 0)]
+    assert sorted(t["mass"] for t in centred) == [0.4, 0.8, 1.5]
+    off08 = [t for t in g if t["mass"] == 0.8 and not np.allclose(t["offset"], 0)]
+    assert len(off08) == 8
+    xs = sorted(abs(t["offset"][0]) for t in off08 if t["offset"][0] != 0)
+    assert np.allclose(xs, [0.015, 0.015, 0.03, 0.03])          # 0.3 and 0.6 of half_x = 0.05
+    heavy = [t for t in g if t["mass"] == 1.5 and not np.allclose(t["offset"], 0)]
+    assert len(heavy) == 2 and all(t["offset"][2] == 0 for t in heavy)
+
+
+def test_assign_candidates_clamps_and_flags_padding():
+    idx, pad = assign_candidates(n_cand=70, start=64, n_envs=8)
+    assert idx.tolist() == [64, 65, 66, 67, 68, 69, 69, 69]
+    assert pad.tolist() == [False] * 6 + [True] * 2
