@@ -28,6 +28,49 @@ Four constraints shape this driver:
   missed by 0.46 m. ``APPROACH_Z_MAX`` keeps only candidates whose approach axis
   points downward in world. The filter is applied once, before any arm ranks the
   set, so every arm sees the same candidates and the comparison is unaffected.
+
+Task 8c -- why ``APPROACH_Z_MAX = -0.85`` and ``GRASP_DEPTH_OFFSET = 0.01``
+-------------------------------------------------------------------------
+
+The grasps looked shallow on video: the fingers touched the banana and left it on the
+table. Measured with ``--frame-check --frame-check-n 8`` on the banana
+(``--mass 0.5 --com-offset 0 0 0 --yaw-fix z90``), one Isaac process per cell:
+
+===========================  ========  ========  =========
+(approach-z-max, offset m)   lifts/8   grips/8   rise (mm)
+===========================  ========  ========  =========
+A  (-0.50, 0.00)             0         3         16.6 .. 17.6
+B  (-0.85, 0.00)             0         1          8.6
+C  (-0.50, 0.01)             1         6          5.8 .. 18.0
+D  (-0.85, 0.01)             3         8          0.9 .. 19.7
+===========================  ========  ========  =========
+
+"grips" counts attempts that closed on the object (finger gap > 2 mm); "rise" is the
+object's z gain over the commanded 2 cm test-lift, across the grips.
+
+The cause is fingertip depth, not IK and not an oblique sweep. At the grasp pose the hand
+sits exactly where it was told to: ``d_along`` and ``d_lat`` are 0.0000 m on 12 of the 16
+zero-offset attempts, and the brief's suspected 2-3 cm shortfall never appears. What
+separates a grip from a miss is ``tip_z``, the fingertip midpoint above the table. The
+settled banana spans 0 to about 36 mm above the table (rest z 0.0212, table 0.0030, so a
+half-height of 18 mm). Every attempt with ``tip_z <= 0.027`` closed on the object (8 of 8
+over A+B+C); of 10 attempts with ``tip_z >= 0.031``, 9 closed on air (gap 0.0002) because
+the pads shut around the banana's crown. GraspGenX's ``franka_panda`` depth of 0.1034 m
+puts the tips at the surface it was asked for, which is one pad-width too high to hold a
+round object. A 1 cm push along the approach axis moves the tip distribution from ~0.034
+into the gripping band and takes the grip rate from 3/8 to 8/8.
+
+The approach filter still earns its tightening. With the offset in place, ``-0.85``
+lifts 3 of 8 against ``-0.50``'s 1 of 8: the oblique candidates the looser filter admits
+(``approach_z`` -0.75 to -0.85) either sweep the object sideways or clip its edge and spin
+it past the 15 deg tilt limit.
+
+One caveat the numbers force. Even under D, five of the eight grips rose 0.9-15.4 mm
+against the ``lift_ok`` bar of 0.9 x 20 mm = 18 mm, and three of those five (15.1, 15.2,
+15.4 mm) are real holds -- gap ~0.035 m, tilt 6-11 deg -- that the criterion rejects,
+because a loaded differential-IK hand under-delivers the commanded 2 cm by 2-5 mm. Part of
+the remaining loss is therefore in the test-lift criterion, not in the grasp, and changing
+that criterion was out of Task 8c's scope.
 """
 import argparse
 import os
@@ -36,6 +79,12 @@ import time
 
 import cv2  # noqa: F401  must be imported before isaaclab
 from isaaclab.app import AppLauncher
+
+# Defaults measured in Task 8c (see the module docstring). They are declared before the
+# parser because two flags take them as their default value.
+APPROACH_Z_MAX = -0.85   # keep candidates whose world approach axis points down
+GRASP_DEPTH_OFFSET = 0.01  # push every hand target this far along its own approach axis (m)
+FRAME_CHECK_N = 8        # candidates tried per --frame-check invocation
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--task-file", required=True)
@@ -49,6 +98,12 @@ parser.add_argument("--yaw-fix", choices=["none", "z90"], default="z90")
 parser.add_argument("--pi-go", type=float, default=0.7, help="advance if E[hold prob] >= pi_go")
 parser.add_argument("--tau-thr", type=float, default=0.15, help="fixed_threshold arm: abort if ||tau|| > tau_thr (N m)")
 parser.add_argument("--n-candidates", type=int, default=200)
+parser.add_argument("--approach-z-max", type=float, default=APPROACH_Z_MAX,
+                    help="keep candidates whose world approach z is below this (-1 = straight down)")
+parser.add_argument("--grasp-depth-offset", type=float, default=GRASP_DEPTH_OFFSET,
+                    help="push every hand target this far along its own approach axis (m)")
+parser.add_argument("--frame-check-n", type=int, default=FRAME_CHECK_N,
+                    help="candidates --frame-check grasps in one process")
 parser.add_argument("--frame-check", action="store_true",
                     help="grasp the top reachable candidates with the yaw fix given by --yaw-fix, report contact")
 parser.add_argument("--oracle-check", action="store_true", help="verify the wrench update recovers m and c_perp")
@@ -77,8 +132,8 @@ from analysis.test_lift.frames import (gravity_in_object_frame, grasp_to_hand_ta
                                        object_load_from_measured, pose7_to_T, pregrasp_target, wrench_hand_to_object)
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
-from analysis.test_lift.rerank import (GraspParams, hold_probability, select_belief,  # noqa: E402
-                                       select_next_best_geometric, select_oracle)
+from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams, hold_probability,  # noqa: E402
+                                       select_belief, select_next_best_geometric, select_oracle)
 
 STANDOFF = 0.10       # pre-grasp distance along -approach (m)
 LIFT_DZ = 0.02        # test-lift height (m)
@@ -86,12 +141,12 @@ CLEAR_DZ = 0.15       # lift-clear height (m)
 HOLD_STEPS = 15       # 1 s at 15 Hz
 MOVE_STEPS = 45       # 3 s per motion segment
 SETTLE_STEPS = 60     # let the object come to rest before any pose is read
-APPROACH_Z_MAX = -0.5  # keep candidates whose world approach axis points down
-FRAME_CHECK_N = 4     # candidates tried per --frame-check invocation
 ORACLE_CHECK_N = 6    # candidates --oracle-check may try before giving up on a hold
 TILT_MAX_DEG = 15.0   # object tilt from the settle orientation allowed for a real hold (Ruling 25)
 VIDEO_FPS = 15         # control rate
 OPEN, CLOSE = 1.0, -1.0
+
+Z_TABLE = 0.0  # world z of the surface the object rests on; set once in main() after the settle
 
 
 class Robot:
@@ -164,7 +219,7 @@ def world_approach_z(grasps_o, T_obj_w):
 def reachable_candidates(grasps_o, confs, T_obj_w):
     """Drop candidates that approach from below: their targets are under the table."""
     appr_z = world_approach_z(grasps_o, T_obj_w)
-    keep = np.where(appr_z < APPROACH_Z_MAX)[0]
+    keep = np.where(appr_z < args.approach_z_max)[0]
     if len(keep) == 0:
         raise RuntimeError(
             f"No candidate approaches downward (best approach_z = {appr_z.min():.3f}); "
@@ -174,7 +229,25 @@ def reachable_candidates(grasps_o, confs, T_obj_w):
 
 def unreachable_after_move(grasps_o, T_obj_w):
     """Indices that stopped approaching downward once the object moved."""
-    return [int(j) for j in np.where(world_approach_z(grasps_o, T_obj_w) >= APPROACH_Z_MAX)[0]]
+    return [int(j) for j in np.where(world_approach_z(grasps_o, T_obj_w) >= args.approach_z_max)[0]]
+
+
+def hand_target(grasp_o, T_obj_w, env_origin_w, yaw_fix, depth_offset):
+    """``frames.grasp_to_hand_target``, then a push along the hand's own approach axis.
+
+    GraspGen puts the grasp frame origin on the ``panda_hand`` link, ``FRANKA_PANDA_DEPTH``
+    behind the fingertips, so a target that is right on the object surface still leaves the
+    pads short of it. A positive ``depth_offset`` drives the fingers that much deeper. The
+    push uses the target's own +z, so it is the same operation the pre-grasp standoff undoes,
+    and it is applied identically to grasp 1, the ``--oracle-check`` retries and grasp 2.
+
+    This lives in the driver, not in ``frames.py``: ``grasp_to_hand_target`` is the pure frame
+    conversion that ``test_frames.py`` pins, and a controller-side depth bias is not part of it.
+    """
+    pose = grasp_to_hand_target(grasp_o, T_obj_w, env_origin_w, yaw_fix)
+    if depth_offset:
+        pose[:3] += float(depth_offset) * pose7_to_T(pose)[:3, 2]
+    return pose
 
 
 def attempt_report(rb, env, grasp_o, T_obj_w, idx, ok, ik_err, tag):
@@ -225,7 +298,15 @@ def run_grasp(rb, env, name, target7, log, R_settle):
     rb.step(pre, OPEN, MOVE_STEPS)
     bias, bias_trace = rb.wrench_h(target7=pre, grip=OPEN)     # no-load bias at the same orientation
     rb.step(target7, OPEN, MOVE_STEPS)
-    reach_err = float(np.linalg.norm(rb.hand_T_w()[:3, 3] - rb.origin - np.asarray(target7, dtype=float)[:3]))
+    T_hand_reach = rb.hand_T_w()
+    d = np.asarray(target7, dtype=float)[:3] - (T_hand_reach[:3, 3] - rb.origin)
+    a = T_hand_reach[:3, 2]                                   # world approach axis of the hand
+    d_along = float(d @ a)                                    # >0: the hand stopped short of the target
+    d_lat = float(np.linalg.norm(d - d_along * a))            # the remainder, across the approach
+    tip_z = float(T_hand_reach[:3, 3][2] + FRANKA_PANDA_DEPTH * a[2] - Z_TABLE)
+    reach_err = float(np.linalg.norm(d))
+    print(f"[reach] ik_err={reach_err:.4f} d_along={d_along:+.4f} d_lat={d_lat:.4f} "
+          f"tip_z={tip_z:+.4f} obj_z={env.scene[name].data.root_pose_w[0, 2].item():.4f}", flush=True)
     rb.step(target7, CLOSE, MOVE_STEPS // 2)
     z0 = env.scene[name].data.root_pose_w[0, 2].item()
     up = lifted_target(target7, LIFT_DZ)
@@ -256,6 +337,20 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     set_output_dir(out_dir)
     env, _ = create_env(env_name, device=args.device, seed=args.seed, num_envs=1, use_fabric=True, events=events)
+    if args.frame_check or args.oracle_check:
+        # The task's 60 s budget is 900 control steps at 15 Hz. One --frame-check attempt
+        # costs 246 (run_grasp 164 + set_down 82), so with SETTLE_STEPS the fourth attempt
+        # reads the hand at step 903 -- three steps past ``mdp.time_out``. Measured
+        # 2026-09-08 with FRAME_CHECK_N = 8: attempts 0-2 behave, and from attempt 3 on the
+        # env has auto-reset, so every line reports the home pose (tip_z = 0.1906, finger
+        # gap pinned at the open 0.0800) with the differential-IK term dead. The normal
+        # episode path needs ~520 steps and is unaffected, so only the two diagnostic paths
+        # that chain many grasps into one reset get the larger budget.
+        # ``ManagerBasedRLEnv.max_episode_length`` is a live property of
+        # ``cfg.episode_length_s``, so this needs no change to the task file.
+        env.cfg.episode_length_s = 60.0 * max(args.frame_check_n, ORACLE_CHECK_N + 2)
+        print(f"[budget] episode_length_s={env.cfg.episode_length_s:.0f} "
+              f"max_episode_length={env.max_episode_length}", flush=True)
     t0 = time.time()
     video = None
     try:
@@ -270,6 +365,12 @@ def main():
         R_settle = T_obj[:3, :3].copy()   # reference orientation for the tilt test (Ruling 25)
         g_o = gravity_in_object_frame(T_obj)
         pts_o = object_points_o(env, args.object, 2048, rng)
+        # Table surface: the settled object rests on it, so the lowest of its surface points
+        # in world is the table top. Measured, not assumed, because the scene is a USD file
+        # and the object's z half-extent is not declared anywhere in the task cfg.
+        global Z_TABLE
+        Z_TABLE = float(((T_obj[:3, :3] @ pts_o.T).T + T_obj[:3, 3])[:, 2].min())
+        print(f"[table] z_table={Z_TABLE:.4f} obj_rest_z={T_obj[2, 3]:.4f}", flush=True)
         client = GraspGenClient(gripper_name="franka_panda")
         if not client.available():
             raise RuntimeError(
@@ -293,17 +394,22 @@ def main():
             # run, and a single top-confidence grasp can fail on its own geometry. Try
             # the top FRAME_CHECK_N reachable candidates in sequence. No reset is needed
             # between them -- a normal episode already runs two grasps in one reset.
-            order = np.argsort(-confs)[:FRAME_CHECK_N]
+            order = np.argsort(-confs)[:args.frame_check_n]
             held = 0
             for k, i in enumerate(order):
-                tgt = grasp_to_hand_target(grasps_o[i], T_obj, rb.origin, args.yaw_fix)
-                ok, *_ = run_grasp(rb, env, args.object, tgt, {}, R_settle)
+                tgt = hand_target(grasps_o[i], T_obj, rb.origin, args.yaw_fix, args.grasp_depth_offset)
+                ok, _, _, _, z0, ik_err, tilt = run_grasp(rb, env, args.object, tgt, {}, R_settle)
                 held += bool(ok)
-                print(f"[frame-check] yaw_fix={args.yaw_fix} cand={k} idx={int(i)} "
-                      f"conf={confs[i]:.3f} lift_ok={ok} finger_gap={rb.finger_gap():.4f}", flush=True)
+                rise = env.scene[args.object].data.root_pose_w[0, 2].item() - z0
+                appr_z = float((np.asarray(T_obj)[:3, :3] @ np.asarray(grasps_o[i])[:3, 2])[2])
+                print(f"[frame-check] yaw_fix={args.yaw_fix} azmax={args.approach_z_max} "
+                      f"doff={args.grasp_depth_offset} cand={k} idx={int(i)} conf={confs[i]:.3f} "
+                      f"lift_ok={ok} finger_gap={rb.finger_gap():.4f} ik_err={ik_err:.4f} "
+                      f"approach_z={appr_z:.3f} rise={rise:+.4f} tilt={tilt:.1f}", flush=True)
                 set_down(rb, tgt)
                 T_obj = object_T_w(env, args.object)   # set_down can nudge the object
-            print(f"[frame-check] yaw_fix={args.yaw_fix}: {held}/{len(order)} held", flush=True)
+            print(f"[frame-check] yaw_fix={args.yaw_fix} azmax={args.approach_z_max} "
+                  f"doff={args.grasp_depth_offset}: {held}/{len(order)} held", flush=True)
             end_episode(env)
             return
 
@@ -314,7 +420,7 @@ def main():
             i1 = select_belief(grasps_o, confs, b0, g_o, params, rng)
         else:
             i1 = select_next_best_geometric(confs)
-        tgt1 = grasp_to_hand_target(grasps_o[i1], T_obj, rb.origin, args.yaw_fix)
+        tgt1 = hand_target(grasps_o[i1], T_obj, rb.origin, args.yaw_fix, args.grasp_depth_offset)
         ok1, bias, w_hold, T_hand, z0, ik_err1, tilt1 = run_grasp(rb, env, args.object, tgt1, log, R_settle)
         log.update(idx_first=i1, first_lift_ok=ok1)
 
@@ -327,7 +433,7 @@ def main():
             for cand in [int(j) for j in np.argsort(-confs)[:ORACLE_CHECK_N] if int(j) != i1]:
                 set_down(rb, tgt1)
                 T_obj = object_T_w(env, args.object)
-                tgt1 = grasp_to_hand_target(grasps_o[cand], T_obj, rb.origin, args.yaw_fix)
+                tgt1 = hand_target(grasps_o[cand], T_obj, rb.origin, args.yaw_fix, args.grasp_depth_offset)
                 ok1, bias, w_hold, T_hand, z0, ik_err1, tilt1 = run_grasp(rb, env, args.object, tgt1, log, R_settle)
                 attempt_report(rb, env, grasps_o[cand], T_obj, cand, ok1, ik_err1, "retry")
                 i1 = cand
@@ -408,7 +514,7 @@ def main():
                 i2 = select_oracle(grasps_o, confs, args.mass, c_true, g_o2, params, exclude=exclude2)
             else:
                 i2 = select_next_best_geometric(confs, exclude=exclude2)
-            tgt2 = grasp_to_hand_target(grasps_o[i2], T_obj2, rb.origin, args.yaw_fix)
+            tgt2 = hand_target(grasps_o[i2], T_obj2, rb.origin, args.yaw_fix, args.grasp_depth_offset)
             ok2, _, _, _, z0b, ik_err2, _ = run_grasp(rb, env, args.object, tgt2, {}, R_settle)
             attempt_report(rb, env, grasps_o[i2], T_obj2, i2, ok2, ik_err2, "second")
             rb.step(lifted_target(tgt2, CLEAR_DZ), CLOSE, MOVE_STEPS)
@@ -419,7 +525,8 @@ def main():
         log.update(final_ok=final_ok, n_grasps=n_grasps, wall_s=time.time() - t0)
         write_episode(os.path.join(out_dir, f"seed_{args.seed}.npz"), **log)
         print(f"[episode] arm={args.arm} first_ok={ok1} advance={advance} "
-              f"final_ok={final_ok} n_grasps={n_grasps} ik_err2={ik_err2:.4f} tilt1={tilt1:.1f}", flush=True)
+              f"final_ok={final_ok} n_grasps={n_grasps} ik_err2={ik_err2:.4f} tilt1={tilt1:.1f} "
+              f"azmax={args.approach_z_max} doff={args.grasp_depth_offset}", flush=True)
         end_episode(env)
     finally:
         if video is not None:
