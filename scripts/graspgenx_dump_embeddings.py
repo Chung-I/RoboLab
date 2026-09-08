@@ -11,11 +11,13 @@ Also saves the frozen discriminator's prediction-head weights once per run, besi
 --out, as prediction_head.pt (Task-6 controller Ruling 2) -- a later task warm-starts
 a new head from it.
 """
-import argparse, os
+import argparse, os, sys
 import numpy as np, torch
 from graspgenx.grasp_server import GraspGenXSampler
 from graspgenx.samplers.graspmoe import _score_grasps_with_discriminator
 from graspgenx.utils.checkpoint_io import load_model_cfg
+
+GAP_TOL = 0.05
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--candidates", required=True); ap.add_argument("--out", required=True)
@@ -38,9 +40,13 @@ h = sampler.model.grasp_discriminator.prediction_head.register_forward_hook(hook
 conf = _score_grasps_with_discriminator(grasps, pc_centered, center, sampler)
 h.remove()
 e = captured["e"].reshape(len(grasps), -1).astype(np.float32)
+gap = float(np.abs(conf - z["confs"]).max())
+if gap > GAP_TOL:
+    print(f"[dump] FAIL frame/centring mismatch: gap={gap:.4f}", file=sys.stderr)
+    sys.exit(1)
 np.savez_compressed(a.out, e_g=e, conf_rescored=conf.astype(np.float32), D=int(e.shape[1]),
                     conf_ref=z["confs"].astype(np.float32), object=str(z["object"]))
-print(f"[dump] {len(grasps)} grasps, D={e.shape[1]}, max|conf_rescored-conf_ref|={np.abs(conf-z['confs']).max():.4f} -> {a.out}")
+print(f"[dump] {len(grasps)} grasps, D={e.shape[1]}, max|conf_rescored-conf_ref|={gap:.4f} -> {a.out}")
 
 head_path = os.path.join(os.path.dirname(a.out), "prediction_head.pt")
 torch.save({k: v.cpu() for k, v in sampler.model.grasp_discriminator.prediction_head.state_dict().items()}, head_path)
