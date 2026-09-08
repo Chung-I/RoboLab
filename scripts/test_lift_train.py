@@ -35,18 +35,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analysis.test_lift.adapt import AdaptationModule, moments_nll  # noqa: E402
 from analysis.test_lift.head import BeliefHead, PropertyLatent  # noqa: E402
+from analysis.test_lift.train_utils import (  # noqa: E402
+    N_ECE_BINS, REGIME_ORDER, REGIME_P, EarlyStopper, auroc_of, bce_of, ece_of, nan,
+    sample_z_dropout,
+)
 
 SPLITS = ("train", "val", "test")
-REGIMES = ("unknown", "prior", "post", "true")
-P_UNKNOWN = 0.3
-P_PRIOR = 0.2          # so p(post) = 0.5
-N_ECE_BINS = 10
+REGIMES = REGIME_ORDER          # unknown, prior, true, post -- all four are trained on
 SEED = 0
 
 # The val objective is the training objective made deterministic: the same regime mixture,
 # evaluated without sampling. Early stopping on a single regime would pick a head that is
 # good at that regime only.
-VAL_MIX = {"unknown": P_UNKNOWN, "prior": P_PRIOR, "post": 1.0 - P_UNKNOWN - P_PRIOR}
+VAL_MIX = dict(zip(REGIME_ORDER, REGIME_P))
 
 
 # ----------------------------------------------------------------------------- data
@@ -83,67 +84,13 @@ class Data:
 def z_for_regime(data: Data, idx: torch.Tensor, regime: str):
     """(z_in, mask) for a whole split under one regime. ``unknown`` never reads z_in."""
     if regime == "unknown":
-        return torch.zeros(idx.numel(), 8, device=idx.device), torch.ones(idx.numel(), dtype=torch.bool, device=idx.device)
+        return (torch.zeros(idx.numel(), 8, device=idx.device),
+                torch.ones(idx.numel(), dtype=torch.bool, device=idx.device))
     return data.z[regime][idx], torch.zeros(idx.numel(), dtype=torch.bool, device=idx.device)
 
 
-def sample_z_dropout(data: Data, idx: torch.Tensor, gen: torch.Generator):
-    """Per-sample regime draw: unknown w.p. 0.3, prior w.p. 0.2, else the posterior."""
-    u = torch.rand(idx.numel(), device=idx.device, generator=gen)
-    mask = u < P_UNKNOWN
-    use_prior = (u >= P_UNKNOWN) & (u < P_UNKNOWN + P_PRIOR)
-    z_in = torch.where(use_prior.unsqueeze(1), data.z["prior"][idx], data.z["post"][idx])
-    return z_in, mask
-
-
-# ----------------------------------------------------------------------------- metrics
-
-
 def _nan() -> float:
-    return float("nan")
-
-
-def bce_of(probs: np.ndarray, y: np.ndarray) -> float:
-    if probs.size == 0:
-        return _nan()
-    p = np.clip(probs, 1e-7, 1 - 1e-7)
-    return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
-
-
-def ece_of(probs: np.ndarray, y: np.ndarray, n_bins: int = N_ECE_BINS) -> float:
-    """Expected calibration error, ``n_bins`` equal-width bins on [0, 1]."""
-    if probs.size == 0:
-        return _nan()
-    edges = np.linspace(0.0, 1.0, n_bins + 1)
-    b = np.clip(np.digitize(probs, edges[1:-1], right=False), 0, n_bins - 1)
-    total = 0.0
-    for k in range(n_bins):
-        m = b == k
-        if not m.any():
-            continue
-        total += m.mean() * abs(y[m].mean() - probs[m].mean())
-    return float(total)
-
-
-def auroc_of(scores: np.ndarray, y: np.ndarray) -> float:
-    """Rank-based AUROC with tie handling; NaN when one class is absent."""
-    if scores.size == 0:
-        return _nan()
-    pos, neg = y > 0.5, y <= 0.5
-    n_p, n_n = int(pos.sum()), int(neg.sum())
-    if n_p == 0 or n_n == 0:
-        return _nan()
-    order = np.argsort(scores, kind="mergesort")
-    ranks = np.empty(scores.size, dtype=float)
-    s_sorted = scores[order]
-    i = 0
-    while i < s_sorted.size:                      # average ranks inside each tie group
-        j = i
-        while j + 1 < s_sorted.size and s_sorted[j + 1] == s_sorted[i]:
-            j += 1
-        ranks[order[i:j + 1]] = 0.5 * (i + j) + 1.0
-        i = j + 1
-    return float((ranks[pos].sum() - n_p * (n_p + 1) / 2.0) / (n_p * n_n))
+    return nan()
 
 
 # ----------------------------------------------------------------------------- training
@@ -181,6 +128,13 @@ def train_head(data: Data, pretrained_state, args, device, log):
     gen = torch.Generator(device=device).manual_seed(SEED)
     head = BeliefHead(data.D, d_z=args.d_z, pretrained_head_state=pretrained_state).to(device)
     latent = PropertyLatent(d_out=args.d_z).to(device)
+
+    # Standardise on every regime the encoder will actually see on the train split
+    # (unknown bypasses it). Fitting on prior+post alone would leave z_true off-scale,
+    # which is what made the true regime extrapolate in the first run.
+    train_idx = data.idx["train"]
+    latent.fit_normalisation(torch.cat([data.z[r][train_idx] for r in ("prior", "post", "true")], dim=0))
+
     if args.freeze_deep_layers:
         for p in list(head.layer2.parameters()) + list(head.layer3.parameters()):
             p.requires_grad = False
@@ -188,14 +142,16 @@ def train_head(data: Data, pretrained_state, args, device, log):
     opt = torch.optim.Adam(params, lr=args.lr, weight_decay=args.weight_decay)
     loss_fn = torch.nn.BCEWithLogitsLoss()
 
-    train_idx = data.idx["train"]
-    best = (math.inf, 0, None)
+    stopper = EarlyStopper(args.patience)
+    modules = {"head": head, "latent": latent}
+    epoch = -1
     for epoch in range(args.epochs):
         head.train(); latent.train()
         run, nb = 0.0, 0
         for b in _batches(train_idx.numel(), args.batch_size, gen, device):
             idx = train_idx[b]
-            z_in, mask = sample_z_dropout(data, idx, gen)
+            z_in, mask, _ = sample_z_dropout(data.z["prior"][idx], data.z["post"][idx],
+                                             data.z["true"][idx], gen)
             loss = loss_fn(head(data.e_g[idx], latent(z_in, mask)), data.y[idx])
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -206,16 +162,15 @@ def train_head(data: Data, pretrained_state, args, device, log):
         # No val split -> early stopping has nothing to watch; fall back to the train loss.
         watch = train_loss if math.isnan(val) else val
         log({"head/train_bce": train_loss, "head/val_bce_mixture": val, "epoch": epoch})
-        if watch < best[0] - 1e-6:
-            best = (watch, epoch, ({k: v.detach().clone() for k, v in head.state_dict().items()},
-                                   {k: v.detach().clone() for k, v in latent.state_dict().items()}))
-        elif epoch - best[1] >= args.patience:
+        if stopper.update(epoch, watch, modules):
             break
-    if best[2] is not None:
-        head.load_state_dict(best[2][0]); latent.load_state_dict(best[2][1])
-    return head, latent, dict(best_watch=best[0], best_epoch=best[1], epochs_run=epoch + 1,
-                              early_stopped=bool(epoch + 1 < args.epochs),
-                              watched=("val_bce_mixture" if data.n("val") else "train_bce"))
+    stopper.restore(modules)
+    return head, latent, dict(best_watch=stopper.best_value, best_epoch=stopper.best_epoch,
+                              epochs_run=epoch + 1, early_stopped=bool(epoch + 1 < args.epochs),
+                              watched=("val_bce_mixture" if data.n("val") else "train_bce"),
+                              regime_mix=dict(zip(REGIME_ORDER, REGIME_P)),
+                              z_mean=[float(v) for v in latent.z_mean],
+                              z_std=[float(v) for v in latent.z_std])
 
 
 @torch.no_grad()
@@ -235,7 +190,9 @@ def train_phi(data: Data, args, device, log):
     opt = torch.optim.Adam(phi.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     train_idx = data.idx["train"]
-    best = (math.inf, 0, None)
+    stopper = EarlyStopper(args.patience)
+    modules = {"phi": phi}
+    epoch = -1
     for epoch in range(args.epochs):
         phi.train()
         run, nb = 0.0, 0
@@ -250,14 +207,11 @@ def train_phi(data: Data, args, device, log):
         val = phi_nll(phi, data, "val")
         watch = train_loss if math.isnan(val) else val
         log({"phi/train_nll": train_loss, "phi/val_nll": val, "epoch": epoch})
-        if watch < best[0] - 1e-6:
-            best = (watch, epoch, {k: v.detach().clone() for k, v in phi.state_dict().items()})
-        elif epoch - best[1] >= args.patience:
+        if stopper.update(epoch, watch, modules):
             break
-    if best[2] is not None:
-        phi.load_state_dict(best[2])
-    return phi, dict(best_watch=best[0], best_epoch=best[1], epochs_run=epoch + 1,
-                     early_stopped=bool(epoch + 1 < args.epochs),
+    stopper.restore(modules)
+    return phi, dict(best_watch=stopper.best_value, best_epoch=stopper.best_epoch,
+                     epochs_run=epoch + 1, early_stopped=bool(epoch + 1 < args.epochs),
                      watched=("val_nll" if data.n("val") else "train_nll"))
 
 
@@ -318,7 +272,7 @@ def build_report(data, head, latent, phi, head_info, phi_info, args) -> dict:
         config=dict(lr=args.lr, batch_size=args.batch_size, epochs=args.epochs, patience=args.patience,
                     d_z=args.d_z, d_hidden=args.d_hidden, weight_decay=args.weight_decay,
                     freeze_deep_layers=bool(args.freeze_deep_layers),
-                    p_unknown=P_UNKNOWN, p_prior=P_PRIOR, seed=SEED, ece_bins=N_ECE_BINS),
+                    regime_mix=dict(zip(REGIME_ORDER, REGIME_P)), seed=SEED, ece_bins=N_ECE_BINS),
         head=dict(bce=bce, ece=ece, auroc_unknown_vs_y=auroc, **head_info),
         phi=dict(nll=nll, analytic_filter_nll=a_nll, **phi_info),
         gates=dict(
@@ -334,15 +288,19 @@ def build_report(data, head, latent, phi, head_info, phi_info, args) -> dict:
 
 
 def _wandb_logger(args, data):
-    """Offline unless a key is present -- a run must never block on a login prompt."""
+    """Offline unless a key is present -- a run must never block on a login prompt, and
+    must never abort because wandb is broken, logged out, or out of disk."""
+    noop = (lambda d: None)
     try:
         import wandb
-    except ImportError:
-        return (lambda d: None), None
-    mode = "online" if os.environ.get("WANDB_API_KEY") else "offline"
-    run = wandb.init(project="test-lift-v1", mode=mode, job_type="train",
-                     config=dict(vars(args), n=data.n("train"), D=data.D))
-    return (lambda d: run.log(d)), run
+        mode = "online" if os.environ.get("WANDB_API_KEY") else "offline"
+        run = wandb.init(project="test-lift-v1", mode=mode, job_type="train",
+                         config=dict(vars(args), n=data.n("train"), D=data.D))
+        return (lambda d: run.log(d)), run
+    except Exception as exc:                      # noqa: BLE001 -- logging must never be fatal
+        print(f"[warn] wandb disabled ({type(exc).__name__}: {exc}); training continues unlogged",
+              file=sys.stderr)
+        return noop, None
 
 
 def main(argv=None):
@@ -384,8 +342,11 @@ def main(argv=None):
     with open(os.path.join(args.out, "report.json"), "w") as f:
         json.dump(report, f, indent=2)
     if run is not None:
-        run.summary.update({"report": report})
-        run.finish()
+        try:
+            run.summary.update({"report": report})
+            run.finish()
+        except Exception as exc:                  # noqa: BLE001
+            print(f"[warn] wandb finish failed ({type(exc).__name__}: {exc})", file=sys.stderr)
     print(json.dumps(report, indent=2))
     return report
 

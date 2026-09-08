@@ -21,17 +21,28 @@ from analysis.test_lift.dataset import moments
 
 N_MOMENTS = 8       # (m_mean, log sigma_m, c_mean[3], log sigma_c[3])
 FREQ_MIN = 1.0
-FREQ_MAX = 1000.0
+FREQ_MAX = 100.0    # ruling 11: 1000 made the encoding alias on standardised inputs
+STD_FLOOR = 1e-6
 
 
 class PropertyLatent(nn.Module):
     """Sinusoidal encoding of the 8 belief moments -> a d_out latent.
 
-    Each scalar gets ``[sin(x f_k), cos(x f_k)]`` over ``n_freq // 2`` log-spaced
-    frequencies in [1, 1000] (so ``n_freq`` dims per scalar), the 8 encodings are
-    concatenated and passed through a 2-layer MLP. Rows flagged by ``mask`` are replaced
-    by a learned ``unknown`` vector -- the "no belief yet" regime the head is also trained
-    on, so a single head serves A0 (no property) and A2 (property known).
+    Each scalar is first standardised by the TRAIN-split mean/std (buffers ``z_mean`` and
+    ``z_std``, set once by ``fit_normalisation`` and saved inside the state dict), then
+    encoded as ``[sin(x f_k), cos(x f_k)]`` over ``n_freq // 2`` log-spaced frequencies in
+    [1, 100] (so ``n_freq`` dims per scalar). The 8 encodings are concatenated and passed
+    through a 2-layer MLP.
+
+    Standardisation matters because the raw moments live on wildly different scales -- a
+    mass mean near 0.16 next to a log-sigma near -6.9. Without it the log-sigma columns
+    dominate the phase and a regime the encoder has not seen at that scale (``z_true``)
+    lands in an arbitrary corner of the encoding. The defaults are 0/1, so an unfitted
+    latent is the identity and existing callers keep working.
+
+    Rows flagged by ``mask`` are replaced by a learned ``unknown`` vector -- the "no belief
+    yet" regime the head is also trained on, so a single head serves A0 (no property) and
+    A2 (property known).
     """
 
     def __init__(self, n_in: int = N_MOMENTS, n_freq: int = 32, d_out: int = 128, d_hidden: int = 256):
@@ -43,6 +54,8 @@ class PropertyLatent(nn.Module):
         self.d_out = int(d_out)
         freqs = torch.logspace(np.log10(FREQ_MIN), np.log10(FREQ_MAX), n_freq // 2, dtype=torch.float32)
         self.register_buffer("freqs", freqs)
+        self.register_buffer("z_mean", torch.zeros(self.n_in))
+        self.register_buffer("z_std", torch.ones(self.n_in))
         self.mlp = nn.Sequential(
             nn.Linear(self.n_in * self.n_freq, d_hidden), nn.ReLU(),
             nn.Linear(d_hidden, self.d_out),
@@ -50,11 +63,25 @@ class PropertyLatent(nn.Module):
         self.unknown = nn.Parameter(torch.zeros(self.d_out))
         nn.init.normal_(self.unknown, std=0.02)
 
+    @torch.no_grad()
+    def fit_normalisation(self, z_train: torch.Tensor) -> None:
+        """Set the standardisation buffers from the training inputs. Call once, before
+        training; the buffers travel with the state dict so inference matches exactly."""
+        z = torch.as_tensor(z_train, dtype=self.z_mean.dtype, device=self.z_mean.device)
+        if z.dim() != 2 or z.shape[1] != self.n_in:
+            raise ValueError(f"z_train must be (N, {self.n_in}), got {tuple(z.shape)}")
+        self.z_mean.copy_(z.mean(dim=0))
+        self.z_std.copy_(z.std(dim=0).clamp_min(STD_FLOOR))
+
+    def standardise(self, z_in: torch.Tensor) -> torch.Tensor:
+        return (z_in - self.z_mean.to(z_in.dtype)) / self.z_std.to(z_in.dtype)
+
     def encode(self, z_in: torch.Tensor) -> torch.Tensor:
-        """(B, n_in) -> (B, n_in * n_freq) sinusoidal features."""
+        """(B, n_in) -> (B, n_in * n_freq) sinusoidal features, after standardisation."""
         if z_in.dim() != 2 or z_in.shape[1] != self.n_in:
             raise ValueError(f"z_in must be (B, {self.n_in}), got {tuple(z_in.shape)}")
-        phase = z_in.unsqueeze(-1) * self.freqs.to(z_in.dtype)      # (B, n_in, n_freq//2)
+        x = self.standardise(z_in)
+        phase = x.unsqueeze(-1) * self.freqs.to(x.dtype)            # (B, n_in, n_freq//2)
         return torch.cat([phase.sin(), phase.cos()], dim=-1).flatten(1)
 
     def forward(self, z_in: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

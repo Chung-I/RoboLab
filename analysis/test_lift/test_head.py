@@ -126,3 +126,64 @@ def test_score_with_head_returns_probabilities_per_candidate():
     assert np.all((p >= 0.0) & (p <= 1.0))
     expected = torch.sigmoid(m(torch.from_numpy(e_g)).squeeze(-1)).detach().numpy()
     assert np.allclose(p, expected, atol=1e-6)  # warm start: belief has not moved the head yet
+
+
+def test_frequency_grid_is_16_log_spaced_values_in_1_to_100():
+    """Ruling 11: 1000 rad/unit aliased badly once z_in is standardised to ~unit scale."""
+    lat = PropertyLatent()
+    assert lat.freqs.shape == (16,)
+    assert float(lat.freqs[0]) == pytest.approx(1.0)
+    assert float(lat.freqs[-1]) == pytest.approx(100.0)
+    ratios = (lat.freqs[1:] / lat.freqs[:-1]).tolist()
+    assert all(r == pytest.approx(ratios[0]) for r in ratios)   # log-spaced
+    assert lat.encode(torch.zeros(2, 8)).shape == (2, 8 * 32)
+
+
+def test_normalisation_defaults_to_the_identity():
+    lat = PropertyLatent()
+    assert torch.allclose(lat.z_mean, torch.zeros(8))
+    assert torch.allclose(lat.z_std, torch.ones(8))
+    x = torch.randn(4, 8)
+    assert torch.allclose(lat.standardise(x), x)
+
+
+def test_fit_normalisation_standardises_the_training_inputs():
+    torch.manual_seed(0)
+    lat = PropertyLatent()
+    z_train = torch.randn(500, 8) * torch.tensor([3.0, 0.5, 1.0, 2.0, 0.1, 4.0, 1.5, 0.2]) + 7.0
+    lat.fit_normalisation(z_train)
+    out = lat.standardise(z_train)
+    assert torch.allclose(out.mean(0), torch.zeros(8), atol=1e-5)
+    assert torch.allclose(out.std(0), torch.ones(8), atol=1e-5)
+
+
+def test_fit_normalisation_survives_a_constant_column():
+    lat = PropertyLatent()
+    z_train = torch.randn(50, 8)
+    z_train[:, 3] = -6.9078                      # z_true's log-sigma columns are constant
+    lat.fit_normalisation(z_train)
+    assert torch.isfinite(lat.standardise(z_train)).all()
+    assert float(lat.z_std[3]) > 0.0
+
+
+def test_normalisation_buffers_round_trip_through_the_state_dict():
+    lat = PropertyLatent()
+    lat.fit_normalisation(torch.randn(100, 8) * 5.0 + 2.0)
+    sd = lat.state_dict()
+    assert "z_mean" in sd and "z_std" in sd
+    other = PropertyLatent()
+    other.load_state_dict(sd)
+    assert torch.allclose(other.z_mean, lat.z_mean) and torch.allclose(other.z_std, lat.z_std)
+    x = torch.randn(3, 8)
+    assert torch.allclose(other(x, torch.zeros(3, dtype=torch.bool)),
+                          lat(x, torch.zeros(3, dtype=torch.bool)))
+
+
+def test_normalisation_brings_an_off_scale_regime_into_range():
+    """The point of ruling 11: z_true's near-delta log-sigmas must not land off-scale."""
+    lat = PropertyLatent()
+    prior = torch.randn(100, 8) * 0.1 + torch.tensor([0.16, -2.6, 0.0, 0.0, 0.0, -4.1, -3.6, -5.2])
+    true = torch.randn(100, 8) * 0.1 + torch.tensor([0.4, -6.9, 0.0, 0.0, 0.0, -6.9, -6.9, -6.9])
+    lat.fit_normalisation(torch.cat([prior, true]))
+    assert lat.standardise(true).abs().max() < 4.0
+    assert lat.standardise(prior).abs().max() < 4.0
