@@ -33,3 +33,10 @@ def test_trace_keys_roundtrip(tmp_path):
     write_episode(p, **d)
     out = read_episode(p)
     assert out["wrench_trace_h"].shape == (15, 6) and out["wrench_trace_h"][3, 4] == 22.0
+
+
+@pytest.mark.parametrize("key", ["wrench_trace_h", "wrench_bias_trace_h"])
+def test_validate_missing_trace_keys(key):
+    d = _dummy(); d.pop(key)
+    with pytest.raises(KeyError):
+        validate_episode(d)
