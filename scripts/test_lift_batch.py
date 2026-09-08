@@ -79,7 +79,7 @@ from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, 
                                       R_F, R_TAU, SETTLE_STEPS, STANDOFF, TILT_MAX_DEG,
                                       TOTAL_STEPS, arm_of, assert_finger_joints,
                                       branch_stage_a_schedule, decide_advance, hand_target,
-                                      offset_dir_name, phase_schedule, reachable_candidates,
+                                      candidate_keep_mask, offset_dir_name, phase_schedule, reachable_candidates,
                                       real_hold, seed_of, select_first, select_second, tilt_deg,
                                       unreachable_after_move, update_allowed)
 
@@ -99,6 +99,12 @@ parser.add_argument("--approach-z-max", type=float, default=APPROACH_Z_MAX,
                     help="keep candidates whose world approach z is below this (-1 = straight down)")
 parser.add_argument("--grasp-depth-offset", type=float, default=GRASP_DEPTH_OFFSET,
                     help="push every hand target this far along its own approach axis (m)")
+parser.add_argument("--candidate-filter", choices=["cone", "scene", "both"], default="cone",
+                    help="cone = v0 approach cone; scene = open-gripper vs table and neighbours "
+                         "(analysis/test_lift/collision.py); both = intersection")
+parser.add_argument("--filter-report", action="store_true",
+                    help="fetch candidates, print the survivor count under all three filters per seed, "
+                         "and exit before any grasp is executed")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = False   # no episode in this driver reads an image; see the docstring
@@ -114,6 +120,8 @@ from robolab.core.world.world_state import get_world  # noqa: E402
 from robolab.registrations.test_lift import register_test_lift_env  # noqa: E402
 
 from analysis.test_lift.belief import prior_from_points, update_from_wrench  # noqa: E402
+from analysis.test_lift.collision import (gripper_points_world, load_gripper_points,  # noqa: E402
+                                          scene_collision, table_collision)
 from analysis.test_lift.episode_log import write_episode  # noqa: E402
 from analysis.test_lift.frames import (gravity_in_object_frame, lifted_target,  # noqa: E402
                                        object_load_from_measured, pose7_to_T, pregrasp_target,
@@ -203,6 +211,23 @@ def object_T_w(env, name) -> np.ndarray:
 
 def object_z(env, name) -> np.ndarray:
     return env.scene[name].data.root_pose_w[:, 2].cpu().numpy()     # (N,)
+
+
+def scene_points_w(env, object_name: str, mesh_cache: dict, env_i: int) -> np.ndarray:
+    """Surface points of every OTHER declared rigid body, in world, for env ``env_i``.
+
+    Same visibility rule as ``neighbour_distances``: only bodies the task cfg declares are in
+    ``env.scene.rigid_objects``; the table fixture is undeclared and is handled by ``z_table``.
+    """
+    pts = []
+    for k in env.scene.rigid_objects:
+        if k == object_name:
+            continue
+        if k not in mesh_cache:
+            mesh_cache[k] = _read_local_mesh_points(get_world(env), k)
+        T = pose7_to_T(env.scene[k].data.root_pose_w[env_i].cpu().numpy())
+        pts.append((T[:3, :3] @ mesh_cache[k].T).T + T[:3, 3])
+    return np.concatenate(pts) if pts else np.zeros((0, 3))
 
 
 class Cell:
@@ -348,22 +373,45 @@ def main():
                 "`.venv/bin/python -u client-server/graspgenx_server.py --config "
                 "<repo>/ext/graspgenx_checkpoints/release --assets_dir <repo>/assets "
                 "--default_gripper franka_panda --host 127.0.0.1 --port 5556` in ~/Codes/GraspGenX.")
+        # Table top per env: the settled object rests on it, so the lowest of its surface
+        # points in world is the table top. Measured, not assumed. Needed by the scene filter
+        # before any candidate is ranked, and logged below.
+        for i in range(N):
+            cell.z_table[i] = float(((T_obj[i][:3, :3] @ pts_by_env[i].T).T + T_obj[i][:3, 3])[:, 2].min())
+        mesh_cache = {}
+        scene_by_env = [scene_points_w(env, args.object, mesh_cache, i) for i in range(N)]
+        gpts = load_gripper_points()
+        filt = dict(mode=args.candidate_filter, depth_offset=args.grasp_depth_offset, gpts=gpts)
+
         cands = {}                        # seed index -> (grasps_o, confs), already filtered
         for s in range(n_seeds):
             i0 = s                        # first env of that seed (arm 0)
             g_raw, c_raw = client.infer(pts_by_env[i0], num_grasps=args.n_candidates)
-            g_f, c_f, n_raw = reachable_candidates(g_raw, c_raw, T_obj[i0], args.approach_z_max)
+            if args.filter_report:
+                counts = {m: int(candidate_keep_mask(g_raw, T_obj[i0], args.approach_z_max, m, cell.z_table[i0],
+                                                     scene_by_env[i0], args.grasp_depth_offset, gpts).sum())
+                          for m in ("cone", "scene", "both")}
+                w = gripper_points_world(g_raw, T_obj[i0], args.grasp_depth_offset, gpts)
+                n_table = int(table_collision(w, cell.z_table[i0]).sum())
+                n_nbr = int(scene_collision(w, scene_by_env[i0]).sum())
+                print(f"[filter-report] seed={seeds[s]} n_raw={len(c_raw)} cone={counts['cone']} "
+                      f"scene={counts['scene']} both={counts['both']} table_hits={n_table} "
+                      f"neighbour_hits={n_nbr} z_table={cell.z_table[i0]:.4f} "
+                      f"scene_pts={len(scene_by_env[i0])}", flush=True)
+                continue
+            g_f, c_f, n_raw = reachable_candidates(g_raw, c_raw, T_obj[i0], args.approach_z_max,
+                                                   z_table=cell.z_table[i0], scene_pts_w=scene_by_env[i0], **filt)
             cands[s] = (g_f, c_f)
-            print(f"[candidates] seed={seeds[s]} {len(c_f)}/{n_raw} approach downward", flush=True)
+            print(f"[candidates] seed={seeds[s]} {len(c_f)}/{n_raw} kept by filter={args.candidate_filter}", flush=True)
+        if args.filter_report:
+            print("[filter-report] done; no grasp executed", flush=True)
+            return
 
         # ---- priors, table height, first grasp choice ----
         authored = env.scene[args.object].root_physx_view.get_coms().cpu().numpy().reshape(N, -1)[:, :3]
         logs, tgt1, b0s, i1s = [], np.zeros((N, 7)), [], []
         for i in range(N):
             pts = pts_by_env[i]
-            # Table surface: the settled object rests on it, so the lowest of its surface
-            # points in world is the table top. Measured, not assumed.
-            cell.z_table[i] = float(((T_obj[i][:3, :3] @ pts.T).T + T_obj[i][:3, 3])[:, 2].min())
             grasps_o, confs = cands[seed_of(i, n_seeds)]
             b0 = prior_from_points(pts)
             c_true = authored[i]                   # already includes the applied offset (Task 6)
@@ -456,7 +504,9 @@ def main():
             # the settle pose can now point up. Re-mask against T_obj2 and exclude those as
             # well as the grasp just tried. The candidate array is untouched, so idx_second
             # still indexes the logged grasps_o.
-            exclude2 = tuple(sorted({i1s[i], *unreachable_after_move(grasps_o, T_obj2[i], args.approach_z_max)}))
+            scene2 = scene_points_w(env, args.object, mesh_cache, i)
+            exclude2 = tuple(sorted({i1s[i], *unreachable_after_move(grasps_o, T_obj2[i], args.approach_z_max,
+                                                                       z_table=cell.z_table[i], scene_pts_w=scene2, **filt)}))
             if len(exclude2) >= len(confs):
                 print(f"[warn] env={i}: every candidate is unreachable after set_down; "
                       "excluding only the first grasp", flush=True)

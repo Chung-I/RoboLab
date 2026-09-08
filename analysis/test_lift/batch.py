@@ -329,23 +329,52 @@ def world_approach_z(grasps_o, T_obj_w) -> np.ndarray:
     return np.einsum("ij,njk->nik", np.asarray(T_obj_w)[:3, :3], np.asarray(grasps_o)[:, :3, :3])[:, 2, 2]
 
 
-def reachable_candidates(grasps_o, confs, T_obj_w, approach_z_max: float = APPROACH_Z_MAX):
-    """Drop candidates that do not approach downward: their targets are under the table.
+def reachable_candidates(grasps_o, confs, T_obj_w, approach_z_max: float = APPROACH_Z_MAX,
+                         mode: str = "cone", z_table: float | None = None, scene_pts_w=None,
+                         depth_offset: float = GRASP_DEPTH_OFFSET, gpts=None):
+    """Drop candidates the hand cannot be placed at.
+
+    ``mode="cone"`` is v0: keep candidates whose world approach axis points down (their
+    targets are otherwise under the table). ``mode="scene"`` places the open gripper at the
+    candidate and rejects table or neighbour contact (``analysis.test_lift.collision``);
+    ``mode="both"`` intersects the two. ``z_table``/``scene_pts_w``/``gpts`` are required for
+    the scene modes.
 
     Returns ``(kept grasps, kept confidences, number of candidates before the filter)``.
     """
-    appr_z = world_approach_z(grasps_o, T_obj_w)
-    keep = np.where(appr_z < float(approach_z_max))[0]
+    keep = np.where(candidate_keep_mask(grasps_o, T_obj_w, approach_z_max, mode, z_table,
+                                        scene_pts_w, depth_offset, gpts))[0]
     if len(keep) == 0:
+        appr_z = world_approach_z(grasps_o, T_obj_w)
         raise RuntimeError(
-            f"No candidate approaches downward (best approach_z = {appr_z.min():.3f}); "
-            "the object pose or the grasp frame convention is wrong.")
-    return np.asarray(grasps_o)[keep], np.asarray(confs)[keep], len(appr_z)
+            f"No candidate approaches downward or clears the scene under the {mode!r} filter "
+            f"(best approach_z = {appr_z.min():.3f}); the object pose or the grasp frame convention is wrong.")
+    return np.asarray(grasps_o)[keep], np.asarray(confs)[keep], len(np.asarray(grasps_o))
 
 
-def unreachable_after_move(grasps_o, T_obj_w, approach_z_max: float = APPROACH_Z_MAX):
-    """Indices that stopped approaching downward once the object moved."""
-    return [int(j) for j in np.where(world_approach_z(grasps_o, T_obj_w) >= float(approach_z_max))[0]]
+def unreachable_after_move(grasps_o, T_obj_w, approach_z_max: float = APPROACH_Z_MAX,
+                           mode: str = "cone", z_table: float | None = None, scene_pts_w=None,
+                           depth_offset: float = GRASP_DEPTH_OFFSET, gpts=None):
+    """Indices that stopped being placeable once the object moved (same filter as grasp 1)."""
+    keep = candidate_keep_mask(grasps_o, T_obj_w, approach_z_max, mode, z_table, scene_pts_w,
+                               depth_offset, gpts)
+    return [int(j) for j in np.where(~keep)[0]]
+
+
+def candidate_keep_mask(grasps_o, T_obj_w, approach_z_max, mode, z_table, scene_pts_w,
+                        depth_offset, gpts) -> np.ndarray:
+    """The (N,) keep-mask behind both functions above; ``cone`` needs no geometry inputs."""
+    if mode == "cone":
+        return world_approach_z(grasps_o, T_obj_w) < float(approach_z_max)
+    from analysis.test_lift.collision import candidate_mask, load_gripper_points
+    if z_table is None:
+        raise ValueError("scene-aware candidate filter needs z_table")
+    if gpts is None:
+        gpts = load_gripper_points()
+    if scene_pts_w is None:
+        scene_pts_w = np.zeros((0, 3))
+    return candidate_mask(grasps_o, T_obj_w, mode, approach_z_max, z_table, scene_pts_w,
+                          depth_offset, gpts)
 
 
 def hand_target(grasp_o, T_obj_w, env_origin_w, yaw_fix: str, depth_offset: float) -> np.ndarray:
