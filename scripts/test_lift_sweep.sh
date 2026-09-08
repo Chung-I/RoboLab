@@ -56,7 +56,12 @@ CELL_MEM_MAX=${CELL_MEM_MAX:-12G}  # per batched cell process
 MEM_SWAP_MAX=${MEM_SWAP_MAX:-2G}
 
 # The lines a worker log keeps out of the driver's stdout. Everything else is Kit chatter.
+# A bare `grep Traceback` kept only the word "Traceback" and threw away the frames and the
+# exception under it, which is the only part that says what failed (Task 8e review). `-A 20`
+# keeps the body; the raw stdout also goes to <log>.raw so nothing is lost when a failure
+# does not print a Python traceback at all.
 KEEP_RE='\[episode\]|\[cell\]|\[reach\]|\[table\]|\[candidates\]|\[decide\]|\[no-update\]|\[warn\]|Traceback|Error'
+KEEP_AFTER=${KEEP_AFTER:-20}
 
 # Directory-name axis/magnitude, the same rule both drivers use for their own out_dir (and
 # analysis.test_lift.batch.offset_dir_name): the axis of the largest |component| (x when the
@@ -88,7 +93,7 @@ if [[ "${1:-}" == "--job" ]]; then
       "$PY" -u scripts/test_lift_episode.py --task-file "$taskfile" --object "$obj" \
       --mass "$mass" --com-offset $off --arm "$arm" --seed "$seed" --out "$OUT" \
       --yaw-fix "$YAW" --headless "${video_flag[@]}" \
-      2>&1 | grep -E "$KEEP_RE"
+      2>&1 | tee "$log.raw" | grep -E -A "$KEEP_AFTER" "$KEEP_RE"
     rc=${PIPESTATUS[0]}
     if [[ "$rc" -ne 0 ]]; then
       echo "[FAIL] rc=$rc $obj off=[$off] arm=$arm seed=$seed"
@@ -113,7 +118,7 @@ if [[ "${1:-}" == "--cell" ]]; then
       "$PY" -u scripts/test_lift_batch.py --task-file "$taskfile" --object "$obj" \
       --mass "$mass" --com-offset $off --arms $ARMS_STR --seeds $SEEDS_STR --out "$OUT" \
       --yaw-fix "$YAW" --headless \
-      2>&1 | grep -E "$KEEP_RE"
+      2>&1 | tee "$log.raw" | grep -E -A "$KEEP_AFTER" "$KEEP_RE"
     rc=${PIPESTATUS[0]}
     if [[ "$rc" -ne 0 ]]; then
       echo "[FAIL] rc=$rc $obj off=[$off]"

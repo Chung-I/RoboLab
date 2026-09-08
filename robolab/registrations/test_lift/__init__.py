@@ -38,8 +38,8 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
     `with_camera` is off by default and costs the whole episode budget when it is on.
     The egocentric camera renders once every `render_interval` physics steps, and that
     RTX render -- not the physics -- is what an episode spends its time on: measured
-    2026-09-08 on an RTX 5090, one grasp took 33 s with the camera (about 130 ms per
-    control step) and 4.6 s without it. Nothing in the study reads an image: the episode
+    2026-09-08 on an RTX 5090 (Task 8d), a grasp takes ~13 s without the camera
+    vs ~33 s with it (about 130 ms per control step). Nothing in the study reads an image: the episode
     driver reads `robot.data` and `scene[object].data` directly, the belief update takes
     a wrench, and no policy consumes observations. Only `--video` needs the camera, so
     only `--video` pays for it. With `with_camera=False` the env registers no camera and

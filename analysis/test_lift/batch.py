@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from analysis.test_lift.frames import grasp_to_hand_target, pose7_to_T
+
 # ---------------------------------------------------------------------------------------
 # Grasp / motion constants. Measured in Task 8c (see scripts/test_lift_episode.py's module
 # docstring for the tables behind APPROACH_Z_MAX and GRASP_DEPTH_OFFSET). Do not tune these
@@ -45,7 +47,7 @@ APPROACH_Z_MAX = -0.85      # keep candidates whose world approach axis points d
 GRASP_DEPTH_OFFSET = 0.01   # push every hand target this far along its own approach axis (m)
 STANDOFF = 0.10             # pre-grasp distance along -approach (m)
 LIFT_DZ = 0.02              # test-lift height (m)
-LIFT_OK_FRAC = 0.7          # fraction of LIFT_DZ a test-lift must clear to count as a hold (Ruling 29)
+LIFT_OK_FRAC = 0.6          # fraction of LIFT_DZ a test-lift must clear to count as a hold (Ruling 34)
 CLEAR_DZ = 0.15             # lift-clear height (m)
 CLEAR_OK_FRAC = 0.5         # fraction of CLEAR_DZ the final lift must clear (lift_ok's own default)
 MIN_FINGER_GAP = 0.002      # fingers must still be apart by this much for a hold to be real (m)
@@ -192,3 +194,62 @@ def offset_dir_name(com_offset_xyz) -> str:
     off = np.asarray(com_offset_xyz, dtype=float)
     axis = "x" if np.allclose(off, 0) else "xyz"[int(np.argmax(np.abs(off)))]
     return f"off_{axis}{int(round(float(np.linalg.norm(off)) * 100)):02d}cm"
+
+
+# ---------------------------------------------------------------------------------------
+# Grasp geometry. Pure numpy, shared by BOTH drivers (Task 8e review): these five were
+# duplicated in scripts/test_lift_episode.py and scripts/test_lift_batch.py, where they read
+# the module-level ``args``. Here they take every value they use as an argument, so
+# test_batch.py can pin them without a simulator.
+# ---------------------------------------------------------------------------------------
+def world_approach_z(grasps_o, T_obj_w) -> np.ndarray:
+    """World z-component of every candidate's approach axis.
+
+    The grasp frame's +z is the approach axis (GraspGen convention; the same axis
+    ``rerank.fingertip_points`` walks along). -1 is straight down, +1 straight up.
+    """
+    return np.einsum("ij,njk->nik", np.asarray(T_obj_w)[:3, :3], np.asarray(grasps_o)[:, :3, :3])[:, 2, 2]
+
+
+def reachable_candidates(grasps_o, confs, T_obj_w, approach_z_max: float = APPROACH_Z_MAX):
+    """Drop candidates that do not approach downward: their targets are under the table.
+
+    Returns ``(kept grasps, kept confidences, number of candidates before the filter)``.
+    """
+    appr_z = world_approach_z(grasps_o, T_obj_w)
+    keep = np.where(appr_z < float(approach_z_max))[0]
+    if len(keep) == 0:
+        raise RuntimeError(
+            f"No candidate approaches downward (best approach_z = {appr_z.min():.3f}); "
+            "the object pose or the grasp frame convention is wrong.")
+    return np.asarray(grasps_o)[keep], np.asarray(confs)[keep], len(appr_z)
+
+
+def unreachable_after_move(grasps_o, T_obj_w, approach_z_max: float = APPROACH_Z_MAX):
+    """Indices that stopped approaching downward once the object moved."""
+    return [int(j) for j in np.where(world_approach_z(grasps_o, T_obj_w) >= float(approach_z_max))[0]]
+
+
+def hand_target(grasp_o, T_obj_w, env_origin_w, yaw_fix: str, depth_offset: float) -> np.ndarray:
+    """``frames.grasp_to_hand_target``, then the Task 8c push along the hand's approach axis.
+
+    GraspGen puts the grasp frame origin on the ``panda_hand`` link, ``FRANKA_PANDA_DEPTH``
+    behind the fingertips, so a target that is right on the object surface still leaves the
+    pads short of it. A positive ``depth_offset`` drives the fingers that much deeper. The
+    push uses the RESULT's own +z -- i.e. ``yaw_fix`` is applied first, then the push -- so it
+    is the same operation the pre-grasp standoff undoes, and it is applied identically to
+    grasp 1, the ``--oracle-check`` retries and grasp 2.
+
+    This lives here and not in ``frames.py``: ``grasp_to_hand_target`` is the pure frame
+    conversion that ``test_frames.py`` pins, and a controller-side depth bias is not part of it.
+    """
+    pose = grasp_to_hand_target(grasp_o, T_obj_w, env_origin_w, yaw_fix)
+    if depth_offset:
+        pose[:3] += float(depth_offset) * pose7_to_T(pose)[:3, 2]
+    return pose
+
+
+def tilt_deg(R_a, R_b) -> float:
+    """Angle (degrees) between two rotation matrices: arccos((trace(R_a^T R_b) - 1) / 2)."""
+    c = float(np.clip((np.trace(np.asarray(R_a).T @ np.asarray(R_b)) - 1) / 2, -1.0, 1.0))
+    return float(np.degrees(np.arccos(c)))

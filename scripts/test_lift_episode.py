@@ -74,7 +74,9 @@ Those four cells were measured against the old ``lift_ok`` bar of 0.9 x 20 mm = 
 Under D, five of the eight grips rose 0.9-15.4 mm, and three of those five (15.1, 15.2,
 15.4 mm) were real holds -- gap ~0.035 m, tilt 6-11 deg -- that the criterion rejected,
 because a loaded differential-IK hand under-delivers the commanded 2 cm by 2-5 mm. Ruling
-29 lowered the bar to ``LIFT_OK_FRAC`` x 20 mm = 14 mm for exactly that reason. Rescoring
+29 lowered the bar to 0.7 x 20 mm = 14 mm for exactly that reason, and Ruling 34 took it to
+``LIFT_OK_FRAC`` x 20 mm = 12 mm once sweep 1 showed real holds at 15-18 mm against failures
+at 9 mm or less. Rescoring
 D's own eight recorded attempts at 14 mm turns 3 lifts into 6; a fresh run at the new
 defaults lifts 4 of 8, where 6 of 8 cleared the rise bar and two of those were rejected by
 the 15 deg tilt limit, which is now the second binding constraint.
@@ -94,8 +96,10 @@ from isaaclab.app import AppLauncher
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (APPROACH_Z_MAX, CLEAR_DZ, CLEAR_OK_FRAC, CLOSE,  # noqa: E402
                                       GRASP_DEPTH_OFFSET, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
-                                      MOVE_STEPS, OPEN, SETTLE_STEPS, STANDOFF, TILT_MAX_DEG,
-                                      decide_advance, offset_dir_name, real_hold)
+                                      MOVE_STEPS, OPEN, SETTLE_STEPS, STANDOFF,
+                                      TILT_MAX_DEG, decide_advance, hand_target, offset_dir_name,
+                                      reachable_candidates, real_hold, tilt_deg,
+                                      unreachable_after_move)
 
 FRAME_CHECK_N = 8        # candidates tried per --frame-check invocation
 
@@ -144,8 +148,9 @@ if PACKAGE_DIR not in sys.path:
     sys.path.insert(0, PACKAGE_DIR)
 from analysis.test_lift.belief import prior_from_points, update_from_wrench  # noqa: E402
 from analysis.test_lift.episode_log import write_episode  # noqa: E402
-from analysis.test_lift.frames import (gravity_in_object_frame, grasp_to_hand_target, lifted_target,  # noqa: E402
-                                       object_load_from_measured, pose7_to_T, pregrasp_target, wrench_hand_to_object)
+from analysis.test_lift.frames import (gravity_in_object_frame, lifted_target,  # noqa: E402
+                                       object_load_from_measured, pose7_to_T, pregrasp_target,
+                                       wrench_hand_to_object)
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
 from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams, hold_probability,  # noqa: E402
@@ -215,49 +220,6 @@ def object_points_o(env, name, n, rng):
     return sample_surface_points(pts, n, rng)
 
 
-def world_approach_z(grasps_o, T_obj_w):
-    """World z-component of every candidate's approach axis.
-
-    The grasp frame's +z is the approach axis (GraspGen convention; the same axis
-    ``rerank.fingertip_points`` walks along). Negative means it points downward.
-    """
-    return np.einsum("ij,njk->nik", np.asarray(T_obj_w)[:3, :3], grasps_o[:, :3, :3])[:, 2, 2]
-
-
-def reachable_candidates(grasps_o, confs, T_obj_w):
-    """Drop candidates that approach from below: their targets are under the table."""
-    appr_z = world_approach_z(grasps_o, T_obj_w)
-    keep = np.where(appr_z < args.approach_z_max)[0]
-    if len(keep) == 0:
-        raise RuntimeError(
-            f"No candidate approaches downward (best approach_z = {appr_z.min():.3f}); "
-            "the object pose or the grasp frame convention is wrong.")
-    return grasps_o[keep], confs[keep], len(appr_z)
-
-
-def unreachable_after_move(grasps_o, T_obj_w):
-    """Indices that stopped approaching downward once the object moved."""
-    return [int(j) for j in np.where(world_approach_z(grasps_o, T_obj_w) >= args.approach_z_max)[0]]
-
-
-def hand_target(grasp_o, T_obj_w, env_origin_w, yaw_fix, depth_offset):
-    """``frames.grasp_to_hand_target``, then a push along the hand's own approach axis.
-
-    GraspGen puts the grasp frame origin on the ``panda_hand`` link, ``FRANKA_PANDA_DEPTH``
-    behind the fingertips, so a target that is right on the object surface still leaves the
-    pads short of it. A positive ``depth_offset`` drives the fingers that much deeper. The
-    push uses the target's own +z, so it is the same operation the pre-grasp standoff undoes,
-    and it is applied identically to grasp 1, the ``--oracle-check`` retries and grasp 2.
-
-    This lives in the driver, not in ``frames.py``: ``grasp_to_hand_target`` is the pure frame
-    conversion that ``test_frames.py`` pins, and a controller-side depth bias is not part of it.
-    """
-    pose = grasp_to_hand_target(grasp_o, T_obj_w, env_origin_w, yaw_fix)
-    if depth_offset:
-        pose[:3] += float(depth_offset) * pose7_to_T(pose)[:3, 2]
-    return pose
-
-
 def attempt_report(rb, env, grasp_o, T_obj_w, idx, ok, ik_err, tag):
     """Why a grasp attempt held or did not: IK error, approach tilt, where the object went."""
     appr_z = float((np.asarray(T_obj_w)[:3, :3] @ np.asarray(grasp_o)[:3, 2])[2])
@@ -268,12 +230,6 @@ def attempt_report(rb, env, grasp_o, T_obj_w, idx, ok, ik_err, tag):
 
 def object_rise(env, name, z_before) -> float:
     return env.scene[name].data.root_pose_w[0, 2].item() - z_before
-
-
-def tilt_deg(R_a, R_b) -> float:
-    """Angle (degrees) between two rotation matrices: arccos((trace(R_a^T R_b) - 1) / 2)."""
-    c = float(np.clip((np.trace(np.asarray(R_a).T @ np.asarray(R_b)) - 1) / 2, -1.0, 1.0))
-    return float(np.degrees(np.arccos(c)))
 
 
 def find_camera_key(image_obs) -> str:
@@ -296,14 +252,17 @@ def run_grasp(rb, env, name, target7, log, R_settle):
     test-lift -- comparing the hand against ``target7`` any later would charge the
     commanded 2 cm lift to the IK.
 
-    The "real hold" test (Ruling 25, bar lowered by Ruling 29): ``ok`` requires the rise to
-    clear ``LIFT_OK_FRAC`` = 70% of the commanded 2 cm, i.e. 14 mm, the fingers to still be
-    apart by more than 2 mm, AND the object to have tilted less than ``TILT_MAX_DEG`` from
-    its settle orientation ``R_settle`` -- otherwise a grasp that clips the object and spins
-    it counts as a hold. The bar was 90% until Task 8c measured what a loaded hand actually
-    delivers: three real holds (finger gap ~0.035 m, tilt 6-11 deg) rose 15.1, 15.2 and
-    15.4 mm, because the differential-IK term under-delivers the commanded 2 cm by 2-5 mm
-    once it carries the object. ``CLEAR_DZ``'s ``final_ok`` keeps ``lift_ok``'s own default.
+    The "real hold" test (Ruling 25, bar lowered by Rulings 29 and 34): ``ok`` requires the
+    rise to clear ``LIFT_OK_FRAC`` = 60% of the commanded 2 cm, i.e. 12 mm, the fingers to
+    still be apart by more than 2 mm, AND the object to have tilted less than ``TILT_MAX_DEG``
+    from its settle orientation ``R_settle`` -- otherwise a grasp that clips the object and
+    spins it counts as a hold. The bar was 90% until Task 8c measured what a loaded hand
+    actually delivers: three real holds (finger gap ~0.035 m, tilt 6-11 deg) rose 15.1, 15.2
+    and 15.4 mm, because the differential-IK term under-delivers the commanded 2 cm by 2-5 mm
+    once it carries the object. Ruling 34 took it from 14 mm to 12 mm: sweep 1's real holds
+    rise 15-18 mm and its failures stop at or below 9 mm, so 14 mm sat inside the +-0.3 mm
+    cross-env noise band rather than between the two populations. ``CLEAR_DZ``'s ``final_ok``
+    keeps ``lift_ok``'s own default.
     """
     pre = pregrasp_target(target7, STANDOFF)
     rb.step(pre, OPEN, MOVE_STEPS)
@@ -386,7 +345,7 @@ def main():
                 "<repo>/ext/graspgenx_checkpoints/release --assets_dir <repo>/assets "
                 "--default_gripper franka_panda --host 127.0.0.1 --port 5556` in ~/Codes/GraspGenX.")
         grasps_o, confs = client.infer(pts_o, num_grasps=args.n_candidates)
-        grasps_o, confs, n_raw = reachable_candidates(grasps_o, confs, T_obj)
+        grasps_o, confs, n_raw = reachable_candidates(grasps_o, confs, T_obj, args.approach_z_max)
         print(f"[candidates] {len(confs)}/{n_raw} approach downward", flush=True)
         b0 = prior_from_points(pts_o)
         authored_com = env.scene[args.object].root_physx_view.get_coms().cpu().numpy().reshape(-1)[:3]
@@ -506,7 +465,7 @@ def main():
             # against the settle pose can now point up. Re-mask against T_obj2 and exclude
             # those as well as the grasp just tried. The candidate array is untouched, so
             # idx_second still indexes the logged grasps_o.
-            exclude2 = tuple(sorted({int(i1), *unreachable_after_move(grasps_o, T_obj2)}))
+            exclude2 = tuple(sorted({int(i1), *unreachable_after_move(grasps_o, T_obj2, args.approach_z_max)}))
             if len(exclude2) >= len(confs):
                 print("[warn] every candidate is unreachable after set_down; "
                       "excluding only the first grasp", flush=True)

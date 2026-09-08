@@ -4,11 +4,14 @@
 import numpy as np
 import pytest
 
-from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, BRANCH_STEPS, CLEAR_DZ, HOLD_STEPS, LIFT_DZ,
-                                      LIFT_OK_FRAC, MIN_FINGER_GAP, MOVE_STEPS, SETTLE_STEPS, TILT_MAX_DEG,
-                                      TOTAL_STEPS, arm_of, branch_stage_a_schedule, decide_advance, env_index,
-                                      grasp_schedule, offset_dir_name, phase_schedule, real_hold, seed_of,
-                                      setdown_schedule)
+from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, BRANCH_STEPS, CLEAR_DZ,
+                                      HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC, MIN_FINGER_GAP, MOVE_STEPS,
+                                      SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
+                                      branch_stage_a_schedule, decide_advance, env_index, grasp_schedule,
+                                      hand_target, offset_dir_name, phase_schedule, reachable_candidates,
+                                      real_hold, seed_of, setdown_schedule, tilt_deg, unreachable_after_move,
+                                      world_approach_z)
+from analysis.test_lift.frames import HAND_YAW_FIX, grasp_to_hand_target, pose7_to_T
 
 TASK_BUDGET_STEPS = 180 * 15  # episode_length_s = 180 in the task files, 15 Hz control
 
@@ -123,3 +126,131 @@ def test_offset_dir_name_matches_the_single_driver_rule():
     assert offset_dir_name((0.0, 0.02, 0.0)) == "off_y02cm"
     assert offset_dir_name((0.0, 0.0, -0.03)) == "off_z03cm"
     assert offset_dir_name((0.0, 0.0, 0.0)) == "off_x00cm"
+
+
+# --------------------------------------------------------------------------- grasp geometry
+def _grasp(R=None, t=(0.0, 0.0, 0.0)) -> np.ndarray:
+    """One 4x4 grasp pose; the default is the identity (approach axis = +z)."""
+    T = np.eye(4)
+    if R is not None:
+        T[:3, :3] = R
+    T[:3, 3] = t
+    return T
+
+
+def _rot_x(deg: float) -> np.ndarray:
+    a = np.radians(deg)
+    return np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+
+
+def _flip_x180() -> np.ndarray:
+    """Rotation by 180 deg about x: turns a +z approach into a -z (top-down) one."""
+    return _rot_x(180.0)
+
+
+def _rot_x_with_approach_z(z: float) -> np.ndarray:
+    """Rotation about x whose third column's z-component is EXACTLY `z`.
+
+    Built from the value rather than from an angle, so the boundary tests do not depend on
+    `cos(arccos(z))` landing on the right side of the comparison.
+    """
+    s = float(np.sqrt(1.0 - z * z))
+    return np.array([[1.0, 0.0, 0.0], [0.0, z, -s], [0.0, s, z]])
+
+
+def test_world_approach_z_is_minus_one_for_a_top_down_grasp():
+    """A grasp whose +z points along world -z is the straight-down approach: approach_z = -1."""
+    grasps = np.stack([_grasp(_flip_x180())])
+    assert world_approach_z(grasps, np.eye(4))[0] == pytest.approx(-1.0)
+    # the unrotated grasp approaches straight UP, which the reachability filter must reject
+    assert world_approach_z(np.stack([_grasp()]), np.eye(4))[0] == pytest.approx(+1.0)
+
+
+def test_world_approach_z_uses_the_object_rotation():
+    """The object frame rotates the candidate's approach axis with it."""
+    T_obj = np.eye(4)
+    T_obj[:3, :3] = _flip_x180()                     # object flipped: a +z grasp now points down
+    assert world_approach_z(np.stack([_grasp()]), T_obj)[0] == pytest.approx(-1.0)
+
+
+def test_reachable_candidates_threshold_boundary():
+    """`< approach_z_max` is strict: a candidate exactly at the threshold is dropped."""
+    thr = -0.85
+    just_in = _rot_x_with_approach_z(-0.86)     # approach_z = -0.86, inside the bar
+    at_bar = _rot_x_with_approach_z(-0.85)      # approach_z = -0.85 exactly, ON the bar
+    grasps = np.stack([_grasp(just_in), _grasp(at_bar)])
+    confs = np.array([0.4, 0.9])
+    z = world_approach_z(grasps, np.eye(4))
+    assert z[0] == -0.86 and z[1] == -0.85      # exact, not approx: this is a boundary test
+    kept_g, kept_c, n_raw = reachable_candidates(grasps, confs, np.eye(4), thr)
+    assert n_raw == 2 and len(kept_c) == 1
+    assert kept_c[0] == pytest.approx(0.4)                       # the -0.85 candidate is gone
+    np.testing.assert_allclose(kept_g[0], grasps[0])
+    # the default threshold is APPROACH_Z_MAX
+    assert len(reachable_candidates(grasps, confs, np.eye(4))[1]) == 1
+
+
+def test_reachable_candidates_raises_when_nothing_approaches_downward():
+    with pytest.raises(RuntimeError, match="No candidate approaches downward"):
+        reachable_candidates(np.stack([_grasp()]), np.array([1.0]), np.eye(4), -0.85)
+
+
+def test_unreachable_after_move_is_the_complement_at_the_same_boundary():
+    """`>= approach_z_max`: exactly the candidates reachable_candidates would drop."""
+    thr = -0.85
+    just_in = _rot_x_with_approach_z(-0.86)
+    at_bar = _rot_x_with_approach_z(-0.85)
+    up = np.eye(3)
+    grasps = np.stack([_grasp(just_in), _grasp(at_bar), _grasp(up)])
+    assert unreachable_after_move(grasps, np.eye(4), thr) == [1, 2]
+    assert unreachable_after_move(grasps, np.eye(4)) == [1, 2]     # default is APPROACH_Z_MAX
+
+
+def test_hand_target_pushes_along_the_resulting_plus_z_by_exactly_depth_offset():
+    """The depth push is `depth_offset` metres along the RETURNED pose's own +z axis."""
+    grasp = _grasp(_flip_x180(), t=(0.01, -0.02, 0.03))
+    T_obj, origin = np.eye(4), np.array([0.5, -0.5, 0.0])
+    base = hand_target(grasp, T_obj, origin, "z90", 0.0)
+    pushed = hand_target(grasp, T_obj, origin, "z90", 0.01)
+    axis = pose7_to_T(base)[:3, 2]
+    np.testing.assert_allclose(pushed[3:], base[3:], atol=1e-12)          # orientation untouched
+    np.testing.assert_allclose(pushed[:3] - base[:3], 0.01 * axis, atol=1e-12)
+    assert np.linalg.norm(pushed[:3] - base[:3]) == pytest.approx(0.01)
+    # a top-down grasp's +z points down, so the push lowers the target
+    assert axis[2] == pytest.approx(-1.0) and pushed[2] < base[2]
+
+
+def test_hand_target_applies_yaw_fix_before_the_push():
+    """The push uses the yaw-fixed pose's +z, not the raw grasp's.
+
+    With `yaw_fix` the returned +z is unchanged (a z-rotation of the hand frame keeps its own
+    z), so the two agree here -- what must NOT happen is a push along the pre-yaw axis of a
+    grasp whose yaw fix changes the frame. Pin the composition order directly.
+    """
+    grasp = _grasp(_rot_x(120.0), t=(0.02, 0.01, 0.05))
+    T_obj, origin = np.eye(4), np.zeros(3)
+    got = hand_target(grasp, T_obj, origin, "z90", 0.01)
+    # expected: convert (which right-multiplies HAND_YAW_FIX), THEN push along the result's +z
+    expected = grasp_to_hand_target(grasp, T_obj, origin, "z90")
+    expected[:3] += 0.01 * pose7_to_T(expected)[:3, 2]
+    np.testing.assert_allclose(got, expected, atol=1e-12)
+    # and it is NOT the same as pushing before the yaw fix would give a different frame origin
+    naive = grasp_to_hand_target(grasp, T_obj, origin, "none")
+    assert not np.allclose(got[3:], naive[3:])
+    assert not np.allclose(HAND_YAW_FIX["z90"], np.eye(4))
+
+
+def test_hand_target_with_zero_offset_is_the_plain_frame_conversion():
+    grasp = _grasp(_flip_x180(), t=(0.0, 0.1, 0.02))
+    T_obj, origin = np.eye(4), np.array([0.3, 0.0, 0.1])
+    np.testing.assert_allclose(hand_target(grasp, T_obj, origin, "z90", 0.0),
+                               grasp_to_hand_target(grasp, T_obj, origin, "z90"), atol=1e-12)
+
+
+def test_tilt_deg_identity_and_thirty_degrees():
+    assert tilt_deg(np.eye(3), np.eye(3)) == pytest.approx(0.0, abs=1e-9)
+    assert tilt_deg(np.eye(3), _rot_x(30.0)) == pytest.approx(30.0, abs=1e-9)
+    assert tilt_deg(_rot_x(30.0), np.eye(3)) == pytest.approx(30.0, abs=1e-9)   # symmetric
+    assert tilt_deg(np.eye(3), _rot_x(-30.0)) == pytest.approx(30.0, abs=1e-9)  # unsigned
+    assert tilt_deg(np.eye(3), _rot_x(180.0)) == pytest.approx(180.0, abs=1e-6)
+    assert APPROACH_Z_MAX == -0.85

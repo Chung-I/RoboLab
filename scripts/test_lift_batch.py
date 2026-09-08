@@ -77,8 +77,9 @@ from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, 
                                       CLEAR_OK_FRAC, CLOSE, GRASP_DEPTH_OFFSET, HOLD_STEPS,
                                       LIFT_DZ, LIFT_OK_FRAC, MOVE_STEPS, OPEN, SETTLE_STEPS,
                                       STANDOFF, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
-                                      branch_stage_a_schedule, decide_advance, offset_dir_name,
-                                      phase_schedule, real_hold, seed_of)
+                                      branch_stage_a_schedule, decide_advance, hand_target,
+                                      offset_dir_name, phase_schedule, reachable_candidates,
+                                      real_hold, seed_of, tilt_deg, unreachable_after_move)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--task-file", required=True)
@@ -112,9 +113,9 @@ from robolab.registrations.test_lift import register_test_lift_env  # noqa: E402
 
 from analysis.test_lift.belief import prior_from_points, update_from_wrench  # noqa: E402
 from analysis.test_lift.episode_log import write_episode  # noqa: E402
-from analysis.test_lift.frames import (gravity_in_object_frame, grasp_to_hand_target,  # noqa: E402
-                                       lifted_target, object_load_from_measured, pose7_to_T,
-                                       pregrasp_target, wrench_hand_to_object)
+from analysis.test_lift.frames import (gravity_in_object_frame, lifted_target,  # noqa: E402
+                                       object_load_from_measured, pose7_to_T, pregrasp_target,
+                                       wrench_hand_to_object)
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
 from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams, hold_probability,  # noqa: E402
@@ -202,41 +203,6 @@ def object_z(env, name) -> np.ndarray:
     return env.scene[name].data.root_pose_w[:, 2].cpu().numpy()     # (N,)
 
 
-def world_approach_z(grasps_o, T_obj_w) -> np.ndarray:
-    """World z-component of every candidate's approach axis (the grasp frame's +z)."""
-    return np.einsum("ij,njk->nik", np.asarray(T_obj_w)[:3, :3], grasps_o[:, :3, :3])[:, 2, 2]
-
-
-def reachable_candidates(grasps_o, confs, T_obj_w):
-    """Drop candidates that approach from below: their targets are under the table."""
-    appr_z = world_approach_z(grasps_o, T_obj_w)
-    keep = np.where(appr_z < args.approach_z_max)[0]
-    if len(keep) == 0:
-        raise RuntimeError(
-            f"No candidate approaches downward (best approach_z = {appr_z.min():.3f}); "
-            "the object pose or the grasp frame convention is wrong.")
-    return grasps_o[keep], confs[keep], len(appr_z)
-
-
-def unreachable_after_move(grasps_o, T_obj_w):
-    """Indices that stopped approaching downward once the object moved."""
-    return [int(j) for j in np.where(world_approach_z(grasps_o, T_obj_w) >= args.approach_z_max)[0]]
-
-
-def hand_target(grasp_o, T_obj_w, env_origin_w) -> np.ndarray:
-    """``frames.grasp_to_hand_target``, then the Task 8c push along the hand's approach axis."""
-    pose = grasp_to_hand_target(grasp_o, T_obj_w, env_origin_w, args.yaw_fix)
-    if args.grasp_depth_offset:
-        pose[:3] += float(args.grasp_depth_offset) * pose7_to_T(pose)[:3, 2]
-    return pose
-
-
-def tilt_deg(R_a, R_b) -> float:
-    """Angle (degrees) between two rotation matrices."""
-    c = float(np.clip((np.trace(np.asarray(R_a).T @ np.asarray(R_b)) - 1) / 2, -1.0, 1.0))
-    return float(np.degrees(np.arccos(c)))
-
-
 def select_first(arm, grasps_o, confs, b0, g_o, params, rng, c_true) -> int:
     if arm == "oracle":
         return select_oracle(grasps_o, confs, args.mass, c_true, g_o, params)
@@ -278,6 +244,11 @@ def run_batched_grasp(rb, env, cell, tgt, tag, idle_mask=None, idle_tgt=None):
     Returns a dict of per-env arrays: ``ok`` (the real-hold verdict), ``bias``/``w_hold`` and
     their traces, ``T_hand`` at the hold, ``z0`` (object z before the test-lift), ``reach_err``,
     ``tilt``, ``rise``, ``gap`` and ``T_obj_hold``.
+
+    ``ok`` is ``batch.real_hold``, identical to the single-env driver's: the object must rise
+    by more than ``LIFT_OK_FRAC`` = 60% of the commanded 2 cm (12 mm, Ruling 34), the fingers
+    must still be more than ``MIN_FINGER_GAP`` apart, and the object must have tilted less
+    than ``TILT_MAX_DEG`` from its settle orientation.
     """
     n = rb.n
     idle = np.zeros(n, dtype=bool) if idle_mask is None else np.asarray(idle_mask, dtype=bool)
@@ -345,6 +316,7 @@ def main():
     for arm in arms:
         os.makedirs(os.path.join(cell_dir, arm), exist_ok=True)
     set_output_dir(cell_dir)
+    print(f"[cell] out_dir={cell_dir}", flush=True)
 
     # The scene pose is deterministic in v0 (register_test_lift_env's docstring): the env
     # seed does not move the object, and seed variation enters through GraspGen sampling and
@@ -393,7 +365,7 @@ def main():
         for s in range(n_seeds):
             i0 = s                        # first env of that seed (arm 0)
             g_raw, c_raw = client.infer(pts_by_env[i0], num_grasps=args.n_candidates)
-            g_f, c_f, n_raw = reachable_candidates(g_raw, c_raw, T_obj[i0])
+            g_f, c_f, n_raw = reachable_candidates(g_raw, c_raw, T_obj[i0], args.approach_z_max)
             cands[s] = (g_f, c_f)
             print(f"[candidates] seed={seeds[s]} {len(c_f)}/{n_raw} approach downward", flush=True)
 
@@ -410,7 +382,7 @@ def main():
             c_true = authored[i]                   # already includes the applied offset (Task 6)
             i1 = select_first(cell.arms[i], grasps_o, confs, b0,
                               gravity_in_object_frame(T_obj[i]), params, rngs[i], c_true)
-            tgt1[i] = hand_target(grasps_o[i1], T_obj[i], rb.origins[i])
+            tgt1[i] = hand_target(grasps_o[i1], T_obj[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
             b0s.append(b0)
             i1s.append(int(i1))
             logs.append(dict(object=args.object, arm=cell.arms[i], mass_true=args.mass, com_true_o=c_true,
@@ -471,6 +443,11 @@ def main():
         clear1 = np.stack([lifted_target(tgt1[i], CLEAR_DZ) for i in range(N)])
         pre1 = np.stack([pregrasp_target(tgt1[i], STANDOFF) for i in range(N)])
         abort_plan = [(tgt1, CLOSE), (tgt1, OPEN), (pre1, OPEN), (pre1, OPEN)]
+        # zip() truncates silently, so a schedule that grew a segment would drop the last
+        # abort target instead of failing. Pin the two lengths together.
+        assert len(abort_plan) == len(branch_stage_a_schedule()), (
+            f"abort_plan has {len(abort_plan)} targets but stage A has "
+            f"{len(branch_stage_a_schedule())} segments")
         final_ok = np.zeros(N, dtype=bool)
         elapsed, read_final = 0, False
         for (_, n_steps), (a_tgt, a_grip) in zip(branch_stage_a_schedule(), abort_plan):
@@ -494,7 +471,7 @@ def main():
             # the settle pose can now point up. Re-mask against T_obj2 and exclude those as
             # well as the grasp just tried. The candidate array is untouched, so idx_second
             # still indexes the logged grasps_o.
-            exclude2 = tuple(sorted({i1s[i], *unreachable_after_move(grasps_o, T_obj2[i])}))
+            exclude2 = tuple(sorted({i1s[i], *unreachable_after_move(grasps_o, T_obj2[i], args.approach_z_max)}))
             if len(exclude2) >= len(confs):
                 print(f"[warn] env={i}: every candidate is unreachable after set_down; "
                       "excluding only the first grasp", flush=True)
@@ -502,7 +479,7 @@ def main():
             i2 = select_second(cell.arms[i], grasps_o, confs, beliefs_post[i],
                                gravity_in_object_frame(T_obj2[i]), params, rngs[i],
                                logs[i]["com_true_o"], exclude2)
-            tgt2[i] = hand_target(grasps_o[i2], T_obj2[i], rb.origins[i])
+            tgt2[i] = hand_target(grasps_o[i2], T_obj2[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
             logs[i]["idx_second"] = int(i2)
 
         # ---- branch block, stage B: grasp 2 for the aborting envs, idle hold for the rest ----
