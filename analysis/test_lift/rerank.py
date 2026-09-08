@@ -25,7 +25,7 @@ class GraspParams:
     alpha: float = 1.0
     s: float = 0.05
     depth: float = FRANKA_PANDA_DEPTH
-    n_samples: int = 256
+    n_samples: int = 2048  # MC estimate of E[Φ] needs many samples when the belief is wide and hold probabilities are small
 
 
 def fingertip_points(grasps_o: np.ndarray, depth: float) -> np.ndarray:

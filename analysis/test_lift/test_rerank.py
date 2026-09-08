@@ -41,7 +41,7 @@ def test_tight_belief_picks_grasp_over_com():
 
 
 def test_wide_belief_falls_back_toward_geometry():
-    p = GraspParams()
+    p = GraspParams(n_samples=16384)
     xs, grasps, confs = _candidates(p.depth)
     b = GaussianBelief(m_mean=1.0, m_var=0.25, c_mean=np.zeros(3), c_cov=np.eye(3) * 0.2**2)
     scores = score_candidates(grasps, confs, b, G_DOWN, p, np.random.default_rng(0))
