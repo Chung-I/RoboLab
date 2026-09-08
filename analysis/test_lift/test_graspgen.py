@@ -23,4 +23,5 @@ def test_live_server_returns_all_grasps():
     box = np.random.default_rng(0).uniform([-0.05, -0.03, -0.02], [0.05, 0.03, 0.02], size=(2048, 3)).astype(np.float32)
     grasps, confs = client.infer(box, num_grasps=200)
     assert grasps.shape[1:] == (4, 4) and confs.shape == (grasps.shape[0],)
-    assert grasps.shape[0] > 100, "top-100 cap still active: check topk_num_grasps=0"
+    assert grasps.shape[0] > 100, ("top-100 cap still active: infer() must send "
+                                   "grasp_threshold=0.0 with topk_num_grasps=-1")

@@ -23,12 +23,16 @@ class FrankaIKAbsActionCfg(FrankaIKActionCfg):
 
 
 def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
-                           com_offset_xyz: tuple, postfix: str) -> tuple[str, ObjectPhysicsEventsCfg]:
+                           com_offset_xyz: tuple, postfix: str,
+                           seed: int = 1) -> tuple[str, ObjectPhysicsEventsCfg]:
     """Register a one-object test-lift env and return `(env_name, events_cfg)`.
 
     Physics events (mass/CoM pin) are NOT passed into `auto_discover_and_create_cfgs` --
     this branch's factory has no `events_cfg` kwarg (see tests/test_physics_variation_com.py).
     Callers pass the returned `events_cfg` to `create_env(..., events=events_cfg)` instead.
+
+    In v0 the scene pose is deterministic by design, so `seed` does not move the object;
+    seed variation enters the study through GraspGenX sampling and point subsampling.
     """
     # Proprio observations are not required for v0: the episode driver reads
     # robot.data directly, and no policy in this study consumes observations.
@@ -48,7 +52,7 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
         dt=1 / 120,
         render_interval=8,
         decimation=8,
-        seed=1,
+        seed=seed,
     )
     cfg_cls = next(iter(result.values()))
     env_name = cfg_cls.__name__.removesuffix("EnvCfg")

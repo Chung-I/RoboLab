@@ -73,6 +73,7 @@ from analysis.test_lift.episode_log import write_episode  # noqa: E402
 from analysis.test_lift.frames import (gravity_in_object_frame, grasp_to_hand_target, lifted_target,  # noqa: E402
                                        object_load_from_measured, pose7_to_T, pregrasp_target, wrench_hand_to_object)
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
+from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
 from analysis.test_lift.rerank import (GraspParams, hold_probability, select_belief,  # noqa: E402
                                        select_next_best_geometric, select_oracle)
 
@@ -134,30 +135,37 @@ def object_points_o(env, name, n, rng):
     return sample_surface_points(pts, n, rng)
 
 
-def reachable_candidates(grasps_o, confs, T_obj_w):
-    """Drop candidates that approach from below: their targets are under the table.
+def world_approach_z(grasps_o, T_obj_w):
+    """World z-component of every candidate's approach axis.
 
     The grasp frame's +z is the approach axis (GraspGen convention; the same axis
-    ``rerank.fingertip_points`` walks along). Rotate it into world and keep the
-    ones pointing down.
+    ``rerank.fingertip_points`` walks along). Negative means it points downward.
     """
-    appr_w = np.einsum("ij,njk->nik", np.asarray(T_obj_w)[:3, :3], grasps_o[:, :3, :3])[:, :, 2]
-    keep = np.where(appr_w[:, 2] < APPROACH_Z_MAX)[0]
+    return np.einsum("ij,njk->nik", np.asarray(T_obj_w)[:3, :3], grasps_o[:, :3, :3])[:, 2, 2]
+
+
+def reachable_candidates(grasps_o, confs, T_obj_w):
+    """Drop candidates that approach from below: their targets are under the table."""
+    appr_z = world_approach_z(grasps_o, T_obj_w)
+    keep = np.where(appr_z < APPROACH_Z_MAX)[0]
     if len(keep) == 0:
         raise RuntimeError(
-            f"No candidate approaches downward (best approach_z = {appr_w[:, 2].min():.3f}); "
+            f"No candidate approaches downward (best approach_z = {appr_z.min():.3f}); "
             "the object pose or the grasp frame convention is wrong.")
-    return grasps_o[keep], confs[keep], len(appr_w)
+    return grasps_o[keep], confs[keep], len(appr_z)
 
 
-def attempt_report(rb, env, grasp_o, T_obj_w, target7, idx, ok, tag):
+def unreachable_after_move(grasps_o, T_obj_w):
+    """Indices that stopped approaching downward once the object moved."""
+    return [int(j) for j in np.where(world_approach_z(grasps_o, T_obj_w) >= APPROACH_Z_MAX)[0]]
+
+
+def attempt_report(rb, env, grasp_o, T_obj_w, idx, ok, ik_err, tag):
     """Why a grasp attempt held or did not: IK error, approach tilt, where the object went."""
-    p = rb.hand_T_w()[:3, 3] - rb.origin
-    appr_w = np.asarray(T_obj_w)[:3, :3] @ np.asarray(grasp_o)[:3, 2]
+    appr_z = float((np.asarray(T_obj_w)[:3, :3] @ np.asarray(grasp_o)[:3, 2])[2])
     obj = env.scene[args.object].data.root_pose_w[0, :3].cpu().numpy()
     print(f"[{tag}] idx={int(idx)} lift_ok={ok} gap={rb.finger_gap():.4f} "
-          f"ik_err={np.linalg.norm(p - np.asarray(target7)[:3]):.4f} "
-          f"approach_z={appr_w[2]:.3f} obj={np.round(obj, 4)}", flush=True)
+          f"ik_err={ik_err:.4f} approach_z={appr_z:.3f} obj={np.round(obj, 4)}", flush=True)
 
 
 def lift_ok(env, name, z_before, dz):
@@ -166,11 +174,18 @@ def lift_ok(env, name, z_before, dz):
 
 
 def run_grasp(rb, env, name, target7, log):
-    """approach -> close -> test-lift -> hold. Returns (ok, bias_h, wrench_hold_h, T_hand_w, z_table)."""
+    """approach -> close -> test-lift -> hold.
+
+    Returns ``(ok, bias_h, wrench_hold_h, T_hand_w, z_table, reach_err)``. ``reach_err``
+    is measured at the grasp pose, before the fingers close and before the test-lift --
+    comparing the hand against ``target7`` any later would charge the commanded 2 cm
+    lift to the IK.
+    """
     pre = pregrasp_target(target7, STANDOFF)
     rb.step(pre, OPEN, MOVE_STEPS)
     bias = rb.wrench_h(target7=pre, grip=OPEN)                 # no-load bias at the same orientation
     rb.step(target7, OPEN, MOVE_STEPS)
+    reach_err = float(np.linalg.norm(rb.hand_T_w()[:3, 3] - rb.origin - np.asarray(target7, dtype=float)[:3]))
     rb.step(target7, CLOSE, MOVE_STEPS // 2)
     z0 = env.scene[name].data.root_pose_w[0, 2].item()
     up = lifted_target(target7, LIFT_DZ)
@@ -178,7 +193,7 @@ def run_grasp(rb, env, name, target7, log):
     w_hold = rb.wrench_h(target7=up, grip=CLOSE)
     ok = lift_ok(env, name, z0, LIFT_DZ) and rb.finger_gap() > 0.002
     log["wrench_bias_h"], log["wrench_hold_h"] = bias, w_hold
-    return ok, bias, w_hold, rb.hand_T_w(), z0
+    return ok, bias, w_hold, rb.hand_T_w(), z0, reach_err
 
 
 def set_down(rb, target7):
@@ -191,12 +206,12 @@ def main():
     rng = np.random.default_rng(args.seed)
     params = GraspParams()
     env_name, events = register_test_lift_env(args.task_file, args.object, args.mass, tuple(args.com_offset),
-                                              postfix=f"_TL_{args.arm}_{args.seed}")
+                                              postfix=f"_TL_{args.arm}_{args.seed}", seed=args.seed)
     out_dir = os.path.join(args.out, args.object,
                            f"off_{int(round(np.linalg.norm(args.com_offset) * 100)):02d}cm", args.arm)
     os.makedirs(out_dir, exist_ok=True)
     set_output_dir(out_dir)
-    env, _ = create_env(env_name, device=args.device, num_envs=1, use_fabric=True, events=events)
+    env, _ = create_env(env_name, device=args.device, seed=args.seed, num_envs=1, use_fabric=True, events=events)
     t0 = time.time()
     try:
         env.reset()                       # the only reset in this process -- see the module docstring
@@ -205,7 +220,14 @@ def main():
         T_obj = object_T_w(env, args.object)
         g_o = gravity_in_object_frame(T_obj)
         pts_o = object_points_o(env, args.object, 2048, rng)
-        grasps_o, confs = GraspGenClient(gripper_name="franka_panda").infer(pts_o, num_grasps=args.n_candidates)
+        client = GraspGenClient(gripper_name="franka_panda")
+        if not client.available():
+            raise RuntimeError(
+                "GraspGenX server is not answering on 127.0.0.1:5556. Start it with "
+                "`.venv/bin/python -u client-server/graspgenx_server.py --config "
+                "<repo>/ext/graspgenx_checkpoints/release --assets_dir <repo>/assets "
+                "--default_gripper franka_panda --host 127.0.0.1 --port 5556` in ~/Codes/GraspGenX.")
+        grasps_o, confs = client.infer(pts_o, num_grasps=args.n_candidates)
         grasps_o, confs, n_raw = reachable_candidates(grasps_o, confs, T_obj)
         print(f"[candidates] {len(confs)}/{n_raw} approach downward", flush=True)
         b0 = prior_from_points(pts_o)
@@ -232,6 +254,7 @@ def main():
                 set_down(rb, tgt)
                 T_obj = object_T_w(env, args.object)   # set_down can nudge the object
             print(f"[frame-check] yaw_fix={args.yaw_fix}: {held}/{len(order)} held", flush=True)
+            end_episode(env)
             return
 
         # ---- first grasp ----
@@ -242,38 +265,52 @@ def main():
         else:
             i1 = select_next_best_geometric(confs)
         tgt1 = grasp_to_hand_target(grasps_o[i1], T_obj, rb.origin, args.yaw_fix)
-        ok1, bias, w_hold, T_hand, z0 = run_grasp(rb, env, args.object, tgt1, log)
+        ok1, bias, w_hold, T_hand, z0, ik_err1 = run_grasp(rb, env, args.object, tgt1, log)
         log.update(idx_first=i1, first_lift_ok=ok1)
 
         if args.oracle_check:
-            attempt_report(rb, env, grasps_o[i1], T_obj, tgt1, i1, ok1, "first")
+            attempt_report(rb, env, grasps_o[i1], T_obj, i1, ok1, ik_err1, "first")
         if args.oracle_check and not ok1:
             # The hold wrench only carries the object's load if the object is actually
             # in the fingers. A failed test-lift measures an empty gripper, which says
             # nothing about the sign. Walk down the candidates until one holds.
-            for i1 in [int(j) for j in np.argsort(-confs)[:ORACLE_CHECK_N] if int(j) != i1]:
+            for cand in [int(j) for j in np.argsort(-confs)[:ORACLE_CHECK_N] if int(j) != i1]:
                 set_down(rb, tgt1)
                 T_obj = object_T_w(env, args.object)
-                tgt1 = grasp_to_hand_target(grasps_o[i1], T_obj, rb.origin, args.yaw_fix)
-                ok1, bias, w_hold, T_hand, z0 = run_grasp(rb, env, args.object, tgt1, log)
-                attempt_report(rb, env, grasps_o[i1], T_obj, tgt1, i1, ok1, "retry")
+                tgt1 = grasp_to_hand_target(grasps_o[cand], T_obj, rb.origin, args.yaw_fix)
+                ok1, bias, w_hold, T_hand, z0, ik_err1 = run_grasp(rb, env, args.object, tgt1, log)
+                attempt_report(rb, env, grasps_o[cand], T_obj, cand, ok1, ik_err1, "retry")
+                i1 = cand
                 if ok1:
                     break
-            g_o = gravity_in_object_frame(T_obj)
             log.update(idx_first=i1, first_lift_ok=ok1)
 
         # ---- update ----
         f_h, tau_h = object_load_from_measured(w_hold, bias)
         T_obj_hold = object_T_w(env, args.object)
+        g_hold = gravity_in_object_frame(T_obj_hold)   # gravity at the hold, not at the settle pose
         f_o, tau_o, p_hand_o = wrench_hand_to_object(f_h, tau_h, T_hand, T_obj_hold)
+        # Only a real hold carries the object's load. A failed test-lift measures an empty
+        # gripper, and a partly supported object under-reports its weight (measured: 3.10 N
+        # of 4.905 N). Either one drives the Kalman mass mean negative, after which every
+        # sample in GaussianBelief.sample() clips to the same floor and the hold probability
+        # saturates at 1.0 -- observed as m_post = -0.849 kg with hold_prob_first = 1.0.
+        # When no update happens the posterior is left equal to the prior, which is how the
+        # results module can tell the two apart without a new log key.
+        supported = float(np.linalg.norm(f_o)) >= 0.5 * b0.m_mean * GRAVITY_G
+        do_update = bool(ok1) and supported
         b1 = b0
-        if args.arm in ("belief",) or args.oracle_check:
-            b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, gravity_in_object_frame(T_obj_hold),
+        if do_update and (args.arm == "belief" or args.oracle_check):
+            b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold,
                                     R_f=0.05**2, R_tau=np.eye(3) * 0.005**2)
+        elif args.arm == "belief" or args.oracle_check:
+            print(f"[no-update] first_lift_ok={ok1} supported={supported} "
+                  f"|f_o|={np.linalg.norm(f_o):.3f}N (0.5*m_prior*G="
+                  f"{0.5 * b0.m_mean * GRAVITY_G:.3f}N); posterior left at the prior", flush=True)
         log.update(m_post=b1.m_mean, c_post_o=b1.c_mean, c_post_cov=b1.c_cov)
 
         if args.oracle_check:
-            perp = np.eye(3) - np.outer(g_o, g_o)
+            perp = np.eye(3) - np.outer(g_hold, g_hold)
             err_prior = np.linalg.norm(perp @ (b0.c_mean - c_true))
             err_post = np.linalg.norm(perp @ (b1.c_mean - c_true))
             # |f_o| vs m*G says whether the object was fully off the table when the
@@ -283,11 +320,12 @@ def main():
                   f"c_perp err prior={err_prior*100:.1f}cm post={err_post*100:.1f}cm | "
                   f"|f_o|={np.linalg.norm(f_o):.3f}N (m*G={args.mass * 9.81:.3f}N) | "
                   f"f_o={np.round(f_o, 4)} tau_o={np.round(tau_o, 4)}", flush=True)
+            end_episode(env)
             return
 
         # ---- decide ----
         if args.arm == "belief":
-            hp = hold_probability(grasps_o[i1], b1, g_o, params, rng)
+            hp = hold_probability(grasps_o[i1], b1, g_hold, params, rng)
             log["hold_prob_first"] = hp
             advance = ok1 and hp >= args.pi_go
         elif args.arm == "fixed_threshold":
@@ -297,22 +335,32 @@ def main():
         else:  # next_best, oracle: advance iff the test-lift held
             advance = ok1
 
-        n_grasps, final_ok = 1, False
+        n_grasps, final_ok, ik_err2 = 1, False, float("nan")
         if advance:
             rb.step(lifted_target(tgt1, CLEAR_DZ), CLOSE, MOVE_STEPS)
             final_ok = lift_ok(env, args.object, z0, CLEAR_DZ) and rb.finger_gap() > 0.002
         else:
             set_down(rb, tgt1)
             T_obj2 = object_T_w(env, args.object)
+            # The first grasp moves the object, so candidates that approached downward
+            # against the settle pose can now point up. Re-mask against T_obj2 and exclude
+            # those as well as the grasp just tried. The candidate array is untouched, so
+            # idx_second still indexes the logged grasps_o.
+            exclude2 = tuple(sorted({int(i1), *unreachable_after_move(grasps_o, T_obj2)}))
+            if len(exclude2) >= len(confs):
+                print("[warn] every candidate is unreachable after set_down; "
+                      "excluding only the first grasp", flush=True)
+                exclude2 = (int(i1),)
+            g_o2 = gravity_in_object_frame(T_obj2)
             if args.arm == "belief":
-                i2 = select_belief(grasps_o, confs, b1, gravity_in_object_frame(T_obj2), params, rng, exclude=(i1,))
+                i2 = select_belief(grasps_o, confs, b1, g_o2, params, rng, exclude=exclude2)
             elif args.arm == "oracle":
-                i2 = select_oracle(grasps_o, confs, args.mass, c_true, gravity_in_object_frame(T_obj2),
-                                   params, exclude=(i1,))
+                i2 = select_oracle(grasps_o, confs, args.mass, c_true, g_o2, params, exclude=exclude2)
             else:
-                i2 = select_next_best_geometric(confs, exclude=(i1,))
+                i2 = select_next_best_geometric(confs, exclude=exclude2)
             tgt2 = grasp_to_hand_target(grasps_o[i2], T_obj2, rb.origin, args.yaw_fix)
-            ok2, *_, z0b = run_grasp(rb, env, args.object, tgt2, {})
+            ok2, _, _, _, z0b, ik_err2 = run_grasp(rb, env, args.object, tgt2, {})
+            attempt_report(rb, env, grasps_o[i2], T_obj2, i2, ok2, ik_err2, "second")
             rb.step(lifted_target(tgt2, CLEAR_DZ), CLOSE, MOVE_STEPS)
             final_ok = lift_ok(env, args.object, z0b, CLEAR_DZ) and rb.finger_gap() > 0.002
             n_grasps = 2
@@ -321,12 +369,14 @@ def main():
         log.update(final_ok=final_ok, n_grasps=n_grasps, wall_s=time.time() - t0)
         write_episode(os.path.join(out_dir, f"seed_{args.seed}.npz"), **log)
         print(f"[episode] arm={args.arm} first_ok={ok1} advance={advance} "
-              f"final_ok={final_ok} n_grasps={n_grasps}", flush=True)
+              f"final_ok={final_ok} n_grasps={n_grasps} ik_err2={ik_err2:.4f}", flush=True)
         end_episode(env)
     finally:
         env.close()
 
 
 if __name__ == "__main__":
-    main()
-    app.close()
+    try:
+        main()
+    finally:
+        app.close()
