@@ -68,7 +68,7 @@ ARMS = ("belief", "next_best", "fixed_threshold", "oracle", "top1", "label")
 #: overrides it gets a ``_m<mass>kg`` suffix on its episode directory (:func:`offset_dir_name`),
 #: so a heavy cell and the default cell at the same CoM offset never write to the same place.
 #: ``scripts/test_lift_sweep.sh`` reads this dict instead of keeping its own copy.
-OBJECT_MASS_KG = {"banana": 0.5, "rubiks_cube": 0.6}
+OBJECT_MASS_KG = {"banana": 0.5, "rubiks_cube": 0.6, "mug": 0.5, "cracker_box": 0.5}
 
 #: The two Franka finger joints, in the order the articulation lists them. Both drivers read
 #: the finger gap as ``joint_pos[..., -2] + joint_pos[..., -1]``, which is only the gap if the

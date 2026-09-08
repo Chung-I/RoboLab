@@ -141,7 +141,7 @@ def test_offset_dir_name_mass_suffix():
     assert offset_dir_name((0.03, 0, 0), 1.8, 0.6) == "off_x03cm_m1.8kg"
     assert offset_dir_name((0.04, 0, 0), None, 0.5) == "off_x04cm"     # mass not supplied
     assert offset_dir_name((0.04, 0, 0), 1.5, None) == "off_x04cm"     # default not known
-    assert OBJECT_MASS_KG == {"banana": 0.5, "rubiks_cube": 0.6}
+    assert OBJECT_MASS_KG == {"banana": 0.5, "rubiks_cube": 0.6, "mug": 0.5, "cracker_box": 0.5}
 
 
 # --------------------------------------------------------------------------- grasp geometry
