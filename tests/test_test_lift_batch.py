@@ -75,3 +75,41 @@ def test_batched_cell_writes_one_valid_npz_per_env(tmp_path):
     walls = {round(float(read_episode(os.path.join(out, "banana", "off_x04cm", a, f"seed_{s}.npz"))["wall_s"]), 3)
              for a in ARMS for s in SEEDS}
     assert len(walls) == 1, f"wall_s should be the whole batch's wall time in every file, got {walls}"
+
+
+def test_cube_scene_is_clear_of_the_cube():
+    """The cube env registers and no declared rigid body sits within 30 cm of the cube.
+
+    Ruling 37: the shipped `test_plate_banana_rubiks_cube.usda` puts a bowl 7.7 cm from the
+    cube and the hand strikes it on the approach, which invalidated every cube episode of
+    sweeps 1 and 2. `cube_test_lift_task.py` now declares all nine of the scene's other
+    dynamic rigid bodies and pins the four crowding ones to open table corners.
+
+    A fresh env with no stepping is enough: `RigidObjectCfg.init_state` is written at reset,
+    so this asserts what the task cfg asks for. The settled geometry is a different (looser)
+    number -- the cube drops ~2 cm and slides on landing -- and the episode driver logs it
+    on every run as `[clearance]`.
+
+    Not marked `integration`: it needs Isaac (booted by tests/conftest.py) but not the
+    GraspGenX server.
+    """
+    from robolab.core.environments.runtime import create_env
+    from robolab.registrations.test_lift import register_test_lift_env
+    from robolab.tasks.test_lift.cube_test_lift_task import NEIGHBOUR_POS
+    from analysis.test_lift.batch import neighbour_distances
+
+    name, events = register_test_lift_env("cube_test_lift_task.py", "rubiks_cube", mass_kg=0.6,
+                                          com_offset_xyz=(0.03, 0.0, 0.0), postfix="_CubeClearance")
+    env, _ = create_env(name, device="cuda:0", num_envs=1, use_fabric=True, events=events)
+    try:
+        env.reset()
+        dists = neighbour_distances(env, "rubiks_cube")
+        assert set(dists) == set(NEIGHBOUR_POS), (
+            f"the scene cfg declares {sorted(dists)}, the task's NEIGHBOUR_POS table names "
+            f"{sorted(NEIGHBOUR_POS)}; the two must not drift apart")
+        nearest, d = min(dists.items(), key=lambda kv: kv[1])
+        print(f"[cube-clearance] nearest={nearest} d_xy={d:.4f} m; all: "
+              + ", ".join(f"{k}={v:.3f}" for k, v in sorted(dists.items(), key=lambda kv: kv[1])))
+        assert d >= 0.30, f"{nearest} is only {d:.4f} m from the cube; the scene is not clear"
+    finally:
+        env.close()

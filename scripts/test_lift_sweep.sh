@@ -67,7 +67,7 @@ MEM_SWAP_MAX=${MEM_SWAP_MAX:-2G}
 # exception under it, which is the only part that says what failed (Task 8e review). `-A 20`
 # keeps the body; the raw stdout also goes to <log>.raw so nothing is lost when a failure
 # does not print a Python traceback at all.
-KEEP_RE='\[episode\]|\[cell\]|\[reach\]|\[table\]|\[candidates\]|\[decide\]|\[no-update\]|\[warn\]|Traceback|Error'
+KEEP_RE='\[episode\]|\[cell\]|\[reach\]|\[table\]|\[clearance\]|\[candidates\]|\[decide\]|\[no-update\]|\[warn\]|Traceback|Error'
 KEEP_AFTER=${KEEP_AFTER:-20}
 
 # Directory-name axis/magnitude, the same rule both drivers use for their own out_dir (and

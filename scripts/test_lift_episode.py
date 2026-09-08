@@ -97,8 +97,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (APPROACH_Z_MAX, CLEAR_DZ, CLEAR_OK_FRAC, CLOSE,  # noqa: E402
                                       GRASP_DEPTH_OFFSET, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
                                       MOVE_STEPS, OBJECT_MASS_KG, OPEN, SETTLE_STEPS, STANDOFF,
-                                      TILT_MAX_DEG, decide_advance, hand_target, offset_dir_name,
-                                      reachable_candidates, real_hold, tilt_deg,
+                                      TILT_MAX_DEG, decide_advance, hand_target, neighbour_distances,
+                                      offset_dir_name, reachable_candidates, real_hold, tilt_deg,
                                       unreachable_after_move)
 
 FRAME_CHECK_N = 8        # candidates tried per --frame-check invocation
@@ -338,6 +338,13 @@ def main():
         global Z_TABLE
         Z_TABLE = float(((T_obj[:3, :3] @ pts_o.T).T + T_obj[:3, 3])[:, 2].min())
         print(f"[table] z_table={Z_TABLE:.4f} obj_rest_z={T_obj[2, 3]:.4f}", flush=True)
+        # Scene clearance after the settle. The cube scene used to put a bowl 7.7 cm from
+        # the target and the hand struck it on the way in (Ruling 37), which invalidated
+        # every cube episode of sweeps 1 and 2. One line per declared rigid body, sorted
+        # by planar distance, so any future crowding shows up in the log of every episode.
+        for nm, d in sorted(neighbour_distances(env, args.object).items(), key=lambda kv: kv[1]):
+            p = env.scene[nm].data.root_pose_w[0, :3].cpu().numpy()
+            print(f"[clearance] {nm} d_xy={d:.4f} pos=({p[0]:.4f}, {p[1]:.4f}, {p[2]:.4f})", flush=True)
         client = GraspGenClient(gripper_name="franka_panda")
         if not client.available():
             raise RuntimeError(

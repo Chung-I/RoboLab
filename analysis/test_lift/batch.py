@@ -210,6 +210,27 @@ def offset_dir_name(com_offset_xyz, mass_kg=None, default_mass_kg=None) -> str:
     return name
 
 
+def neighbour_distances(env, object_name: str, env_i: int = 0) -> dict[str, float]:
+    """Planar distance from ``object_name`` to every OTHER rigid body the scene declares.
+
+    Reads live poses out of ``env.scene.rigid_objects``, so it reports where the bodies
+    actually are after the settle, not where the task cfg asked for them. Used by the
+    episode driver's ``[clearance]`` log line and by the cube-scene clearance test.
+
+    A neighbour that the task does not declare is invisible here: ``env.scene`` only holds
+    the prims the scene config named. That is the point -- Ruling 37 made the cube task
+    declare all nine of its scene's dynamic bodies precisely so that this check can see
+    them. The scene's ``table`` fixture stays undeclared and is therefore not reported.
+    """
+    keys = [k for k in env.scene.rigid_objects if k != object_name]
+    p0 = env.scene[object_name].data.root_pose_w[env_i, :2].cpu().numpy()
+    out = {}
+    for k in keys:
+        p = env.scene[k].data.root_pose_w[env_i, :2].cpu().numpy()
+        out[k] = float(np.linalg.norm(p - p0))
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # Grasp geometry. Pure numpy, shared by BOTH drivers (Task 8e review): these five were
 # duplicated in scripts/test_lift_episode.py and scripts/test_lift_batch.py, where they read
