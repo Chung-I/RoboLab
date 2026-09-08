@@ -6,21 +6,21 @@
 
 **Architecture:** A frozen GraspGen ZMQ server proposes 200 grasps with confidences from the object point cloud. A pure-numpy belief module (`analysis/test_lift/`) holds a Gaussian over θ = (m, c), scores each candidate by `log conf + log E_θ[Φ(u(g,θ)/s)]`, and updates from the wrist wrench measured during the hold. An Isaac driver script (`scripts/test_lift_episode.py`) runs the episode on RoboLab with the Franka Panda hand and absolute-pose differential IK, logs everything to `.npz`, and a results module aggregates the sweep into the E1/E2/E3 table.
 
-**Tech Stack:** RoboLab (IsaacLab 2.2 / IsaacSim 5.0, `uv run --extra isaac50`), numpy, pytest, pyzmq + msgpack (GraspGen client), GraspGen ZMQ server (`~/Codes/GraspGen`, `.venv-native`, checkpoint `models/checkpoints/graspgen_franka_panda.yml`), wandb.
+**Tech Stack:** RoboLab (IsaacLab 2.2 / IsaacSim 5.0, `uv run --extra isaac50`), numpy, pytest, pyzmq + msgpack (GraspGenX client), **GraspGenX** ZMQ server (`~/Codes/GraspGenX`, Apache-2.0, cross-embodiment model, `gripper_name="franka_panda"`; user decision 2026-09-08, replaces GraspGen), wandb.
 
 **Spec:** `~/Codes/daily-logs/researches/property-belief-manipulation/designs/2026-09-08-graded-commitment-design.md` §11 (v0), with §3–§4 for the physics and §11.2 for the update. Read §11 before starting any task.
 
 ## Global Constraints
 
 - Branch: `study/test-lift-belief-rerank` in `~/Codes/RoboLab`, cut from `main` at `9db0aaf`. Push remote: `mine`.
-- Gripper: **Franka Panda hand** (`robolab.robots.franka.FrankaCfg`). GraspGen checkpoint `graspgen_franka_panda.yml` (depth = 0.10527314 m, width = 0.10537486 m, convention offset = identity).
+- Gripper: **Franka Panda hand** (`robolab.robots.franka.FrankaCfg`). Grasp generator: **GraspGenX** with `gripper_name="franka_panda"` (checkpoints and gripper descriptions auto-clone from Hugging Face into `~/Codes/GraspGenX/ext/` on first import; needs `git-lfs`). The gripper depth (base link → TCP) is **read from GraspGenX** in Task 5, not hardcoded.
 - **Do not reuse any code from `GRASP_COM_RERANK`** in `VoLoAgent-rbtc` (user decision 2026-09-08). Write the re-ranker from spec §11.1.
 - **Do not use `isaaclab.envs.mdp.randomize_rigid_body_com`** on scene objects: it indexes `coms[:, body_ids, :3]`, which raises `IndexError` on a `RigidObject` `(num_envs, 7)` tensor, and it accumulates across resets. Use `robolab/variations/physics.py::set_rigid_body_com_offset` (Task 6).
 - **Do not use `FrankaIKActionCfg` as is** for absolute pose targets: IsaacLab multiplies the raw action by `scale` (`task_space_actions.py:158`) and the cfg sets `scale=0.5`. Task 7 defines `FrankaIKAbsActionCfg` with `scale=1.0`.
 - Gripper binary action: **`< 0` closes, `≥ 0` opens** (`binary_joint_actions.py:127-129`).
 - Wrist wrench: `robot.data.body_incoming_joint_wrench_b[0, hand_idx]` with `hand_idx = body_names.index("panda_hand")`. It is the wrench transmitted through the `panda_link7 → panda_hand` joint, **expressed in the `panda_hand` body frame, at the hand origin**. Subtract the no-load bias (Task 4).
 - Frames: IK targets are in the **robot-root** frame, which for Franka equals env-local = world minus `env_origins` (docs/frames.md). Quaternions are `(w, x, y, z)`.
-- GraspGen grasp frame: approach = **+Z**, closing = **+X**, origin at the gripper base link. Fingertip midpoint = `t + depth · R[:, 2]`.
+- GraspGenX grasp frame (same as GraspGen): approach = **+Z**, closing = **+X**, origin at the gripper base link. Fingertip midpoint = `t + depth · R[:, 2]`.
 - Isaac tests live in `tests/` (Isaac boots in `tests/conftest.py`). Pure-numpy tests live in `analysis/test_lift/` with their own Isaac-free `conftest.py`, added to `[tool.pytest.ini_options] testpaths`.
 - All sweep runs log to wandb project `test-lift-belief-rerank` (global ML rule).
 - Long-running processes: launch detached with `setsid nohup bash -c 'cd /abs; ...' &`, absolute log paths, and confirm the log grows before trusting the launch. Never `pkill -f` with a pattern that appears in your own command line.
@@ -41,7 +41,7 @@
 | `analysis/test_lift/belief.py` | `GaussianBelief`, prior from point cloud, mass update, CoM update |
 | `analysis/test_lift/rerank.py` | candidate scoring under a belief, the five arms of spec §11.3 |
 | `analysis/test_lift/frames.py` | GraspGen pose ↔ panda_hand target, fingertip point, gravity in hand frame, wrench bias |
-| `analysis/test_lift/graspgen.py` | ZMQ client wrapper (imports `grasp_gen.serving.zmq_client` from `$GRASPGEN_ROOT`), point sampling from mesh points |
+| `analysis/test_lift/graspgen.py` | ZMQ client wrapper (imports `graspgenx.serving.zmq_client` from `$GRASPGENX_ROOT`), point sampling from mesh points |
 | `analysis/test_lift/episode_log.py` | the `.npz` schema written by the driver and read by results |
 | `analysis/test_lift/results.py` | aggregate a sweep directory into the E1/E2/E3 table |
 | `analysis/test_lift/test_*.py` | pure-numpy tests, one file per module |
@@ -372,7 +372,7 @@ cd ~/Codes/RoboLab && git add analysis/test_lift/belief.py analysis/test_lift/te
 **Interfaces:**
 - Consumes: `GaussianBelief`, `margin`, `p_hold`, `GRAVITY_G`.
 - Produces:
-  - `@dataclass GraspParams: mu=0.8, F_grip=40.0, r_pad=0.01, kappa=1.0, alpha=1.0, s=0.05, depth=0.10527314, n_samples=256`
+  - `@dataclass GraspParams: mu=0.8, F_grip=40.0, r_pad=0.01, kappa=1.0, alpha=1.0, s=0.05, depth=FRANKA_PANDA_DEPTH, n_samples=256` — `FRANKA_PANDA_DEPTH` is a module constant set in Task 5 from GraspGenX; until then use the GraspGen value 0.10527314 as a placeholder constant and let Task 5 overwrite it
   - `fingertip_points(grasps_o: np.ndarray (N,4,4), depth: float) -> np.ndarray (N,3)` = `t + depth * R[:, 2]`
   - `score_candidates(grasps_o, confs, belief, g_hat_o, params, rng) -> np.ndarray (N,)` = `log(conf) + log(mean over samples of p_hold(u))`, with `u` computed per (sample, grasp)
   - `select_belief(grasps_o, confs, belief, g_hat_o, params, rng, exclude=()) -> int`
@@ -484,7 +484,7 @@ class GraspParams:
     kappa: float = 1.0
     alpha: float = 1.0
     s: float = 0.05
-    depth: float = 0.10527314   # GraspGen franka_panda.yaml
+    depth: float = 0.10527314   # overwritten in Task 5 with GraspGenX get_gripper_depth('franka_panda')
     n_samples: int = 256
 
 
@@ -753,8 +753,9 @@ cd ~/Codes/RoboLab && git add analysis/test_lift/frames.py analysis/test_lift/te
 **Interfaces:**
 - Produces:
   - `sample_surface_points(mesh_points_o: (P,3), n: int, rng) -> (n,3)` — uniform subsample without replacement (with replacement if `P < n`); GraspGen expects an object-centric cloud, and 2048 points is the count its demos use
-  - `GraspGenClient(host="127.0.0.1", port=5556)` with `.infer(points_o: (n,3), num_grasps=200) -> (grasps_o (N,4,4) float64, confs (N,) float32)`; internally calls `grasp_gen.serving.zmq_client.GraspGenClient.infer(points, grasp_threshold=0.0, num_grasps=num_grasps, topk_num_grasps=-1)`. `grasp_threshold=0.0` is required: `-1.0` plus `topk=-1` silently becomes top-100 (`grasp_gen/grasp_server.py:155`)
-  - `import_graspgen_client()` — appends `os.environ["GRASPGEN_ROOT"]` (default `~/Codes/GraspGen`) to `sys.path` and returns the `grasp_gen.serving.zmq_client` module; raises `RuntimeError` with an install hint if `zmq`/`msgpack_numpy` are missing
+  - `GraspGenClient(host="127.0.0.1", port=5556, gripper_name="franka_panda")` with `.infer(points_o: (n,3), num_grasps=200) -> (grasps_o (N,4,4) float64, confs (N,) float32)`; internally calls `graspgenx.serving.zmq_client.GraspGenXClient.infer(points, gripper_name=..., num_grasps=num_grasps, grasp_threshold=-1.0, topk_num_grasps=0)`. In GraspGenX the threshold applies only when `> 0` and top-k only when `> 0` (`zmq_client.py:57-71`), so `-1.0` / `0` return every grasp. The default `topk_num_grasps=100` **must** be overridden.
+  - `import_graspgenx_client()` — appends `os.environ["GRASPGENX_ROOT"]` (default `~/Codes/GraspGenX`) to `sys.path` and returns the `graspgenx.serving.zmq_client` module; raises `RuntimeError` with an install hint if `zmq`/`msgpack_numpy` are missing. Confirm the client class name with `grep -n "^class " ~/Codes/GraspGenX/graspgenx/serving/zmq_client.py` and use that name.
+  - `FRANKA_PANDA_DEPTH` in `analysis/test_lift/rerank.py`: the value printed by Step 0 below
   - `EPISODE_KEYS`: the exact key set of the episode `.npz` (below), `write_episode(path, **arrays)`, `read_episode(path) -> dict`, `validate_episode(d) -> None` (raises on a missing key)
 
 Episode `.npz` schema (one file per episode, `<out>/<object>/off_<xx>cm/<arm>/seed_<k>.npz`):
@@ -773,6 +774,14 @@ Episode `.npz` schema (one file per episode, `<out>/<object>/off_<xx>cm/<arm>/se
 | `first_lift_ok`, `second_lift_ok`, `final_ok` | () bool | rung outcomes |
 | `n_grasps`, `wall_s` | (), () | E3 |
 | `yaw_fix` | str | `"none"` or `"z90"` |
+
+- [ ] **Step 0: Install GraspGenX and read the Panda gripper depth**
+
+```bash
+cd ~/Codes/GraspGenX && uv sync && uv run python scripts/list_grippers.py | grep -E "franka_panda|robotiq_2f_85"
+uv run python -c "from graspgenx.robot import get_gripper_depth; print('FRANKA_PANDA_DEPTH =', get_gripper_depth('franka_panda'))"
+```
+Expected: both grippers listed; a depth of about 0.10 m printed. Put that exact number into `FRANKA_PANDA_DEPTH` in `analysis/test_lift/rerank.py` (replace the 0.10527314 placeholder and make `GraspParams.depth` default to the constant), with a comment naming the source: `graspgenx.robot.get_gripper_depth("franka_panda")`. If `uv sync` fails on `git-lfs`, install the static `git-lfs` binary into `~/.local/bin` first.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -794,14 +803,14 @@ def test_sample_surface_points_shapes():
 
 @pytest.mark.integration
 def test_live_server_returns_all_grasps():
-    """Needs a running GraspGen ZMQ server on 127.0.0.1:5556 (see Task 8 Step 1)."""
-    client = GraspGenClient()
+    """Needs a running GraspGenX ZMQ server on 127.0.0.1:5556 (see Task 8 Step 1)."""
+    client = GraspGenClient(gripper_name="franka_panda")
     if not client.available():
         pytest.skip("GraspGen server not reachable")
     box = np.random.default_rng(0).uniform([-0.05, -0.03, -0.02], [0.05, 0.03, 0.02], size=(2048, 3)).astype(np.float32)
     grasps, confs = client.infer(box, num_grasps=200)
     assert grasps.shape[1:] == (4, 4) and confs.shape == (grasps.shape[0],)
-    assert grasps.shape[0] > 100, "top-100 cap still active: check grasp_threshold=0.0"
+    assert grasps.shape[0] > 100, "top-100 cap still active: check topk_num_grasps=0"
 ```
 
 ```python
@@ -846,7 +855,7 @@ markers = ["integration: needs a live external server"]
 
 ```python
 # analysis/test_lift/graspgen.py
-"""Thin wrapper over GraspGen's ZMQ client (frozen model, port 5556)."""
+"""Thin wrapper over GraspGenX's ZMQ client (frozen cross-embodiment model, port 5556)."""
 from __future__ import annotations
 
 import os
@@ -855,17 +864,17 @@ import sys
 import numpy as np
 
 
-def import_graspgen_client():
-    root = os.path.expanduser(os.environ.get("GRASPGEN_ROOT", "~/Codes/GraspGen"))
+def import_graspgenx_client():
+    root = os.path.expanduser(os.environ.get("GRASPGENX_ROOT", "~/Codes/GraspGenX"))
     if root not in sys.path:
         sys.path.append(root)
     try:
-        from grasp_gen.serving import zmq_client
+        from graspgenx.serving import zmq_client
     except ImportError as e:  # pragma: no cover
         raise RuntimeError(
-            f"Cannot import grasp_gen.serving.zmq_client from {root}: {e}. "
+            f"Cannot import graspgenx.serving.zmq_client from {root}: {e}. "
             "Install `uv pip install pyzmq msgpack msgpack-numpy` in the RoboLab venv, "
-            "or set GRASPGEN_ROOT.") from e
+            "or set GRASPGENX_ROOT.") from e
     return zmq_client
 
 
@@ -876,29 +885,31 @@ def sample_surface_points(mesh_points_o, n: int, rng) -> np.ndarray:
 
 
 class GraspGenClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 5556):
-        self._host, self._port = host, port
+    """Named after the role (grasp generator), backed by GraspGenX."""
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 5556, gripper_name: str = "franka_panda"):
+        self._host, self._port, self._gripper = host, port, gripper_name
         self._client = None
 
     def _get(self):
         if self._client is None:
-            zc = import_graspgen_client()
-            self._client = zc.GraspGenClient(host=self._host, port=self._port)
+            zc = import_graspgenx_client()
+            self._client = zc.GraspGenXClient(host=self._host, port=self._port)
         return self._client
 
     def available(self) -> bool:
         try:
-            return bool(self._get().health_check())
+            return self._get().health().get("status") == "ok"
         except Exception:
             return False
 
     def infer(self, points_o, num_grasps: int = 200):
-        grasps, confs = self._get().infer(np.asarray(points_o, dtype=np.float32),
-                                          grasp_threshold=0.0, num_grasps=num_grasps, topk_num_grasps=-1)
+        grasps, confs = self._get().infer(np.asarray(points_o, dtype=np.float32), gripper_name=self._gripper,
+                                          num_grasps=num_grasps, grasp_threshold=-1.0, topk_num_grasps=0)
         return np.asarray(grasps, dtype=np.float64), np.asarray(confs, dtype=np.float32)
 ```
 
-Check the constructor signature of `grasp_gen.serving.zmq_client.GraspGenClient` (`sed -n '38,60p' ~/Codes/GraspGen/grasp_gen/serving/zmq_client.py`) and match the keyword names exactly.
+Check the class name and the `health()` return shape in `~/Codes/GraspGenX/graspgenx/serving/zmq_client.py` (`grep -n "^class \|def health" …`) and match them exactly. The server-side `infer` action may apply top-k itself; the integration test's `> 100` assertion is the guard. If it trips, use `infer_object(...)` with `planner="graspmoe"`, which the client docstring says returns every grasp and filters client-side.
 
 ```python
 # analysis/test_lift/episode_log.py
@@ -1277,16 +1288,16 @@ uv run --extra isaac50 python -u scripts/test_lift_episode.py \
 ```
 Arms: `belief | next_best | fixed_threshold | oracle | top1` (spec §11.3).
 
-- [ ] **Step 1: Start the GraspGen server (detached) and confirm it answers**
+- [ ] **Step 1: Start the GraspGenX server (detached) and confirm it answers**
 
 ```bash
 mkdir -p /home/chungyili/Codes/RoboLab/output/test_lift
-setsid nohup bash -c 'cd /home/chungyili/Codes/GraspGen; .venv-native/bin/python -u client-server/graspgen_server.py --gripper_config models/checkpoints/graspgen_franka_panda.yml --host 127.0.0.1 --port 5556 > /home/chungyili/Codes/RoboLab/output/test_lift/graspgen_server.log 2>&1' &
-sleep 20; tail -5 /home/chungyili/Codes/RoboLab/output/test_lift/graspgen_server.log
-ps -eo pid,cmd | grep "[g]raspgen_server.py"
+setsid nohup bash -c 'cd /home/chungyili/Codes/GraspGenX; uv run python -u client-server/graspgenx_server.py --default_gripper franka_panda --host 127.0.0.1 --port 5556 > /home/chungyili/Codes/RoboLab/output/test_lift/graspgenx_server.log 2>&1' &
+sleep 40; tail -5 /home/chungyili/Codes/RoboLab/output/test_lift/graspgenx_server.log
+ps -eo pid,cmd | grep "[g]raspgenx_server.py"
 cd ~/Codes/RoboLab && uv run --extra isaac50 --extra test pytest analysis/test_lift/test_graspgen.py -v -p no:cacheprovider -m integration
 ```
-Expected: the log shows the model loaded and the socket bound; the integration test passes with more than 100 grasps. If `msgpack_numpy` is missing in the RoboLab venv: `cd ~/Codes/RoboLab && uv pip install msgpack msgpack-numpy`.
+Expected: the log shows the model loaded and the socket bound (first launch also clones checkpoints from Hugging Face, so allow a few minutes and watch the log grow); the integration test passes with more than 100 grasps. The default planner is GraspMoE (diffusion ∪ OBB grasps, all discriminator-scored) — keep it; it adds candidates along the object's long axis, where CoM offsets live. If `msgpack_numpy` is missing in the RoboLab venv: `cd ~/Codes/RoboLab && uv pip install msgpack msgpack-numpy`.
 
 - [ ] **Step 2: Write the driver**
 
@@ -1762,4 +1773,5 @@ cd ~/Codes/RoboLab && git add docs/studies/2026-09-08-test-lift-v0-results.md &&
 - §11.3 five arms: Task 3 selectors, Task 8 `--arm`. Covered.
 - §11.4 E1/E2/E3 and the three predictions: Task 9 aggregate, Task 10 doc. Covered. The spec's "5–10 objects" is reduced to 2 in this plan; the third object onward is a task-file copy (Task 7 Step 4) and a `TASK`/`MASS` entry in the sweep.
 - §11.5 assumptions: wrench (Task 7 test), all candidates (Task 5 integration test), CoM independent of mesh (Task 6 test). Covered.
+- Generator switched to GraspGenX (2026-09-08): Apache-2.0, `franka_panda` and `robotiq_2f_85` in one model, same grasp frame convention. Only Tasks 5 and 8 touch it.
 - Not in this plan, on purpose: the outcome-bit likelihood, the ladder, option value, any training (spec §11 scope).
