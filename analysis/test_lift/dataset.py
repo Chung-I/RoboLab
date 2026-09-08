@@ -6,6 +6,18 @@ Pure numpy. One row per label (a completed test-lift). Each row carries the Gras
 embedding of the tried candidate, the density prior's moments, the posterior moments after
 the (gated) wrench update, and the true (mass, CoM) moments -- everything a probe or a
 re-ranker needs, joined once so later tasks do not re-derive it.
+
+Which label is ``y`` (Task-9 controller Ruling 13)
+--------------------------------------------------
+``y`` is ``final_ok``: the grasp held all the way through the 15 cm clear lift. That is the
+outcome the re-ranking head is asked to predict and the outcome the episode arms are scored
+on, so training on anything else would optimise the wrong target. The 2 cm test-lift
+outcome is kept beside it as ``y_testlift`` (``labels.load_labels``'s ``lift_ok``) because
+it is a different, easier event and is worth reporting separately.
+
+``lift_ok`` still gates the wrench update, unchanged: that gate asks whether the hold-window
+wrench measured a supported object, which is a question about the TEST-lift and has nothing
+to do with what happened afterwards during the clear lift.
 """
 from __future__ import annotations
 
@@ -73,9 +85,25 @@ def _meta_path(out_npz: str) -> str:
     return os.path.splitext(out_npz)[0] + ".json"
 
 
+def _drop_objects(tbl: dict, exclude_objects) -> dict:
+    """Remove every row whose object is in ``exclude_objects`` (Task-9 Ruling 14).
+
+    v1 excludes ``cracker_box``: 91% of its candidates reach the pose but 97% of them close
+    on air, so its rows carry almost no signal about grasp quality -- they measure a
+    substrate defect (the food-packing asset's physics-root / mesh offset) instead.
+    """
+    exclude = set(exclude_objects or ())
+    if not exclude:
+        return tbl
+    keep = np.array([str(o) not in exclude for o in tbl["object"]])
+    return {k: (v[keep] if isinstance(v, np.ndarray) and v.shape[:1] == keep.shape else v)
+            for k, v in tbl.items()}
+
+
 def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
-                  holdout_objects: tuple[str, ...]) -> dict:
-    tbl = load_labels(labels_root)
+                  holdout_objects: tuple[str, ...],
+                  exclude_objects: tuple[str, ...] = ()) -> dict:
+    tbl = _drop_objects(load_labels(labels_root), exclude_objects)
     n = len(tbl["lift_ok"])
     params = GraspParams()
     candidates_dir = _candidates_dir(labels_root)
@@ -149,29 +177,43 @@ def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
     out_dir = os.path.dirname(out_npz)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
+    # Ruling 13: y is final_ok (the clear lift held), NOT the 2 cm test-lift outcome.
+    y = np.asarray(tbl["final_ok"], dtype=bool)
+    y_testlift = np.asarray(tbl["lift_ok"], dtype=bool)
+    # Ruling 9: GraspGenX's own confidence travels with the row so the training script can
+    # run the A2 check (does the belief head beat the frozen confidence?) without re-joining.
+    conf = np.asarray(tbl["conf"], dtype=np.float32)
     np.savez(out_npz, e_g=e_g, z_prior=z_prior, z_post=z_post, z_true=z_true,
-             y=tbl["lift_ok"], trace_o=trace_o, p_tip_o=p_tip_o, g_hat_o=g_hat_o,
+             y=y, y_testlift=y_testlift, conf=conf,
+             trace_o=trace_o, p_tip_o=p_tip_o, g_hat_o=g_hat_o,
              theta=theta, object=tbl["object"], split=split)
 
-    meta = _build_metadata(tbl["object"], split, holdout_objects, D)
+    meta = _build_metadata(tbl["object"], split, holdout_objects, D,
+                           exclude_objects, y, y_testlift)
     with open(_meta_path(out_npz), "w") as f:
         json.dump(meta, f, indent=2)
     return meta
 
 
-def _build_metadata(objects, split, holdout, D) -> dict:
+def _build_metadata(objects, split, holdout, D, exclude=(), y=None, y_testlift=None) -> dict:
     objects = np.asarray(objects)
     split = np.asarray(split)
-    n_per_split, objects_per_split = {}, {}
+    n_per_split, objects_per_split, rate_per_split = {}, {}, {}
     for s in SPLITS:
         m = split == s
         n_per_split[s] = int(m.sum())
         objects_per_split[s] = sorted(set(objects[m].tolist()))
+        rate_per_split[s] = (float(np.asarray(y)[m].mean()) if y is not None and m.any() else None)
     return dict(
         D=int(D),
         n=n_per_split,
         objects=objects_per_split,
         holdout=list(holdout),
+        exclude=list(exclude),
+        label="final_ok",
+        positive_rate=rate_per_split,
+        positive_rate_testlift=(float(np.asarray(y_testlift).mean()) if y_testlift is not None
+                                and len(np.asarray(y_testlift)) else None),
         split_rule=("test = holdout objects; among the rest, val if "
                     "(theta_id * 1000003 + cand_id) % 5 == 0 else train"),
     )
@@ -183,12 +225,16 @@ def main(argv=None):
     ap.add_argument("--embeddings", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--holdout", nargs="*", default=())
+    ap.add_argument("--exclude", nargs="*", default=(),
+                    help="objects to drop entirely (v1 passes cracker_box; Ruling 14)")
     args = ap.parse_args(argv)
 
-    meta = build_dataset(args.labels, args.embeddings, args.out, tuple(args.holdout))
-    print(f"D={meta['D']}")
+    meta = build_dataset(args.labels, args.embeddings, args.out, tuple(args.holdout),
+                         tuple(args.exclude))
+    print(f"D={meta['D']} label={meta['label']} excluded={meta['exclude']}")
     for s in SPLITS:
-        print(f"{s}: n={meta['n'][s]} objects={meta['objects'][s]}")
+        print(f"{s}: n={meta['n'][s]} objects={meta['objects'][s]} "
+              f"{meta['label']}_rate={meta['positive_rate'][s]}")
 
 
 if __name__ == "__main__":

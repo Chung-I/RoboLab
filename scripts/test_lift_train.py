@@ -73,6 +73,12 @@ class Data:
             self.theta = torch.as_tensor(d["theta"].astype(np.float32), device=device)
             self.theta_np = d["theta"].astype(float)
             self.z_post_np = d["z_post"].astype(float)
+            # GraspGenX's own confidence per row (Task-9 Ruling 9). Optional: datasets built
+            # before Ruling 9 do not carry it, and the A2 check then reports null instead of
+            # crashing a re-run on an old npz.
+            self.conf_np = d["conf"].astype(float) if "conf" in d.files else None
+            self.y_testlift_np = (d["y_testlift"].astype(float) if "y_testlift" in d.files
+                                  else None)
         self.D = int(self.e_g.shape[1])
         self.idx = {s: torch.as_tensor(np.flatnonzero(self.split == s), dtype=torch.long, device=device)
                     for s in SPLITS}
@@ -215,6 +221,29 @@ def train_phi(data: Data, args, device, log):
                      watched=("val_nll" if data.n("val") else "train_nll"))
 
 
+def a2_check(data: Data, head, latent) -> dict:
+    """A2: does the belief head, with NO property information, still rank as well as the
+    frozen GraspGenX confidence it was warm started from? (Task-9 Ruling 9.)
+
+    The prediction A2 ~ A0 is a REQUIREMENT, not a hoped-for win: the head is allowed to use
+    a belief, so at the unknown token it must not have paid for that ability by getting worse
+    at the plain grasp-quality judgement. Both AUROCs are against the same label ``y``
+    (``final_ok`` under Ruling 13) on the same rows, so the difference is the head's own.
+    """
+    out = {"metric": "AUROC vs y (final_ok)", "note": "head@unknown = A2, GraspGenX conf = A0"}
+    for split in ("val", "test"):
+        p, y = head_probs(head, latent, data, split, "unknown")
+        idx = data.idx[split].cpu().numpy()
+        conf = data.conf_np[idx] if data.conf_np is not None else None
+        head_auroc = auroc_of(p, y)
+        conf_auroc = auroc_of(conf, y) if conf is not None else _nan()
+        out[split] = dict(n=int(len(y)), head_unknown_auroc=head_auroc, conf_auroc=conf_auroc,
+                          delta=(head_auroc - conf_auroc
+                                 if not (math.isnan(head_auroc) or math.isnan(conf_auroc))
+                                 else _nan()))
+    return out
+
+
 def analytic_nll(data: Data, split: str) -> float:
     m = data.split == split
     if not m.any():
@@ -252,6 +281,7 @@ def build_report(data, head, latent, phi, head_info, phi_info, args) -> dict:
 
     nll = {s: phi_nll(phi, data, s) for s in ("val", "test")}
     a_nll = {s: analytic_nll(data, s) for s in ("val", "test")}
+    a2 = a2_check(data, head, latent)
 
     def _gate_ece(split):
         vals = [ece[split][r] for r in REGIMES]
@@ -280,7 +310,7 @@ def build_report(data, head, latent, phi, head_info, phi_info, args) -> dict:
             head_ece_pass={s: _gate_ece(s) for s in ("val", "test")},
             phi_nll_le_analytic={s: _gate_nll(s) for s in ("val", "test")},
         ),
-        a2_check="deferred to Task 9",
+        a2_check=a2,
     ))
 
 

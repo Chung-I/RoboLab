@@ -10,14 +10,26 @@ Run with ~/Codes/GraspGenX/.venv/bin/python (never `uv run` there):
 Also saves the frozen discriminator's prediction-head weights once per run, beside
 --out, as prediction_head.pt (Task-6 controller Ruling 2) -- a later task warm-starts
 a new head from it.
+
+The object point cloud must be preprocessed EXACTLY as the serving path preprocesses it,
+or the embeddings belong to a different object encoding than the stored confidences do.
+``GraspGenXSampler.run_inference`` calls ``point_cloud_outlier_removal`` (20-NN mean
+distance < 1.4 cm) and only then centres on the SURVIVING points' mean
+(graspgenx/grasp_server.py, ``remove_outliers=True`` by default). Skipping that step is
+invisible on a compact object -- banana and rubiks_cube keep 2048/2048 points -- but the
+mug loses 137 points off its rim and handle, which moves the centre and biases every
+rescored confidence down by 0.073 (max gap 0.288, far past GAP_TOL). With the removal
+applied the mug's gap is 0.024. Task 9 found this; do not drop the call.
 """
 import argparse, os, sys
 import numpy as np, torch
 from graspgenx.grasp_server import GraspGenXSampler
 from graspgenx.samplers.graspmoe import _score_grasps_with_discriminator
 from graspgenx.utils.checkpoint_io import load_model_cfg
+from graspgenx.utils.point_cloud import point_cloud_outlier_removal
 
 GAP_TOL = 0.05
+MIN_POINTS_AFTER_OUTLIER_REMOVAL = 10   # grasp_server.py's own fallback threshold
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--candidates", required=True); ap.add_argument("--out", required=True)
@@ -30,9 +42,18 @@ cfg = load_model_cfg(os.path.join(a.config, "gen"), os.path.join(a.config, "dis"
 sampler = GraspGenXSampler(cfg, a.gripper, assets_dir=a.assets_dir)
 z = np.load(a.candidates, allow_pickle=False)
 pts = z["points_o"].astype(np.float32); grasps = z["grasps_o"].astype(np.float32)
-center = pts.mean(0).astype(np.float64)
 device = next(sampler.model.parameters()).device
-pc_centered = torch.from_numpy(pts - center.astype(np.float32)).to(device)
+
+# Mirror grasp_server.run_inference: drop outliers first, then centre on what is left.
+pc_raw = torch.from_numpy(pts).to(device)
+pc_kept, _ = point_cloud_outlier_removal(pc_raw)
+if len(pc_kept) < MIN_POINTS_AFTER_OUTLIER_REMOVAL:
+    print(f"[dump] outlier removal left {len(pc_kept)}/{len(pts)} points; using the raw cloud",
+          file=sys.stderr)
+    pc_kept = pc_raw
+center = pc_kept.mean(0).cpu().numpy().astype(np.float64)
+pc_centered = pc_kept - torch.as_tensor(center, dtype=pc_kept.dtype, device=device)[None]
+print(f"[dump] outlier removal kept {len(pc_kept)}/{len(pts)} points")
 
 captured = {}
 def hook(mod, inp, out): captured["e"] = inp[0].detach().cpu().numpy()
