@@ -30,6 +30,8 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
     this branch's factory has no `events_cfg` kwarg (see tests/test_physics_variation_com.py).
     Callers pass the returned `events_cfg` to `create_env(..., events=events_cfg)` instead.
     """
+    # Proprio observations are not required for v0: the episode driver reads
+    # robot.data directly, and no policy in this study consumes observations.
     ImageObsCfg = generate_image_obs_from_cameras([EgocentricMirroredCameraCfg])
     ObservationCfg = generate_obs_cfg({"image_obs": ImageObsCfg()})
     result = auto_discover_and_create_cfgs(
