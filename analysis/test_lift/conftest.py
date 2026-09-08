@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Pytest config for the pure-numpy analysis/test_lift tests.
 
-The test modules here import their subjects as top-level modules
-(``import acts_io``, ``import capture_pi05``, ...) because the analysis
-package historically ran with cwd=analysis/test_lift under the openpi venv.
-Put this directory on sys.path so ``pytest analysis/test_lift`` (and the
-repo-root ``testpaths`` entry in pyproject.toml) collects them from anywhere.
+This conftest adds the test_lift directory to sys.path to support fully-qualified
+imports (``from analysis.test_lift.physics import ...``) from anywhere pytest runs,
+including from the repo root via the ``testpaths`` entry in pyproject.toml.
 
 Deliberately Isaac-free: tests/conftest.py boots the simulator, this one must
 never import robolab/isaaclab.

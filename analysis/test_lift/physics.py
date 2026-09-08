@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 """Physics of a static grasp under gravity (spec §3-§4).
 
 All vectors are expressed in one common frame chosen by the caller.
