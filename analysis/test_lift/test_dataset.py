@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from analysis.test_lift.batch import HOLD_STEPS
 from analysis.test_lift.belief import GaussianBelief
-from analysis.test_lift.dataset import moments, split_assign, trace_to_object_frame
+from analysis.test_lift.dataset import build_dataset, moments, split_assign, trace_to_object_frame
 from analysis.test_lift.frames import object_load_from_measured
 
 
@@ -43,3 +44,89 @@ def test_trace_to_object_frame_identity_returns_forces_and_torques():
                          for t in range(HOLD_STEPS)])
     assert out.shape == (HOLD_STEPS, 6)
     assert np.allclose(out, expected)
+
+
+# --------------------------------------------------------------------------- Task-9 rulings
+def _confs(cid, conf):
+    """``load_labels`` reads ``confs[idx_first]``, so the value must sit at the row's own
+    candidate index -- putting it at index 0 for every row would make the test pass on a
+    build that ignored ``cand_id``."""
+    c = np.full(2, 0.5)
+    c[cid] = conf
+    return c
+
+
+def _write_label(root, obj, tid, cid, lift_ok, final_ok, mass=0.8, com=(0.0, 0.0, 0.0), conf=0.9):
+    """One label row, with the four trace/pose keys ``build_dataset`` reads."""
+    d = root / "labels" / obj / f"theta_{tid:02d}"
+    d.mkdir(parents=True, exist_ok=True)
+    np.savez(d / f"cand_{cid:04d}.npz", object=obj, theta_id=tid, cand_id=cid, pad=False,
+             mass_true=mass, com_true_o=np.array(com, float),
+             first_lift_ok=lift_ok, final_ok=final_ok,
+             rise1=0.015, tilt1=5.0, gap1=0.02, rise_final=0.1,
+             confs=_confs(cid, conf), grasps_o=np.tile(np.eye(4), (2, 1, 1)), idx_first=cid,
+             wrench_trace_h=np.zeros((HOLD_STEPS, 6)), wrench_bias_h=np.zeros(6),
+             T_hand_hold=np.eye(4), T_obj_hold=np.eye(4))
+
+
+def _write_object_inputs(root, obj, n_cand=2, D=4):
+    """The candidates npz (sibling of labels/) and the embeddings npz build_dataset joins."""
+    rng = np.random.default_rng(0)
+    (root / "candidates").mkdir(parents=True, exist_ok=True)
+    (root / "embeddings").mkdir(parents=True, exist_ok=True)
+    np.savez(root / "candidates" / f"{obj}.npz", points_o=rng.normal(size=(64, 3)) * 0.03)
+    np.savez(root / "embeddings" / f"{obj}.npz", e_g=rng.normal(size=(n_cand, D)).astype(np.float32))
+
+
+def _tiny_tree(tmp_path):
+    """Two objects, two candidates each, with final_ok DELIBERATELY not equal to lift_ok."""
+    for obj in ("keep", "drop"):
+        _write_object_inputs(tmp_path, obj)
+        for tid in range(2):
+            # candidate 0: the test-lift held but the clear lift did not; candidate 1: the reverse.
+            _write_label(tmp_path, obj, tid, 0, lift_ok=True, final_ok=False, conf=0.9)
+            _write_label(tmp_path, obj, tid, 1, lift_ok=False, final_ok=True, conf=0.2)
+    return str(tmp_path / "labels"), str(tmp_path / "embeddings")
+
+
+def test_y_is_final_ok_and_lift_ok_survives_as_y_testlift(tmp_path):
+    """Ruling 13. The fixture sets final_ok = NOT lift_ok on every row, so a build that
+    stored the old label would fail here rather than merely look different."""
+    labels, emb = _tiny_tree(tmp_path)
+    out = str(tmp_path / "ds.npz")
+    meta = build_dataset(labels, emb, out, holdout_objects=("drop",))
+    with np.load(out, allow_pickle=False) as d:
+        assert d["y"].dtype == bool and d["y_testlift"].dtype == bool
+        assert np.array_equal(d["y"], ~d["y_testlift"])
+        assert meta["label"] == "final_ok"
+
+
+def test_conf_travels_with_the_row(tmp_path):
+    """Ruling 9. The A2 check needs GraspGenX's own confidence joined to the same rows."""
+    labels, emb = _tiny_tree(tmp_path)
+    out = str(tmp_path / "ds.npz")
+    build_dataset(labels, emb, out, holdout_objects=())
+    with np.load(out, allow_pickle=False) as d:
+        # conf 0.9 belongs to candidate 0 and 0.2 to candidate 1, on every row of both objects
+        assert sorted(set(np.round(d["conf"].astype(float), 3).tolist())) == pytest.approx([0.2, 0.9])
+        assert len(d["conf"]) == len(d["y"])
+
+
+def test_exclude_removes_an_object_everywhere(tmp_path):
+    """Ruling 14. An excluded object must vanish from the rows AND from the metadata, not
+    merely be routed to the test split."""
+    labels, emb = _tiny_tree(tmp_path)
+    out = str(tmp_path / "ds.npz")
+    meta = build_dataset(labels, emb, out, holdout_objects=(), exclude_objects=("drop",))
+    with np.load(out, allow_pickle=False) as d:
+        assert set(d["object"].astype(str)) == {"keep"}
+        assert len(d["y"]) == 4          # 2 thetas x 2 candidates of the surviving object
+    assert meta["exclude"] == ["drop"]
+    assert all("drop" not in objs for objs in meta["objects"].values())
+
+
+def test_exclude_defaults_to_nothing(tmp_path):
+    labels, emb = _tiny_tree(tmp_path)
+    out = str(tmp_path / "ds.npz")
+    meta = build_dataset(labels, emb, out, holdout_objects=("drop",))
+    assert meta["exclude"] == [] and meta["n"]["test"] == 4
