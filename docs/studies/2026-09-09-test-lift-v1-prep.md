@@ -1,5 +1,7 @@
 # test-lift v1 prep — candidate set and knee cells (2026-09-09)
 
+**Superseded for results by** `2026-09-09-test-lift-v1-results.md` (2026-09-09); this note records the candidate-set and knee-sweep findings that preceded it.
+
 Spec: `daily-logs/researches/property-belief-manipulation/designs/2026-09-08-belief-conditioned-head-design.md`
 §11 (gate outcomes). Two prerequisites are worked here before any v1 label sweep: (1) a
 candidate set the re-ranker can actually reorder, (2) cells where CoM knowledge decides the

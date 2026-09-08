@@ -7,7 +7,11 @@
 **Artefacts** (all under `output/test_lift/v1/`, gitignored):
 `labels/` 7 189 labelled test-lifts, `candidates/<obj>.npz`, `embeddings/<obj>.npz`,
 `dataset.npz` + `dataset.json`, `models/{head,latent,phi}.pt` + `report.json`
-(and `report_partial.json`, the superseded banana-only fit), `eval/` 140 held-out episodes,
+(and `report_partial.json`, the superseded banana-only fit),
+`models_frozen_full/` (the pre-registered ECE fallback on the same final dataset, §5.1),
+`models_frozen_partial_preRuling8/` (**superseded** — the same fallback fitted on the partial,
+pre-Ruling-8 dataset; kept only for provenance, no number in this doc comes from it),
+`eval/` 140 held-out episodes,
 `eval_table.md` (the cell table, the pooled-per-arm table and the per-cell E2 matrix, all
 from `analysis.test_lift.results --by-arm`), `head_scores_cube.txt` (from
 `scripts/test_lift_head_probe.py`), `labels_stats.txt` and `labels_stats_v1.txt` (from
@@ -42,7 +46,11 @@ Three findings, in order of how much they constrain what comes next.
    labelled 1.000) in the other three cells. So the prior is wrong **and** the conditioning
    does not reliably rescue the pick when the belief is correct: a 1 cm shift in the true CoM
    flips the head's argmax between a candidate that never fails and one that never succeeds.
-   Adding information to this belief path does not monotonically improve it.
+   Adding information to this belief path does not monotonically improve it. A **second**
+   mechanism sits beside the bad prior: the head reads `c_mean` in each object's own body
+   frame, and the cube's body-frame origin is 3.2 cm off its centroid, which puts the cube's
+   prior CoM-y at +2.34 sd against a train range of [−0.21, +0.89] — off-manifold for a
+   reason that is not physics at all (§9 caveat 9).
 3. **The analytic channel from v0 still works and is still the best estimator here.** The
    `belief` arm cuts the pooled CoM error E1 from 2.500 cm to 1.805 cm, and to 0.916 /
    0.242 cm in the two cells where the wrench update fired, recovering `m_post = 0.601 kg`
@@ -100,6 +108,17 @@ Command:
 ```
 .venv/bin/python -u -m analysis.test_lift.labels output/test_lift/v1/labels
 .venv/bin/python -u -m analysis.test_lift.labels output/test_lift/v1/labels cracker_box
+# the three per-condition columns of the next table:
+.venv/bin/python -u -m analysis.test_lift.labels output/test_lift/v1/labels --failure-modes
+```
+
+`--failure-modes` splits a failed test-lift into which of `real_hold`'s three conditions it
+failed, one condition at a time (they are not exclusive and do not sum to 1):
+
+```python
+closed_on_air = np.mean(gap1  <= MIN_FINGER_GAP)          # fingers met: nothing is held
+rose          = np.mean(rise1 >  LIFT_OK_FRAC * LIFT_DZ)  # cleared 1.2 cm of the 2 cm lift
+tilted        = np.mean(tilt1 >= TILT_MAX_DEG)            # 15 deg from the settle orientation
 ```
 
 7 189 labelled test-lifts over four objects. `lift_ok` is the 2 cm test-lift: the object
@@ -126,6 +145,15 @@ not constant across theta (`frac_varying`):
 | rubiks_cube | 109 | 0.060 | 0.385 | 0.025 | 0.147 |
 | mug | 269 | 0.018 | 0.134 | **0.154** | **0.903** |
 | cracker_box | 117 | 0.004 | 0.034 | 0.006 | 0.034 |
+
+`n_cands` is the number of distinct candidates that actually reached the label tree, not the
+number the filter admitted. **The banana's 58 does not reconcile with the prep note.** Prep
+§1.3 measured 102–127 survivors under `--candidate-filter both` at `--n-candidates 1000`,
+but that measurement was taken at the banana's *x 2 cm* cell while the v1 candidate dump was
+taken at the *offset 0* cell, and the two cells settle the object into different rest poses,
+so the approach cone and the table filter cut different proposals. That is the likely cause;
+it was not verified, and the discrepancy is **unreconciled**. It affects only how many
+candidates the head had to rank on the banana, not any held-out number in §6.
 
 Two things fall out of this table.
 
@@ -157,6 +185,9 @@ is also the worst of the four (`scripts/test_lift_head_probe.py --reach`, output
 | cracker_box | 1521 | **0.0100 m** | **0.501** | 0.621 |
 | mug | 3497 | 0.0000 m | 0.826 | 0.875 |
 | rubiks_cube | 1417 | 0.0000 m | 0.831 | 0.921 |
+
+(All 7 189 rows carry a finite `ik_err1`, so the probe's NaN handling does not move this
+table; the script now drops non-finite rows before the mean and prints the surviving count.)
 
 Its 1 521 rows would have been 21 % of the dataset and would have taught the head only that
 this asset never lifts. Excluded everywhere in v1.
@@ -263,6 +294,62 @@ predicting `final_ok`). On the held-out object both are close to chance and the 
 the head its baseline ability, but neither has three thousand training rows bought it any
 transferable one.
 
+
+### 5.1 The pre-registered ECE fallback (frozen layers 2–3 + weight decay 1e-3)
+
+The plan pre-registered one fallback for a failed ECE gate: freeze the head's deep layers,
+add weight decay, retrain once, report both fits. It had been run only on the partial,
+pre-Ruling-8 dataset. It is run here on the **final** dataset, once, on the CPU:
+
+```
+.venv/bin/python -u scripts/test_lift_train.py \
+    --dataset output/test_lift/v1/dataset.npz \
+    --pretrained-head output/test_lift/v1/embeddings/prediction_head.pt \
+    --out output/test_lift/v1/models_frozen_full \
+    --freeze-deep-layers --weight-decay 1e-3 --device cpu
+    # -> output/test_lift/v1/models_frozen_full/report.json (and train.log)
+```
+
+`--freeze-deep-layers` trains only layer 1 and the belief path; layers 2–3 keep their
+GraspGenX warm-start weights. Everything else — splits, seed 0, z-dropout mixture, early
+stopping on the val BCE mixture — is unchanged. The fallback early-stopped at epoch 48 of
+69, against epoch 29 of 50 for the main fit.
+
+**Gate 1 — head ECE ≤ 0.05, both fits, per regime:**
+
+| split | regime | main (`models/`) | fallback (`models_frozen_full/`) |
+|---|---|---|---|
+| val | unknown | **0.034** | **0.044** |
+| val | prior | **0.032** | **0.048** |
+| val | true | 0.073 | 0.052 |
+| val | post | **0.040** | 0.065 |
+| test | unknown | 0.300 | 0.409 |
+| test | prior | 0.415 | 0.494 |
+| test | true | 0.337 | 0.393 |
+| test | post | **0.047** | 0.157 |
+
+(Bold = passes the 0.05 gate. Gate verdict is unchanged: `head_ece_pass` is `false` on both
+splits for both fits.)
+
+**The fallback did not help.** On the held-out object it is worse in **all four** regimes —
+including the one regime the main fit passed, `post`, which goes 0.047 → 0.157. On val it
+trades one failure for another: the `true` regime improves 0.073 → 0.052 but still fails,
+while `post` crosses the gate the wrong way, 0.040 → 0.065. Held-out BCE is worse in every
+regime too (unknown 0.967 → 1.301, prior 1.335 → 1.943, true 1.279 → 1.639, post
+0.314 → 0.478). Freezing layers 2–3 removes capacity the head was using in-distribution and
+buys no calibration on a new object, so **§6 and §8 stay on the main fit**; no episode was
+re-run with the fallback checkpoints.
+
+**φ is not unchanged, and this is a caveat on the comparison.** `--weight-decay` is passed to
+both optimisers, so the fallback also refits φ at wd 1e-3: val NLL −9.79 (main: −11.63) and
+test NLL **87.94** (main: 271.59), against the analytic filter's 31.91 / 67.70. Gate 2's
+verdict does not move — pass on val, fail on test in both fits — but the held-out gap to the
+analytic filter shrinks from 204 nats to 20. That is a hint that φ's transfer failure is
+partly over-fitting and is worth a proper regularisation sweep in v2; it is **one point, not
+a sweep**, and it comes from a run whose purpose was the head's ECE. The A2 check moves the
+same way and stays inside its own tolerance: head@unknown AUROC 0.803 val / 0.569 test
+(main: 0.816 / 0.524) against the frozen confidence's 0.505 / 0.567.
+
 ---
 
 ## 6. Held-out evaluation
@@ -332,10 +419,21 @@ Labelled outcome of the candidates named below, over the cube's 13 theta cells:
 | head, density prior (A3, A4) | **48** | .374 / .442 / .375 / **.543** | **0.000** |
 
 **The oracle must be probed at the authored CoM, not at the cell's nominal offset.**
-`--com-offset 0.02 0 0` shifts the asset's own body-frame CoM, which does not sit at the mesh
-centroid; the authored value the simulator applies and `head_oracle` conditions on is
-`[0.00992, 0.02901, -0.00240]`, over 2 cm from `[0.02, 0, 0]`. Probed at the authored theta
-the head reproduces `head_oracle`'s recorded `idx_first` exactly in all four cells:
+`--com-offset 0.02 0 0` is *added to* the asset's authored body-frame CoM, and the addition
+is exact. The cube's authored CoM at offset 0 is `[-0.01008, 0.02901, -0.00240]`, so theta 3
+of the labelled grid, which shifts x by +0.874 cm, reads `[-0.00134, 0.02901, -0.00240]` —
+the other two components untouched. The `off_x02cm` cell therefore lands on
+`[0.00992, 0.02901, -0.00240]`, over 2 cm from the nominal `[0.02, 0, 0]`.
+
+**What is displaced is the body-frame ORIGIN, not the CoM.** The earlier reading of this doc
+said the authored CoM does not sit at the mesh centroid. Measured, it does: the point-cloud
+centroid is `[-0.01037, 0.02992, -0.00125]` and the authored CoM at offset 0 is
+`[-0.01008, 0.02901, -0.00240]`, apart by 0.3 / 0.9 / 1.2 mm per axis, **1.5 mm** in total —
+the asset is a uniform-density cube and its CoM is where you would expect. The gap between
+`[0.02, 0, 0]` and the authored value is that the cube's body-frame origin sits **3.2 cm**
+from its own centroid, dominated by y = 2.99 cm. A "2 cm CoM offset" is 2 cm measured from
+that origin, not from the object's middle. Probed at the authored theta the head reproduces
+`head_oracle`'s recorded `idx_first` exactly in all four cells:
 
 | cell | mass | authored CoM (m) | A5 argmax | labelled `final_ok` | `head_oracle` `idx_first` / `idx_second` | E2 |
 |---|---|---|---|---|---|---|
@@ -371,11 +469,20 @@ probability is 0.649 overall and 0.7185 in `off_x03cm_m1.8kg`. Had the test-lift
 two arms would have decided differently.
 
 `head_phi` is the one arm whose posterior does move, and it moves the wrong way:
-`m_post` = 0.94–1.39 kg against a true 0.6 kg (and 1.29 kg against a true 1.8 kg), E1 post
+per-cell mean `m_post` 0.94 / 1.39 / 1.11 kg against a true 0.6 kg (episode range
+0.92–1.59 kg), and 1.29 kg against a true 1.8 kg; E1 post
 5.443 cm against a 2.500 cm prior. φ is applied ungated by design — it was trained on every
 row's trace, including the rows where the analytic update was skipped — so unlike
 `head_filter` it produces a posterior even when the test-lift failed. Here that is a
-liability rather than an advantage.
+liability rather than an advantage. The per-cell `m_post` figures are read straight off the
+episode logs:
+
+```python
+# .venv/bin/python -c '...'  over output/test_lift/v1/eval
+from analysis.test_lift.episode_log import read_episode
+[float(read_episode(p)["m_post"])
+ for p in glob.glob("output/test_lift/v1/eval/*/off_*/head_phi/seed_*.npz")]
+```
 
 ---
 
@@ -518,13 +625,45 @@ this figure means anything.
    §6 shows that error propagating straight into the head's argmax. The prior is a study
    input that was never calibrated per object.
 8. **One training seed.** `SEED = 0` throughout; no seed sweep on the head or φ.
-9. **Embeddings preprocessing was wrong until this task.** `scripts/graspgenx_dump_embeddings.py`
-   centred the object cloud on the raw points while the serving path centres on what survives
-   `point_cloud_outlier_removal`. Invisible on banana and rubiks_cube (2048/2048 points kept)
-   but the mug loses 137 points, which biased every rescored confidence down by 0.073 and
-   failed the 0.05 gate at 0.288. Fixed here; all three objects were re-dumped, and the
-   gaps are now 0.008 / 0.002 / 0.032. Any embeddings file dated before 2026-09-09 05:41 is
-   invalid.
+9. **The belief input is out of distribution for a non-physical reason: body frames.** The
+   head consumes `c_mean` in each object's **own body frame**, and the three objects' body
+   frames have their origins in different places relative to their geometry. The cube's
+   point-cloud centroid sits 2.99 cm along body-y from its origin (§6); the banana's and the
+   mug's sit at 1.30 cm and 0.03 cm. Standardised with the *train* buffers stored in
+   `latent.pt`, the cube's `z_prior` CoM-y column reads **+2.34 sd** while the whole
+   banana + mug train range for that column is **[−0.21, +0.89]** — the held-out object's
+   prior is outside every prior the head ever saw, on a column that carries no physics, only
+   a convention about where the asset's author put the origin. `z_true` is different: the
+   cube's range there, **[+0.77, +3.76]**, sits inside the train range **[−3.86, +5.37]**,
+   because the theta grid sweeps the CoM about the origin and the training objects' true CoMs
+   span a wide band. That asymmetry lines up with §6 — `head_oracle`, which conditions on
+   `z_true`, does markedly less badly (E2 0.450) than `head_filter` / `head_phi`, which
+   condition on `z_prior` (0.050 / 0.150).
+
+   This is a **second identified mechanism, beside the 5.3× mass-prior error of caveat 7**,
+   not a replacement for it. Both are live: the prior's mass is wrong by physics, and the
+   prior's CoM-y is off-manifold by frame convention. Neither alone explains §6, and the
+   authored-theta probe (§6) says a third thing is also true — the head's response is not
+   monotone even when the belief is right. Reproduce with:
+
+   ```python
+   # .venv/bin/python -c '...'  from the repo root
+   import numpy as np, torch
+   d = np.load("output/test_lift/v1/dataset.npz", allow_pickle=True)
+   ls = torch.load("output/test_lift/v1/models/latent.pt", map_location="cpu")
+   z = (d["z_prior"] - ls["z_mean"].numpy()) / ls["z_std"].numpy()   # col 3 = CoM-y
+   tr, cube = d["split"] == "train", d["object"] == "rubiks_cube"
+   print(z[tr, 3].min(), z[tr, 3].max(), z[cube, 3].min(), z[cube, 3].max())
+   # -> -0.21 0.89 2.34 2.34   ; same lines on d["z_true"] -> -3.86 5.37 0.77 3.76
+   ```
+
+10. **Embeddings preprocessing was wrong until this task.** `scripts/graspgenx_dump_embeddings.py`
+    centred the object cloud on the raw points while the serving path centres on what survives
+    `point_cloud_outlier_removal`. Invisible on banana and rubiks_cube (2048/2048 points kept)
+    but the mug loses 137 points, which biased every rescored confidence down by 0.073 and
+    failed the 0.05 gate at 0.288. Fixed here; all three objects were re-dumped, and the
+    gaps are now 0.008 / 0.002 / 0.032. Any embeddings file dated before 2026-09-09 05:41 is
+    invalid.
 
 ---
 
@@ -573,5 +712,15 @@ In priority order, each pointing at a section above.
 4. **Calibrate the density prior per object, or condition the head on a prior that carries
    its own uncertainty honestly.** A 5.3× mass error steered the head onto a candidate that
    fails every labelled theta (§6). This is necessary but, by item 3, not sufficient.
-5. **Do not train φ on two objects and expect it to transfer.** 271.59 against 67.70 (§5) is
-   memorisation, and the loop reproduces it (§6).
+5. **Express `c` relative to the point-cloud centroid, not the body-frame origin.** §9
+   caveat 9: the objects' body-frame origins sit in different places relative to their
+   geometry, so the cube's `z_prior` CoM-y lands at +2.34 sd against a train range of
+   [−0.21, +0.89] — off-manifold for a reason that is pure asset convention. Subtracting the
+   centroid makes the column mean-zero and comparable across objects, and it costs nothing:
+   the centroid is already computed by `prior_from_points`. Do this before re-reading any
+   belief-conditioned result, because until it is done a "the belief did not transfer" finding
+   cannot be separated from "the belief was in the wrong coordinates".
+6. **Do not train φ on two objects and expect it to transfer.** 271.59 against 67.70 (§5) is
+   memorisation, and the loop reproduces it (§6). §5.1 adds one data point on *why*: at
+   weight decay 1e-3 the held-out NLL falls to 87.94, a 204-nat gap shrinking to 20, so run a
+   proper regularisation sweep before concluding the architecture is at fault.
