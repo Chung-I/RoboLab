@@ -13,7 +13,12 @@ import numpy as np
 from analysis.test_lift.belief import GaussianBelief
 from analysis.test_lift.physics import GRAVITY_G, p_hold
 
-FRANKA_PANDA_DEPTH = 0.10527314
+# Source: graspgenx.x_grippers.resolve_gripper_info("franka_panda").depth (fingertip
+# z-offset from ext/gripper_descriptions' franka_panda/config.json). NOT
+# graspgenx.robot.get_gripper_depth("franka_panda") -- that legacy function looks up
+# <repo>/config/grippers/*.yaml, which does not exist in this cross-embodiment
+# GraspGenX checkout and raises ValueError("... not registered yet.").
+FRANKA_PANDA_DEPTH = 0.1034
 
 
 @dataclass

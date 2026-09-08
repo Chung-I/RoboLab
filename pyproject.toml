@@ -119,6 +119,7 @@ torchvision = { index = "pytorch-cu128" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "analysis/test_lift"]
+markers = ["integration: needs a live external server"]
 
 [tool.ruff]
 target-version = "py311"
