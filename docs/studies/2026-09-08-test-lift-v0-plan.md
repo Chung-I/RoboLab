@@ -1,5 +1,19 @@
 # Test-Lift Belief Re-Ranker (v0) Implementation Plan
 
+> **Status note (2026-09-09): this plan is the record of intent, not of what ran.** The
+> sweep sections and Task 10 below predate two changes made during execution. (1) The
+> batched cell driver `scripts/test_lift_batch.py` (Ruling 32) replaced the one-process-per
+> -episode sweep the plan describes; `scripts/test_lift_sweep.sh` now defaults to
+> `MODE=batch`, one Isaac process per cell of 25 envs, and the single-episode path survives
+> only for `--video` / `--frame-check` / `--oracle-check`. (2) The grid grew from 6 cells to
+> **8** (Ruling 34 added the two heavy cells) and the episode directory naming changed to
+> `off_<axis><mag>cm[_m<mass>kg]` (Ruling 27). The GraspGenX server launch line in this plan
+> is also missing the required `--config` flag (Ruling 22).
+>
+> **`docs/studies/2026-09-08-test-lift-v0-results.md` is authoritative** for the protocol as
+> actually run, for the exact commands (its §3.6 and §3.7), and for every number. Read this
+> plan for the design reasoning and the task breakdown only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** One test-lift of 2 cm, one wrench-based Kalman update on (mass, CoM), and a belief-weighted re-ranking of GraspGen's fixed candidate set, so that the second grasp is physically informed. No training.
