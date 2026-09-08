@@ -102,6 +102,8 @@ parser.add_argument("--grasp-depth-offset", type=float, default=GRASP_DEPTH_OFFS
 parser.add_argument("--candidate-filter", choices=["cone", "scene", "both"], default="cone",
                     help="cone = v0 approach cone; scene = open-gripper vs table and neighbours "
                          "(analysis/test_lift/collision.py); both = intersection")
+parser.add_argument("--finger-effort", type=float, default=None,
+                    help="override the panda_hand actuator effort_limit (N); the knee-sweep grip knob")
 parser.add_argument("--filter-report", action="store_true",
                     help="fetch candidates, print the survivor count under all three filters per seed, "
                          "and exit before any grasp is executed")
@@ -336,7 +338,7 @@ def main():
     env_name, events = register_test_lift_env(
         args.task_file, args.object, args.mass, tuple(args.com_offset),
         postfix=f"_TLB_{args.object}_{cell_name}", seed=seeds[0],
-        with_camera=False)
+        with_camera=False, finger_effort=args.finger_effort)
 
     sched = phase_schedule()
     print(f"[schedule] {N} envs = {len(arms)} arms x {n_seeds} seeds | {TOTAL_STEPS} control steps: "
@@ -424,6 +426,8 @@ def main():
                              com_offset_xyz=np.array(args.com_offset), grasps_o=grasps_o, confs=confs,
                              m_prior=b0.m_mean, c_prior_o=b0.c_mean, c_prior_cov=b0.c_cov,
                              yaw_fix=args.yaw_fix, idx_first=int(i1), idx_second=-1,
+                             finger_effort=(-1.0 if args.finger_effort is None else float(args.finger_effort)),
+                             candidate_filter=args.candidate_filter,
                              second_lift_ok=False, hold_prob_first=np.nan))
         print(f"[table] z_table={np.round(cell.z_table, 4).tolist()} "
               f"obj_rest_z={np.round(T_obj[:, 2, 3], 4).tolist()}", flush=True)
@@ -556,7 +560,15 @@ def main():
 
 
 if __name__ == "__main__":
+    # app.close() hard-exits the interpreter, which would run BEFORE Python prints an
+    # uncaught exception's traceback: the process then dies with rc=0 and an empty log.
+    # Print and flush the traceback here, and carry a non-zero exit code through.
     try:
         main()
-    finally:
-        app.close()
+    except BaseException:  # noqa: BLE001  (SystemExit / KeyboardInterrupt included on purpose)
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)           # app.close() would exit 0 and hide the failure from the sweep
+    app.close()

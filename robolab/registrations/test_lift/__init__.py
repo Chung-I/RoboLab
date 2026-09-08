@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 """Env registration for the test-lift v0 study: Franka Panda hand, absolute-pose IK, pinned object physics."""
+import copy
+
 from isaaclab.utils import configclass
 
 from robolab.constants import TASK_DIR
@@ -25,7 +27,8 @@ class FrankaIKAbsActionCfg(FrankaIKActionCfg):
 def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
                            com_offset_xyz: tuple, postfix: str,
                            seed: int = 1,
-                           with_camera: bool = False) -> tuple[str, ObjectPhysicsEventsCfg]:
+                           with_camera: bool = False,
+                           finger_effort: float | None = None) -> tuple[str, ObjectPhysicsEventsCfg]:
     """Register a one-object test-lift env and return `(env_name, events_cfg)`.
 
     Physics events (mass/CoM pin) are NOT passed into `auto_discover_and_create_cfgs` --
@@ -44,6 +47,11 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
     a wrench, and no policy consumes observations. Only `--video` needs the camera, so
     only `--video` pays for it. With `with_camera=False` the env registers no camera and
     no observation group at all, and `env.reset()` returns an empty observation dict.
+
+    `finger_effort` (N) overrides the `panda_hand` actuator's `effort_limit` (200 N in
+    `franka_high_pd`). It is the grip-force knob of the v1-prep knee sweep: with the finger
+    PD at stiffness 2e3 the clamp force on a 7 cm object is ~70 N per finger unless the
+    limit caps it, so values below ~70 N are what weaken the grasp. `None` keeps the cfg.
     """
     # Proprio observations are not required for v0: the episode driver reads
     # robot.data directly, and no policy in this study consumes observations.
@@ -54,13 +62,26 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
     else:
         ObservationCfg = generate_obs_cfg({})
         camera_cfg = []
+    robot_cfg = FrankaCfg
+    if finger_effort is not None:
+        # FrankaCfg is an IsaacLab configclass: `robot` is a dataclass field, reachable on an
+        # instance. Subclass with a deep-copied ArticulationCfg as the new field default, so
+        # the module-level cfg is never mutated across cells in one process.
+        weak_robot = copy.deepcopy(FrankaCfg().robot)
+        weak_robot.actuators["panda_hand"].effort_limit = float(finger_effort)
+
+        @configclass
+        class FrankaWeakGripCfg(FrankaCfg):
+            robot = weak_robot
+
+        robot_cfg = FrankaWeakGripCfg
     result = auto_discover_and_create_cfgs(
         task_dir=TASK_DIR,
         tasks=task_file,
         env_postfix=postfix,
         observations_cfg=ObservationCfg(),
         actions_cfg=FrankaIKAbsActionCfg(),
-        robot_cfg=FrankaCfg,
+        robot_cfg=robot_cfg,
         camera_cfg=camera_cfg,
         lighting_cfg=SphereLightCfg,
         background_cfg=HomeOfficeBackgroundCfg,
