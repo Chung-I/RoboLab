@@ -206,7 +206,7 @@ def make_object_physics_events_cfg_xyz(
             },
         )
     if any(v != 0.0 for v in off):
-        cfg.set_com = EventTerm(
+        cfg.offset_com = EventTerm(
             func=set_rigid_body_com_offset,
             mode="reset",
             params={"asset_cfg": SceneEntityCfg(object_name), "com_offset": off},
