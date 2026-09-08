@@ -77,7 +77,7 @@ from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, 
                                       CLEAR_OK_FRAC, CLOSE, GRASP_DEPTH_OFFSET, HOLD_STEPS,
                                       LIFT_DZ, LIFT_OK_FRAC, MOVE_STEPS, OBJECT_MASS_KG, OPEN,
                                       R_F, R_TAU, SETTLE_STEPS, STANDOFF, TILT_MAX_DEG,
-                                      TOTAL_STEPS, arm_of, assert_finger_joints,
+                                      TOTAL_STEPS, arm_of, assert_finger_joints, assign_candidates,
                                       branch_stage_a_schedule, decide_advance, hand_target,
                                       candidate_keep_mask, offset_dir_name, phase_schedule, reachable_candidates,
                                       real_hold, seed_of, select_first, select_second, tilt_deg,
@@ -107,6 +107,14 @@ parser.add_argument("--finger-effort", type=float, default=None,
 parser.add_argument("--filter-report", action="store_true",
                     help="fetch candidates, print the survivor count under all three filters per seed, "
                          "and exit before any grasp is executed")
+parser.add_argument("--dump-candidates", default=None,
+                    help="write the filtered candidate set + canonical rest pose to this npz and exit")
+parser.add_argument("--candidates-file", default=None,
+                    help="load candidates (and the canonical rest pose) from this npz instead of calling GraspGenX")
+parser.add_argument("--label-all", action="store_true",
+                    help="label mode: env i executes candidate START+i under one theta; all envs advance")
+parser.add_argument("--theta-id", type=int, default=-1)
+parser.add_argument("--cand-range", type=int, nargs=2, default=None, metavar=("START", "END"))
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = False   # no episode in this driver reads an image; see the docstring
@@ -125,7 +133,7 @@ from analysis.test_lift.belief import prior_from_points, update_from_wrench  # n
 from analysis.test_lift.collision import (gripper_points_world, load_gripper_points,  # noqa: E402
                                           scene_collision, table_collision)
 from analysis.test_lift.episode_log import write_episode  # noqa: E402
-from analysis.test_lift.frames import (gravity_in_object_frame, lifted_target,  # noqa: E402
+from analysis.test_lift.frames import (T_to_pose7, gravity_in_object_frame, lifted_target,  # noqa: E402
                                        object_load_from_measured, pose7_to_T, pregrasp_target,
                                        wrench_hand_to_object)
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
@@ -320,15 +328,27 @@ def final_hold(env, z_before, gap) -> np.ndarray:
 
 
 def main():
-    arms, seeds = list(args.arms), list(args.seeds)
+    if args.label_all:
+        if args.candidates_file is None or args.cand_range is None or args.theta_id < 0:
+            raise SystemExit("--label-all needs --candidates-file, --cand-range and --theta-id")
+        start, end = args.cand_range
+        arms, seeds = ["label"] * (end - start), [args.seeds[0]]
+    else:
+        arms, seeds = list(args.arms), list(args.seeds)
     n_seeds, N = len(seeds), len(arms) * len(seeds)
     cell = Cell(arms, seeds)
     params = GraspParams()
 
-    cell_name = offset_dir_name(args.com_offset, args.mass, OBJECT_MASS_KG.get(args.object))
-    cell_dir = os.path.join(args.out, args.object, cell_name)
-    for arm in arms:
-        os.makedirs(os.path.join(cell_dir, arm), exist_ok=True)
+    if args.label_all:
+        cell_dir = os.path.join(args.out, args.object, f"theta_{args.theta_id:02d}")
+        os.makedirs(cell_dir, exist_ok=True)
+        postfix = f"_TLB_{args.object}_t{args.theta_id}_c{start}"
+    else:
+        cell_name = offset_dir_name(args.com_offset, args.mass, OBJECT_MASS_KG.get(args.object))
+        cell_dir = os.path.join(args.out, args.object, cell_name)
+        for arm in arms:
+            os.makedirs(os.path.join(cell_dir, arm), exist_ok=True)
+        postfix = f"_TLB_{args.object}_{cell_name}"
     set_output_dir(cell_dir)
     print(f"[cell] out_dir={cell_dir}", flush=True)
 
@@ -337,7 +357,7 @@ def main():
     # the point subsample, both of which are per-env below. One registration seed is enough.
     env_name, events = register_test_lift_env(
         args.task_file, args.object, args.mass, tuple(args.com_offset),
-        postfix=f"_TLB_{args.object}_{cell_name}", seed=seeds[0],
+        postfix=postfix, seed=seeds[0],
         with_camera=False, finger_effort=args.finger_effort)
 
     sched = phase_schedule()
@@ -355,6 +375,19 @@ def main():
         rb.settle()                       # the object spawns above the table; let it land
 
         T_obj = object_T_w(env, args.object)
+        rest_delta = np.zeros((N, 3))
+        if args.candidates_file is not None:
+            cf = np.load(args.candidates_file, allow_pickle=False)
+            T_rest = cf["T_obj_rest"]
+            settled_local = T_obj[:, :3, 3] - rb.origins[:, :3]
+            rest_delta = settled_local - T_rest[:3, 3][None]
+            pose7 = np.tile(T_to_pose7(T_rest)[None], (N, 1)).astype(np.float32)
+            pose7[:, :3] += rb.origins[:, :3]
+            obj = env.scene[args.object]
+            obj.write_root_pose_to_sim(torch.as_tensor(pose7, device=env.device))
+            obj.write_root_velocity_to_sim(torch.zeros((N, 6), device=env.device))
+            rb.step(rb.hand_pose_w(), np.full(N, OPEN), SETTLE_STEPS // 2)   # let it re-settle in place
+            T_obj = object_T_w(env, args.object)
         cell.R_settle = [T_obj[i][:3, :3].copy() for i in range(N)]
 
         # ---- per-env point sets and rng streams ----
@@ -367,17 +400,11 @@ def main():
             pts_by_env.append(sample_surface_points(mesh_pts, N_POINTS, r))
             rngs.append(r)
 
-        # ---- GraspGenX: one inference per seed, shared by that seed's arms ----
-        client = GraspGenClient(gripper_name="franka_panda")
-        if not client.available():
-            raise RuntimeError(
-                "GraspGenX server is not answering on 127.0.0.1:5556. Start it with "
-                "`.venv/bin/python -u client-server/graspgenx_server.py --config "
-                "<repo>/ext/graspgenx_checkpoints/release --assets_dir <repo>/assets "
-                "--default_gripper franka_panda --host 127.0.0.1 --port 5556` in ~/Codes/GraspGenX.")
         # Table top per env: the settled object rests on it, so the lowest of its surface
         # points in world is the table top. Measured, not assumed. Needed by the scene filter
-        # before any candidate is ranked, and logged below.
+        # before any candidate is ranked, and logged below. Uses the mesh-sampled points_o
+        # (computed above); if a --candidates-file is loaded, pts_by_env is overwritten with
+        # its own points_o AFTER this, so this measurement is unaffected either way.
         for i in range(N):
             cell.z_table[i] = float(((T_obj[i][:3, :3] @ pts_by_env[i].T).T + T_obj[i][:3, 3])[:, 2].min())
         mesh_cache = {}
@@ -385,28 +412,51 @@ def main():
         gpts = load_gripper_points()
         filt = dict(mode=args.candidate_filter, depth_offset=args.grasp_depth_offset, gpts=gpts)
 
-        cands = {}                        # seed index -> (grasps_o, confs), already filtered
-        for s in range(n_seeds):
-            i0 = s                        # first env of that seed (arm 0)
-            g_raw, c_raw = client.infer(pts_by_env[i0], num_grasps=args.n_candidates)
+        if args.candidates_file is not None:
+            cf = np.load(args.candidates_file, allow_pickle=False)
+            cands = {0: (cf["grasps_o"], cf["confs"])}
+            pts_by_env = [cf["points_o"] for _ in range(N)]
+            print(f"[candidates] loaded {len(cf['confs'])} from {args.candidates_file}", flush=True)
+        else:
+            # ---- GraspGenX: one inference per seed, shared by that seed's arms ----
+            client = GraspGenClient(gripper_name="franka_panda")
+            if not client.available():
+                raise RuntimeError(
+                    "GraspGenX server is not answering on 127.0.0.1:5556. Start it with "
+                    "`.venv/bin/python -u client-server/graspgenx_server.py --config "
+                    "<repo>/ext/graspgenx_checkpoints/release --assets_dir <repo>/assets "
+                    "--default_gripper franka_panda --host 127.0.0.1 --port 5556` in ~/Codes/GraspGenX.")
+            cands = {}                    # seed index -> (grasps_o, confs), already filtered
+            for s in range(n_seeds):
+                i0 = s                    # first env of that seed (arm 0)
+                g_raw, c_raw = client.infer(pts_by_env[i0], num_grasps=args.n_candidates)
+                if args.filter_report:
+                    counts = {m: int(candidate_keep_mask(g_raw, T_obj[i0], args.approach_z_max, m, cell.z_table[i0],
+                                                         scene_by_env[i0], args.grasp_depth_offset, gpts).sum())
+                              for m in ("cone", "scene", "both")}
+                    w = gripper_points_world(g_raw, T_obj[i0], args.grasp_depth_offset, gpts)
+                    n_table = int(table_collision(w, cell.z_table[i0]).sum())
+                    n_nbr = int(scene_collision(w, scene_by_env[i0]).sum())
+                    print(f"[filter-report] seed={seeds[s]} n_raw={len(c_raw)} cone={counts['cone']} "
+                          f"scene={counts['scene']} both={counts['both']} table_hits={n_table} "
+                          f"neighbour_hits={n_nbr} z_table={cell.z_table[i0]:.4f} "
+                          f"scene_pts={len(scene_by_env[i0])}", flush=True)
+                    continue
+                g_f, c_f, n_raw = reachable_candidates(g_raw, c_raw, T_obj[i0], args.approach_z_max,
+                                                       z_table=cell.z_table[i0], scene_pts_w=scene_by_env[i0], **filt)
+                cands[s] = (g_f, c_f)
+                print(f"[candidates] seed={seeds[s]} {len(c_f)}/{n_raw} kept by filter={args.candidate_filter}", flush=True)
             if args.filter_report:
-                counts = {m: int(candidate_keep_mask(g_raw, T_obj[i0], args.approach_z_max, m, cell.z_table[i0],
-                                                     scene_by_env[i0], args.grasp_depth_offset, gpts).sum())
-                          for m in ("cone", "scene", "both")}
-                w = gripper_points_world(g_raw, T_obj[i0], args.grasp_depth_offset, gpts)
-                n_table = int(table_collision(w, cell.z_table[i0]).sum())
-                n_nbr = int(scene_collision(w, scene_by_env[i0]).sum())
-                print(f"[filter-report] seed={seeds[s]} n_raw={len(c_raw)} cone={counts['cone']} "
-                      f"scene={counts['scene']} both={counts['both']} table_hits={n_table} "
-                      f"neighbour_hits={n_nbr} z_table={cell.z_table[i0]:.4f} "
-                      f"scene_pts={len(scene_by_env[i0])}", flush=True)
-                continue
-            g_f, c_f, n_raw = reachable_candidates(g_raw, c_raw, T_obj[i0], args.approach_z_max,
-                                                   z_table=cell.z_table[i0], scene_pts_w=scene_by_env[i0], **filt)
-            cands[s] = (g_f, c_f)
-            print(f"[candidates] seed={seeds[s]} {len(c_f)}/{n_raw} kept by filter={args.candidate_filter}", flush=True)
-        if args.filter_report:
-            print("[filter-report] done; no grasp executed", flush=True)
+                print("[filter-report] done; no grasp executed", flush=True)
+                return
+
+        if args.dump_candidates is not None:
+            g_f, c_f = cands[0]
+            T0 = T_obj[0].copy(); T0[:3, 3] -= rb.origins[0, :3]
+            np.savez_compressed(args.dump_candidates, grasps_o=g_f, confs=c_f, points_o=pts_by_env[0],
+                                T_obj_rest=T0, z_table=float(cell.z_table[0]), object=args.object,
+                                candidate_filter=args.candidate_filter, n_raw=int(args.n_candidates))
+            print(f"[dump-candidates] {len(c_f)} candidates -> {args.dump_candidates}", flush=True)
             return
 
         # ---- priors, table height, first grasp choice ----
@@ -417,8 +467,12 @@ def main():
             grasps_o, confs = cands[seed_of(i, n_seeds)]
             b0 = prior_from_points(pts)
             c_true = authored[i]                   # already includes the applied offset (Task 6)
-            i1 = select_first(cell.arms[i], grasps_o, confs, b0, args.mass, c_true,
-                              gravity_in_object_frame(T_obj[i]), params, rngs[i])
+            if args.label_all:
+                cand_idx, pad = assign_candidates(len(confs), start, N)
+                i1 = int(cand_idx[i])
+            else:
+                i1 = select_first(cell.arms[i], grasps_o, confs, b0, args.mass, c_true,
+                                  gravity_in_object_frame(T_obj[i]), params, rngs[i])
             tgt1[i] = hand_target(grasps_o[i1], T_obj[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
             b0s.append(b0)
             i1s.append(int(i1))
@@ -428,7 +482,11 @@ def main():
                              yaw_fix=args.yaw_fix, idx_first=int(i1), idx_second=-1,
                              finger_effort=(-1.0 if args.finger_effort is None else float(args.finger_effort)),
                              candidate_filter=args.candidate_filter,
-                             second_lift_ok=False, hold_prob_first=np.nan))
+                             second_lift_ok=False, hold_prob_first=np.nan,
+                             theta_id=int(args.theta_id), cand_id=int(i1),
+                             pad=bool(pad[i]) if args.label_all else False,
+                             rest_z=float(T_obj[i][2, 3] - rb.origins[i][2]),
+                             rest_delta_xyz=rest_delta[i]))
         print(f"[table] z_table={np.round(cell.z_table, 4).tolist()} "
               f"obj_rest_z={np.round(T_obj[:, 2, 3], 4).tolist()}", flush=True)
 
@@ -437,7 +495,10 @@ def main():
         for i in range(N):
             logs[i].update(first_lift_ok=bool(g1["ok"][i]),
                            wrench_bias_h=g1["bias"][i], wrench_hold_h=g1["w_hold"][i],
-                           wrench_bias_trace_h=g1["bias_trace"][i], wrench_trace_h=g1["hold_trace"][i])
+                           wrench_bias_trace_h=g1["bias_trace"][i], wrench_trace_h=g1["hold_trace"][i],
+                           rise1=float(g1["rise"][i]), tilt1=float(g1["tilt"][i]),
+                           gap1=float(g1["gap"][i]), tip_z1=float(g1["tip_z"][i]),
+                           T_hand_hold=g1["T_hand"][i], T_obj_hold=g1["T_obj_hold"][i])
 
         # ---- belief update, then the per-arm decision ----
         advance = np.zeros(N, dtype=bool)
@@ -493,6 +554,9 @@ def main():
             elapsed += n_steps
             if elapsed == ADVANCE_FINAL_STEP:
                 final_ok = np.where(advance, final_hold(env, g1["z0"], rb.finger_gap()), final_ok)
+                rise_final = object_z(env, args.object) - g1["z0"]
+                for i in range(N):
+                    logs[i]["rise_final"] = float(rise_final[i])
                 read_final = True
         if not read_final:
             raise RuntimeError("stage A never crossed the advancing envs' final-lift step")
@@ -536,14 +600,19 @@ def main():
             logs[i]["second_lift_ok"] = bool(g2["ok"][i])
             final_ok[i] = bool(fo2[i])
 
-        if rb.n_steps != TOTAL_STEPS:
-            raise RuntimeError(f"stepped {rb.n_steps} control steps, the schedule says {TOTAL_STEPS}")
+        # A --candidates-file run re-settles the object after the canonical-pose teleport
+        # (Step 3), which costs SETTLE_STEPS // 2 control steps outside phase_schedule()'s
+        # count -- that schedule only covers the (still identical) grasp/branch timeline.
+        expected_steps = TOTAL_STEPS + (SETTLE_STEPS // 2 if args.candidates_file is not None else 0)
+        if rb.n_steps != expected_steps:
+            raise RuntimeError(f"stepped {rb.n_steps} control steps, the schedule says {expected_steps}")
 
         # ---- write one .npz per env ----
         wall_s = time.time() - t0
         for i in range(N):
             logs[i].update(final_ok=bool(final_ok[i]), n_grasps=1 if advance[i] else 2, wall_s=wall_s)
-            path = os.path.join(cell_dir, cell.arms[i], f"seed_{cell.seeds[i]}.npz")
+            path = (os.path.join(cell_dir, f"cand_{logs[i]['cand_id']:04d}.npz") if args.label_all
+                    else os.path.join(cell_dir, cell.arms[i], f"seed_{cell.seeds[i]}.npz"))
             write_episode(path, **logs[i])
             print(f"[episode] env={i} arm={cell.arms[i]} seed={cell.seeds[i]} "
                   f"first_ok={bool(g1['ok'][i])} advance={bool(advance[i])} "
