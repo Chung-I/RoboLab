@@ -394,7 +394,7 @@ def main():
             obj = env.scene[args.object]
             obj.write_root_pose_to_sim(torch.as_tensor(pose7, device=env.device))
             obj.write_root_velocity_to_sim(torch.zeros((N, 6), device=env.device))
-            rb.step(rb.hand_pose_w(), np.full(N, OPEN), SETTLE_STEPS // 2)   # let it re-settle in place
+            rb.settle(SETTLE_STEPS // 2)      # env-local hand pose (VecRobot.settle subtracts origins)
             T_obj = object_T_w(env, args.object)
         cell.R_settle = [T_obj[i][:3, :3].copy() for i in range(N)]
 
@@ -512,6 +512,7 @@ def main():
                            wrench_bias_trace_h=g1["bias_trace"][i], wrench_trace_h=g1["hold_trace"][i],
                            rise1=float(g1["rise"][i]), tilt1=float(g1["tilt"][i]),
                            gap1=float(g1["gap"][i]), tip_z1=float(g1["tip_z"][i]),
+                           ik_err1=float(g1["reach_err"][i]),
                            T_hand_hold=g1["T_hand"][i], T_obj_hold=g1["T_obj_hold"][i])
 
         # ---- belief update, then the per-arm decision ----
