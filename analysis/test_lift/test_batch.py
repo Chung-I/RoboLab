@@ -9,7 +9,8 @@ from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, 
                                       MIN_FINGER_GAP, MOVE_STEPS, OBJECT_MASS_KG, R_F, R_TAU,
                                       SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
                                       assert_finger_joints, assign_candidates, branch_stage_a_schedule,
-                                      decide_advance, env_index, grasp_schedule, hand_target,
+                                      DRIVER_ASSIGNED_ARMS, decide_advance, env_index,
+                                      grasp_schedule, hand_target,
                                       offset_dir_name, phase_schedule, reachable_candidates, real_hold,
                                       seed_of, select_first, select_second, setdown_schedule, theta_grid,
                                       tilt_deg, unreachable_after_move, update_allowed, world_approach_z)
@@ -311,8 +312,8 @@ def test_select_first_maps_each_arm_to_its_own_selector():
 def test_select_first_covers_every_arm_and_rejects_anything_else():
     grasps, confs, belief, g_hat, params = _candidate_set()
     for arm in ARMS:
-        if arm == "label":
-            continue  # label is driver-assigned and does not call select_first
+        if arm in DRIVER_ASSIGNED_ARMS:
+            continue  # label and the head_* arms are driver-assigned; see select_first
         i = select_first(arm, grasps, confs, belief, 0.5, np.zeros(3), g_hat, params,
                          np.random.default_rng(0))
         assert 0 <= i < len(confs)
@@ -325,8 +326,8 @@ def test_selectors_honour_exclude_and_second_matches_first():
     grasps, confs, belief, g_hat, params = _candidate_set()
     m_true, c_true = 0.5, np.array([0.05, 0.0, 0.0])
     for arm in ARMS:
-        if arm == "label":
-            continue  # label is driver-assigned and does not call select_first
+        if arm in DRIVER_ASSIGNED_ARMS:
+            continue  # label and the head_* arms are driver-assigned; see select_first
         first = select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
                              np.random.default_rng(3))
         second = select_second(arm, grasps, confs, belief, m_true, c_true, g_hat, params,

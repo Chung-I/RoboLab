@@ -62,7 +62,17 @@ SETTLE_STEPS = 60           # let the object come to rest before any pose is rea
 
 OPEN, CLOSE = 1.0, -1.0
 
-ARMS = ("belief", "next_best", "fixed_threshold", "oracle", "top1", "label")
+#: The v1 head arms. Imported from ``head_arms`` (which is torch) only as NAMES -- this
+#: module stays pure numpy, and the driver is the one that loads the models.
+HEAD_ARMS = ("head_masked", "head_filter", "head_phi", "head_oracle")
+
+ARMS = ("belief", "next_best", "fixed_threshold", "oracle", "top1", "label", *HEAD_ARMS)
+
+#: Arms whose grasp the driver picks itself rather than through :func:`select_first`:
+#: ``label`` walks a candidate range, and the ``head_*`` arms score with a torch model that
+#: this module must not import. Both raise from :func:`select_first` instead of returning a
+#: wrong-but-plausible geometric pick.
+DRIVER_ASSIGNED_ARMS = ("label", *HEAD_ARMS)
 
 #: The mass each test-lift object is registered with unless a cell overrides it. A cell that
 #: overrides it gets a ``_m<mass>kg`` suffix on its episode directory (:func:`offset_dir_name`),
@@ -135,6 +145,10 @@ def select_first(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rn
         raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
     if arm == "label":
         raise ValueError("label arm: the driver assigns the candidate")
+    if arm in HEAD_ARMS:
+        raise ValueError(
+            f"{arm}: the driver selects with analysis.test_lift.head_arms.select_head "
+            "(this module is pure numpy and must not import torch)")
     if arm == "oracle":
         return select_oracle(grasps_o, confs, m_true, c_true, g_hat, params, exclude=exclude)
     if arm == "belief":
@@ -258,19 +272,27 @@ def decide_advance(arm: str, ok1: bool, hold_prob: float, tau_norm: float,
     """Advance to the full lift, or abort and re-grasp? One rule per arm (spec §11.3).
 
     * ``belief`` -- the test-lift held AND the posterior's hold probability clears ``pi_go``.
+    * ``head_filter`` / ``head_phi`` -- the same rule with the HEAD's probability at the
+      chosen grasp under that arm's posterior in place of the analytic ``E[Phi]``. The
+      caller passes it through the same ``hold_prob`` argument, so the two families are
+      compared on identical arithmetic and only the probability model differs (Task-9
+      controller ruling on the head arms).
     * ``fixed_threshold`` -- the test-lift held AND the measured wrist torque norm is within
       ``tau_thr``.
-    * ``next_best`` / ``oracle`` -- the test-lift held.
+    * ``next_best`` / ``oracle`` / ``head_masked`` / ``head_oracle`` -- the test-lift held.
+      ``head_masked`` mirrors ``next_best`` and ``head_oracle`` mirrors ``oracle``, so each
+      head arm has a v0 arm with the SAME advance rule: any E2 difference between the pair
+      comes from the ranking, never from a different decision.
     * ``top1`` / ``label`` -- always advance. It runs the test-lift (both drivers do, for every arm) but
       ignores the outcome, which is the ablation's point: no test-lift decision.
     """
-    if arm == "belief":
+    if arm in ("belief", "head_filter", "head_phi"):
         return bool(ok1) and float(hold_prob) >= float(pi_go)
     if arm == "fixed_threshold":
         return bool(ok1) and float(tau_norm) <= float(tau_thr)
     if arm in ("top1", "label"):
         return True
-    if arm in ("next_best", "oracle"):
+    if arm in ("next_best", "oracle", "head_masked", "head_oracle"):
         return bool(ok1)
     raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
 

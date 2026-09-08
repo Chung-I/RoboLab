@@ -56,6 +56,23 @@ Other deviations from the single-env driver, all recorded in the Task 8e report
   alone. Per-episode outcomes are not expected to reproduce the single-env driver
   step-for-step; the aggregate rates are what the study reads.
 
+The v1 head arms (Task 9)
+-------------------------
+``head_masked``, ``head_filter``, ``head_phi`` and ``head_oracle`` rank candidates with the
+trained belief-conditioned head instead of the analytic ``log conf + log E[Phi]`` score. They
+need three things the v0 arms do not:
+
+* ``--candidates-file`` -- the head indexes a FIXED candidate set by candidate index, so the
+  set must be the dumped one rather than a fresh GraspGenX sample.
+* ``--embeddings-file`` -- the frozen ``e_g`` rows for exactly that set.
+* ``--models-dir`` -- ``head.pt`` / ``latent.pt`` / ``phi.pt``, loaded on CPU.
+
+Because ``--candidates-file`` pins one set, a cell may now run SEVERAL seeds off it: every
+seed maps to the same ``cands[0]``. The seed then varies the MC stream the belief arms draw
+from and the per-env physics, not GraspGen's sampling. That restriction used to be a hard
+error; it is lifted only for the candidates-file case, where the sets are identical by
+construction.
+
 Usage
 -----
 ::
@@ -74,7 +91,7 @@ from isaaclab.app import AppLauncher
 # Pure-numpy shared contract; safe to import before AppLauncher (see the single-env driver).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, CLEAR_DZ,  # noqa: E402
-                                      CLEAR_OK_FRAC, CLOSE, GRASP_DEPTH_OFFSET, HOLD_STEPS,
+                                      CLEAR_OK_FRAC, CLOSE, GRASP_DEPTH_OFFSET, HEAD_ARMS, HOLD_STEPS,
                                       LIFT_DZ, LIFT_OK_FRAC, MOVE_STEPS, OBJECT_MASS_KG, OPEN,
                                       R_F, R_TAU, SETTLE_STEPS, STANDOFF, TILT_MAX_DEG,
                                       TOTAL_STEPS, arm_of, assert_finger_joints, assign_candidates,
@@ -111,6 +128,11 @@ parser.add_argument("--dump-candidates", default=None,
                     help="write the filtered candidate set + canonical rest pose to this npz and exit")
 parser.add_argument("--candidates-file", default=None,
                     help="load candidates (and the canonical rest pose) from this npz instead of calling GraspGenX")
+parser.add_argument("--models-dir", default=None,
+                    help="directory holding head.pt / latent.pt / phi.pt (required by the head_* arms)")
+parser.add_argument("--embeddings-file", default=None,
+                    help="npz of frozen GraspGenX embeddings e_g for the SAME candidate set as "
+                         "--candidates-file (required by the head_* arms)")
 parser.add_argument("--label-all", action="store_true",
                     help="label mode: env i executes candidate START+i under one theta; all envs advance")
 parser.add_argument("--theta-id", type=int, default=-1)
@@ -136,9 +158,14 @@ from analysis.test_lift.episode_log import write_episode  # noqa: E402
 from analysis.test_lift.frames import (T_to_pose7, gravity_in_object_frame, lifted_target,  # noqa: E402
                                        object_load_from_measured, pose7_to_T, pregrasp_target,
                                        wrench_hand_to_object)
+from analysis.test_lift.adapt import AdaptationModule, belief_from_phi  # noqa: E402
+from analysis.test_lift.dataset import moments, trace_to_object_frame  # noqa: E402
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
+from analysis.test_lift.head import BeliefHead, PropertyLatent  # noqa: E402
+from analysis.test_lift.head_arms import delta_belief, head_prob_at, select_head  # noqa: E402
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
-from analysis.test_lift.rerank import FRANKA_PANDA_DEPTH, GraspParams, hold_probability  # noqa: E402
+from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams,  # noqa: E402
+                                       fingertip_points, hold_probability)
 
 N_POINTS = 2048   # surface points fed to GraspGenX and to the density prior (as in Task 8)
 
@@ -327,13 +354,115 @@ def final_hold(env, z_before, gap) -> np.ndarray:
                      for i in range(len(rise))])
 
 
-def main():
-    if args.candidates_file is not None and len(args.seeds) != 1:
+def load_head_models(models_dir: str, embeddings_file: str, n_candidates: int) -> dict:
+    """Load the Task-8 head, latent encoder and phi on CPU, plus this object's ``e_g``.
+
+    Every shape is read out of the checkpoints themselves rather than re-passed on the
+    command line: ``latent.mlp.2.weight`` gives d_z, ``head.z_proj.weight`` gives (D//2, d_z)
+    and ``phi.mlp.0.weight`` gives phi's hidden width. A checkpoint that disagrees with the
+    embeddings file therefore fails at load time with a shape message, instead of silently
+    scoring a candidate set the head was never trained for.
+
+    ``e_g`` must have one row per candidate: the head arms index it with the SAME candidate
+    index the driver uses, which is only true because ``--candidates-file`` pins the
+    candidate set to the one the embeddings were dumped from.
+    """
+    with np.load(embeddings_file, allow_pickle=False) as z:
+        e_g = z["e_g"].astype(np.float32)
+    if len(e_g) != n_candidates:
         raise SystemExit(
-            f"--candidates-file loads one seed's candidate set (it was dumped from a single "
-            f"env); got --seeds {args.seeds} (len={len(args.seeds)})")
+            f"--embeddings-file has {len(e_g)} rows but the candidate set has {n_candidates}; "
+            "the head arms index e_g by candidate index, so the two files must describe the "
+            "same set (re-dump the embeddings from THIS --candidates-file)")
+
+    def _load(name):
+        path = os.path.join(models_dir, name)
+        if not os.path.isfile(path):
+            raise SystemExit(f"--models-dir {models_dir!r} has no {name}")
+        return torch.load(path, map_location="cpu")
+
+    latent_state = _load("latent.pt")
+    head_state = _load("head.pt")
+    phi_state = _load("phi.pt")
+
+    d_z = int(latent_state["mlp.2.weight"].shape[0])
+    n_in = int(latent_state["z_mean"].shape[0])
+    n_freq = int(latent_state["mlp.0.weight"].shape[1] // n_in)
+    D = int(head_state["layer1.weight"].shape[1])
+    if D != e_g.shape[1]:
+        raise SystemExit(f"head.pt expects D={D} but --embeddings-file has D={e_g.shape[1]}")
+
+    latent = PropertyLatent(n_in=n_in, n_freq=n_freq, d_out=d_z,
+                            d_hidden=int(latent_state["mlp.0.weight"].shape[0]))
+    latent.load_state_dict(latent_state)
+    head = BeliefHead(D, d_z=d_z)
+    head.load_state_dict(head_state)
+    phi = AdaptationModule(hold_steps=HOLD_STEPS,
+                           d_hidden=int(phi_state["mlp.0.weight"].shape[0]))
+    phi.load_state_dict(phi_state)
+    head.eval(); latent.eval(); phi.eval()
+    print(f"[models] head D={D} d_z={d_z} | latent n_in={n_in} n_freq={n_freq} | "
+          f"phi d_hidden={phi.d_hidden} | e_g {e_g.shape} from {embeddings_file}", flush=True)
+    return dict(head=head, latent=latent, phi=phi, e_g=e_g)
+
+
+def phi_posterior(hm, hold_trace_h, bias_h, T_hand_hold, T_obj_hold, grasp_o, prior, params):
+    """phi's posterior belief for one env, built from EXACTLY the inputs the dataset stores.
+
+    ``dataset.build_dataset`` writes ``trace_o`` with ``trace_to_object_frame``, ``p_tip_o``
+    with ``fingertip_points(grasp_o, params.depth)`` and ``g_hat_o`` with
+    ``gravity_in_object_frame(T_obj_hold)``; phi was trained on those three plus the prior's
+    moments. Rebuilding them here through the SAME functions is what makes the arm's phi the
+    trained phi rather than a look-alike.
+
+    Unlike the analytic filter, phi is applied with no ``update_allowed`` gate: it was
+    trained on every row's trace, including the rows where the analytic update was skipped,
+    so gating it here would feed it a distribution it never saw.
+    """
+    trace = trace_to_object_frame(hold_trace_h, bias_h, T_hand_hold, T_obj_hold)   # (HOLD_STEPS, 6)
+    p_tip_o = fingertip_points(np.asarray(grasp_o)[None], params.depth)[0]
+    static = np.concatenate([p_tip_o, gravity_in_object_frame(T_obj_hold)])
+    with torch.no_grad():
+        pred = hm["phi"](torch.as_tensor(trace[None], dtype=torch.float32),
+                         torch.as_tensor(static[None], dtype=torch.float32),
+                         torch.as_tensor(moments(prior)[None], dtype=torch.float32))
+    return belief_from_phi(pred[0].numpy())
+
+
+def head_belief(arm: str, prior_or_post, m_true, c_true):
+    """Which belief each head arm conditions the head on.
+
+    This is the experiment's only real variable, so it lives in one four-line function
+    rather than spread across the selection sites.
+    """
+    if arm == "head_masked":
+        return None                       # the unknown token
+    if arm == "head_oracle":
+        return delta_belief(m_true, c_true)
+    return prior_or_post                  # head_filter / head_phi: prior, then their posterior
+
+
+def main():
+    head_arms_used = [a for a in args.arms if a in HEAD_ARMS] if not args.label_all else []
+    if head_arms_used:
+        missing = [f for f, v in (("--models-dir", args.models_dir),
+                                  ("--embeddings-file", args.embeddings_file),
+                                  ("--candidates-file", args.candidates_file)) if v is None]
+        if missing:
+            raise SystemExit(
+                f"arms {head_arms_used} need {missing}. The head scores a FIXED candidate set "
+                "by index, so the candidates file that pins the set and the embeddings dumped "
+                "from that same file are both mandatory.")
+    if args.label_all and len(args.seeds) != 1:
+        raise SystemExit(f"--label-all runs one theta on one seed; got --seeds {args.seeds}")
     cf = None
     if args.candidates_file is not None:
+        # A dumped candidates file fixes ONE candidate set, so every seed of this cell ranks
+        # the same candidates (mapped below as cands[s] = cands[0]). That is deliberate for
+        # the v1 held-out evaluation: the head's e_g rows are indexed by candidate index, so
+        # the set must not change between seeds. What the seed still varies is the MC stream
+        # the `belief` arms draw from and the per-env physics inside the batched scene; it no
+        # longer varies GraspGen's sampling. Recorded in the v1 results doc as a caveat.
         cf = np.load(args.candidates_file, allow_pickle=False)
         if str(cf["object"]) != args.object:
             raise SystemExit(f"--candidates-file is for {cf['object']!r}, not {args.object!r}")
@@ -421,7 +550,7 @@ def main():
         filt = dict(mode=args.candidate_filter, depth_offset=args.grasp_depth_offset, gpts=gpts)
 
         if args.candidates_file is not None:
-            cands = {0: (cf["grasps_o"], cf["confs"])}
+            cands = {s: (cf["grasps_o"], cf["confs"]) for s in range(n_seeds)}
             pts_by_env = [cf["points_o"] for _ in range(N)]
             n_raw_for_dump = int(cf["n_raw"])   # forwarded as-is if --dump-candidates re-dumps this
             print(f"[candidates] loaded {len(cf['confs'])} from {args.candidates_file}", flush=True)
@@ -470,6 +599,9 @@ def main():
             print(f"[dump-candidates] {len(c_f)} candidates -> {args.dump_candidates}", flush=True)
             return
 
+        # ---- head models (only when a head_* arm is in the cell) ----
+        hm = load_head_models(args.models_dir, args.embeddings_file, len(cands[0][1])) if head_arms_used else None
+
         # ---- priors, table height, first grasp choice ----
         authored = env.scene[args.object].root_physx_view.get_coms().cpu().numpy().reshape(N, -1)[:, :3]
         logs, tgt1, b0s, i1s = [], np.zeros((N, 7)), [], []
@@ -484,6 +616,10 @@ def main():
             c_true = authored[i]                   # already includes the applied offset (Task 6)
             if args.label_all:
                 i1 = int(cand_idx[i])
+            elif cell.arms[i] in HEAD_ARMS:
+                # The head ranks by embedding, so the candidate index is the e_g row index.
+                i1 = select_head(cell.arms[i], hm["e_g"], hm["latent"], hm["head"],
+                                 head_belief(cell.arms[i], b0, args.mass, c_true))
             else:
                 i1 = select_first(cell.arms[i], grasps_o, confs, b0, args.mass, c_true,
                                   gravity_in_object_frame(T_obj[i]), params, rngs[i])
@@ -529,20 +665,33 @@ def main():
             # Kalman mass mean negative. Leaving the posterior equal to the prior is how
             # results.py tells an update from a skip, with no extra log key.
             b1 = b0
-            if cell.arms[i] == "belief":
+            # `head_filter` runs the SAME gated analytic update as `belief` -- it has to, the
+            # head's z_post column was built with that gate (dataset.build_dataset), so an
+            # ungated posterior would be an input regime the head never saw.
+            if cell.arms[i] in ("belief", "head_filter"):
                 if update_allowed(bool(g1["ok"][i]), f_o, b0.m_mean):
                     b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold, R_f=R_F, R_tau=R_TAU)
                 else:
-                    print(f"[no-update] env={i} seed={cell.seeds[i]} first_lift_ok={bool(g1['ok'][i])} "
+                    print(f"[no-update] env={i} seed={cell.seeds[i]} arm={cell.arms[i]} "
+                          f"first_lift_ok={bool(g1['ok'][i])} "
                           f"|f_o|={np.linalg.norm(f_o):.3f}N "
                           f"(0.5*m_prior*G={0.5 * b0.m_mean * GRAVITY_G:.3f}N); "
                           "posterior left at the prior", flush=True)
+            elif cell.arms[i] == "head_phi":
+                b1 = phi_posterior(hm, g1["hold_trace"][i], g1["bias"][i], g1["T_hand"][i],
+                                   T_hold, cands[seed_of(i, n_seeds)][0][i1s[i]], b0, params)
             beliefs_post[i] = b1
             logs[i].update(m_post=b1.m_mean, c_post_o=b1.c_mean, c_post_cov=b1.c_cov)
 
             hp = float("nan")
             if cell.arms[i] == "belief":
                 hp = hold_probability(cands[seed_of(i, n_seeds)][0][i1s[i]], b1, g_hold, params, rngs[i])
+                logs[i]["hold_prob_first"] = hp
+            elif cell.arms[i] in HEAD_ARMS:
+                # Logged for every head arm, but only head_filter / head_phi act on it
+                # (decide_advance); for head_masked / head_oracle it is a free diagnostic.
+                hp = head_prob_at(hm["head"], hm["latent"], hm["e_g"][i1s[i]],
+                                  head_belief(cell.arms[i], b1, args.mass, logs[i]["com_true_o"]))
                 logs[i]["hold_prob_first"] = hp
             advance[i] = decide_advance(cell.arms[i], bool(g1["ok"][i]), hp,
                                         float(np.linalg.norm(tau_h)), args.pi_go, args.tau_thr)
@@ -594,9 +743,15 @@ def main():
                 print(f"[warn] env={i}: every candidate is unreachable after set_down; "
                       "excluding only the first grasp", flush=True)
                 exclude2 = (i1s[i],)
-            i2 = select_second(cell.arms[i], grasps_o, confs, beliefs_post[i], args.mass,
-                               logs[i]["com_true_o"], gravity_in_object_frame(T_obj2[i]),
-                               params, rngs[i], exclude2)
+            if cell.arms[i] in HEAD_ARMS:
+                i2 = select_head(cell.arms[i], hm["e_g"], hm["latent"], hm["head"],
+                                 head_belief(cell.arms[i], beliefs_post[i], args.mass,
+                                             logs[i]["com_true_o"]),
+                                 exclude2)
+            else:
+                i2 = select_second(cell.arms[i], grasps_o, confs, beliefs_post[i], args.mass,
+                                   logs[i]["com_true_o"], gravity_in_object_frame(T_obj2[i]),
+                                   params, rngs[i], exclude2)
             tgt2[i] = hand_target(grasps_o[i2], T_obj2[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
             logs[i]["idx_second"] = int(i2)
 
