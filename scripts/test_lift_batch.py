@@ -328,6 +328,15 @@ def final_hold(env, z_before, gap) -> np.ndarray:
 
 
 def main():
+    if args.candidates_file is not None and len(args.seeds) != 1:
+        raise SystemExit(
+            f"--candidates-file loads one seed's candidate set (it was dumped from a single "
+            f"env); got --seeds {args.seeds} (len={len(args.seeds)})")
+    cf = None
+    if args.candidates_file is not None:
+        cf = np.load(args.candidates_file, allow_pickle=False)
+        if str(cf["object"]) != args.object:
+            raise SystemExit(f"--candidates-file is for {cf['object']!r}, not {args.object!r}")
     if args.label_all:
         if args.candidates_file is None or args.cand_range is None or args.theta_id < 0:
             raise SystemExit("--label-all needs --candidates-file, --cand-range and --theta-id")
@@ -377,7 +386,6 @@ def main():
         T_obj = object_T_w(env, args.object)
         rest_delta = np.zeros((N, 3))
         if args.candidates_file is not None:
-            cf = np.load(args.candidates_file, allow_pickle=False)
             T_rest = cf["T_obj_rest"]
             settled_local = T_obj[:, :3, 3] - rb.origins[:, :3]
             rest_delta = settled_local - T_rest[:3, 3][None]
@@ -413,9 +421,9 @@ def main():
         filt = dict(mode=args.candidate_filter, depth_offset=args.grasp_depth_offset, gpts=gpts)
 
         if args.candidates_file is not None:
-            cf = np.load(args.candidates_file, allow_pickle=False)
             cands = {0: (cf["grasps_o"], cf["confs"])}
             pts_by_env = [cf["points_o"] for _ in range(N)]
+            n_raw_for_dump = int(cf["n_raw"])   # forwarded as-is if --dump-candidates re-dumps this
             print(f"[candidates] loaded {len(cf['confs'])} from {args.candidates_file}", flush=True)
         else:
             # ---- GraspGenX: one inference per seed, shared by that seed's arms ----
@@ -427,6 +435,7 @@ def main():
                     "<repo>/ext/graspgenx_checkpoints/release --assets_dir <repo>/assets "
                     "--default_gripper franka_panda --host 127.0.0.1 --port 5556` in ~/Codes/GraspGenX.")
             cands = {}                    # seed index -> (grasps_o, confs), already filtered
+            n_raw_for_dump = None         # measured pre-filter count for seed 0 (what dump-candidates writes)
             for s in range(n_seeds):
                 i0 = s                    # first env of that seed (arm 0)
                 g_raw, c_raw = client.infer(pts_by_env[i0], num_grasps=args.n_candidates)
@@ -445,6 +454,8 @@ def main():
                 g_f, c_f, n_raw = reachable_candidates(g_raw, c_raw, T_obj[i0], args.approach_z_max,
                                                        z_table=cell.z_table[i0], scene_pts_w=scene_by_env[i0], **filt)
                 cands[s] = (g_f, c_f)
+                if s == 0:
+                    n_raw_for_dump = n_raw
                 print(f"[candidates] seed={seeds[s]} {len(c_f)}/{n_raw} kept by filter={args.candidate_filter}", flush=True)
             if args.filter_report:
                 print("[filter-report] done; no grasp executed", flush=True)
@@ -455,20 +466,23 @@ def main():
             T0 = T_obj[0].copy(); T0[:3, 3] -= rb.origins[0, :3]
             np.savez_compressed(args.dump_candidates, grasps_o=g_f, confs=c_f, points_o=pts_by_env[0],
                                 T_obj_rest=T0, z_table=float(cell.z_table[0]), object=args.object,
-                                candidate_filter=args.candidate_filter, n_raw=int(args.n_candidates))
+                                candidate_filter=args.candidate_filter, n_raw=int(n_raw_for_dump))
             print(f"[dump-candidates] {len(c_f)} candidates -> {args.dump_candidates}", flush=True)
             return
 
         # ---- priors, table height, first grasp choice ----
         authored = env.scene[args.object].root_physx_view.get_coms().cpu().numpy().reshape(N, -1)[:, :3]
         logs, tgt1, b0s, i1s = [], np.zeros((N, 7)), [], []
+        if args.label_all:
+            # Label mode forces n_seeds == 1, so every env shares the same candidate set
+            # (cands[0]); assign_candidates depends only on its length, so compute it once.
+            cand_idx, pad = assign_candidates(len(cands[0][1]), start, N)
         for i in range(N):
             pts = pts_by_env[i]
             grasps_o, confs = cands[seed_of(i, n_seeds)]
             b0 = prior_from_points(pts)
             c_true = authored[i]                   # already includes the applied offset (Task 6)
             if args.label_all:
-                cand_idx, pad = assign_candidates(len(confs), start, N)
                 i1 = int(cand_idx[i])
             else:
                 i1 = select_first(cell.arms[i], grasps_o, confs, b0, args.mass, c_true,
@@ -609,17 +623,26 @@ def main():
 
         # ---- write one .npz per env ----
         wall_s = time.time() - t0
+        n_pad_skipped = 0
         for i in range(N):
             logs[i].update(final_ok=bool(final_ok[i]), n_grasps=1 if advance[i] else 2, wall_s=wall_s)
-            path = (os.path.join(cell_dir, f"cand_{logs[i]['cand_id']:04d}.npz") if args.label_all
-                    else os.path.join(cell_dir, cell.arms[i], f"seed_{cell.seeds[i]}.npz"))
-            write_episode(path, **logs[i])
+            # A padded env (assign_candidates ran out of real candidates and repeated the last
+            # one) shares its cand_id with a real env; writing it would overwrite that real
+            # env's npz. Skip the write -- the [pad] line below reports how many were skipped.
+            if args.label_all and logs[i]["pad"]:
+                n_pad_skipped += 1
+            else:
+                path = (os.path.join(cell_dir, f"cand_{logs[i]['cand_id']:04d}.npz") if args.label_all
+                        else os.path.join(cell_dir, cell.arms[i], f"seed_{cell.seeds[i]}.npz"))
+                write_episode(path, **logs[i])
             print(f"[episode] env={i} arm={cell.arms[i]} seed={cell.seeds[i]} "
                   f"first_ok={bool(g1['ok'][i])} advance={bool(advance[i])} "
                   f"final_ok={bool(final_ok[i])} n_grasps={logs[i]['n_grasps']} "
                   f"ik_err1={g1['reach_err'][i]:.4f} tip_z1={g1['tip_z'][i]:+.4f} "
                   f"tilt1={g1['tilt'][i]:.1f} rise1={g1['rise'][i]:+.4f} "
                   f"ik_err2={g2['reach_err'][i]:.4f}", flush=True)
+        if args.label_all and n_pad_skipped:
+            print(f"[pad] skipped {n_pad_skipped} envs", flush=True)
         print(f"[cell] object={args.object} off={tuple(args.com_offset)} envs={N} "
               f"steps={rb.n_steps} wall_s={wall_s:.1f} first_ok={int(g1['ok'].sum())}/{N} "
               f"final_ok={int(final_ok.sum())}/{N}", flush=True)
