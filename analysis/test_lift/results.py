@@ -73,6 +73,68 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
     return rows
 
 
+def pool_by_arm(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
+    """Every episode under ``root``, pooled per ARM across all cells.
+
+    :func:`aggregate` groups by (object, offset, arm), which is the cell view. The v1
+    held-out evaluation also wants the arm view -- one row per arm over all of its episodes --
+    plus the two diagnostics that separate a ranking failure from a decision failure:
+    ``first_ok_rate`` (did the arm's chosen grasp survive the 2 cm test-lift?) and
+    ``advance_rate`` (did it then advance rather than re-grasp?). Those two are what say
+    whether an arm aborted because ``pi_go`` refused it or because the test-lift did.
+    """
+    per = defaultdict(list)
+    for path in sorted(glob.glob(os.path.join(root, "*", "off_*", "*", "seed_*.npz"))):
+        obj, off, arm = path.split(os.sep)[-4:-1]
+        if not _OFFSET_DIR_RE.match(off):
+            continue
+        per[arm].append(read_episode(path))
+    rows = []
+    for arm, eps in per.items():
+        updated = [e for e in eps if float(e["m_post"]) != float(e["m_prior"])]
+        rows.append(dict(
+            arm=arm, n=len(eps),
+            e2_final_rate=float(np.mean([bool(e["final_ok"]) for e in eps])),
+            e1_prior_cm=100 * np.mean([e1_perp_error(e["c_prior_o"], e["com_true_o"], g_o) for e in eps]),
+            e1_post_cm=100 * np.mean([e1_perp_error(e["c_post_o"], e["com_true_o"], g_o) for e in eps]),
+            e3_grasps_mean=float(np.mean([int(e["n_grasps"]) for e in eps])),
+            first_ok_rate=float(np.mean([bool(e["first_lift_ok"]) for e in eps])),
+            advance_rate=float(np.mean([int(e["n_grasps"]) == 1 for e in eps])),
+            n_updated=len(updated),
+            # np.savez round-trips a scalar as a 0-d array, and a test fixture may write a
+            # 1-element one; ravel first so neither form warns or raises.
+            idx_first=sorted({int(np.ravel(e["idx_first"])[0]) for e in eps}),
+        ))
+    rows.sort(key=lambda r: r["arm"])
+    return rows
+
+
+def e2_matrix(root: str) -> tuple[list[str], list[dict]]:
+    """``(cell names, one row per arm)`` where each row carries that arm's E2 in every cell.
+
+    The per-cell E2 spread is the thing a pooled rate hides: an arm can pool to 0.5 because
+    it wins two cells and loses two, or because it wins half of every cell.
+    """
+    per = defaultdict(list)
+    cells = []
+    for path in sorted(glob.glob(os.path.join(root, "*", "off_*", "*", "seed_*.npz"))):
+        obj, off, arm = path.split(os.sep)[-4:-1]
+        if not _OFFSET_DIR_RE.match(off):
+            continue
+        cell = f"{obj}/{off}"
+        if cell not in cells:
+            cells.append(cell)
+        per[(arm, cell)].append(read_episode(path))
+    rows = []
+    for arm in sorted({a for a, _ in per}):
+        r = {"arm": arm}
+        for c in cells:
+            eps = per.get((arm, c), [])
+            r[c] = float(np.mean([bool(e["final_ok"]) for e in eps])) if eps else float("nan")
+        rows.append(r)
+    return cells, rows
+
+
 def to_markdown(rows) -> str:
     if not rows:
         return ""
@@ -104,6 +166,8 @@ if __name__ == "__main__":
     ap.add_argument("root")
     ap.add_argument("--wandb", action="store_true")
     ap.add_argument("--name", default=None)
+    ap.add_argument("--by-arm", action="store_true",
+                    help="also print the pooled-per-arm table and the per-cell E2 matrix")
     a = ap.parse_args()
     rows = aggregate(a.root)
     if not rows:
@@ -116,5 +180,15 @@ if __name__ == "__main__":
                   "axis-encoded directories, or point --root at a directory that has them.")
     else:
         print(to_markdown(rows))
+        if a.by_arm:
+            print()
+            print(to_markdown([{k: v for k, v in r.items() if k != "idx_first"}
+                               for r in pool_by_arm(a.root)]))
+            print()
+            cells, m = e2_matrix(a.root)
+            print(to_markdown(m))
+            print()
+            for r in pool_by_arm(a.root):
+                print(f"first-grasp candidate index, {r['arm']}: {r['idx_first']}")
     if a.wandb:
         log_wandb(rows, run_name=a.name)

@@ -77,8 +77,6 @@ class Data:
             # before Ruling 9 do not carry it, and the A2 check then reports null instead of
             # crashing a re-run on an old npz.
             self.conf_np = d["conf"].astype(float) if "conf" in d.files else None
-            self.y_testlift_np = (d["y_testlift"].astype(float) if "y_testlift" in d.files
-                                  else None)
         self.D = int(self.e_g.shape[1])
         self.idx = {s: torch.as_tensor(np.flatnonzero(self.split == s), dtype=torch.long, device=device)
                     for s in SPLITS}

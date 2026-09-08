@@ -8,7 +8,10 @@
 `labels/` 7 189 labelled test-lifts, `candidates/<obj>.npz`, `embeddings/<obj>.npz`,
 `dataset.npz` + `dataset.json`, `models/{head,latent,phi}.pt` + `report.json`
 (and `report_partial.json`, the superseded banana-only fit), `eval/` 140 held-out episodes,
-`eval_table.md`, `eval_summary.txt`, `eval_e2_table.txt`, `labels_stats*.txt`.
+`eval_table.md` (the cell table, the pooled-per-arm table and the per-cell E2 matrix, all
+from `analysis.test_lift.results --by-arm`), `head_scores_cube.txt` (from
+`scripts/test_lift_head_probe.py`), `labels_stats.txt` and `labels_stats_v1.txt` (from
+`analysis.test_lift.labels`). Every table below names the command that produced it.
 **wandb:** training run `test-lift-v1/hln5jim5`; held-out evaluation run
 `test-lift-belief-rerank/v1-heldout`, id `k3wzbi4z`.
 
@@ -31,13 +34,15 @@ Three findings, in order of how much they constrain what comes next.
    same head on the density prior drops it to **0.050** (`head_filter`) and **0.150**
    (`head_phi`). The required equality A2 ≈ A0 holds; the hoped-for win A3 > A1 fails by
    0.45.
-2. **The cause is identified, not guessed.** The density prior for the cube is
-   `m_mean = 0.1138 kg` against a true 0.6 kg — off by a factor of 5.3. Fed that prior, the
-   head's argmax moves from candidate 22, whose labelled `final_ok` rate is **1.000 over all
-   13 theta cells**, to candidate 48, whose labelled `final_ok` rate is **0.000**. At the
-   true theta (a near-delta belief) the argmax moves back to 22. The belief path is not
-   noise: it is a working input channel being fed a badly wrong prior, on an object whose
-   mass scale the encoder was never standardised against.
+2. **The cause is identified, and it is worse than a bad prior.** At the unknown token the
+   head picks candidate 22, whose labelled `final_ok` rate is **1.000 over all 13 theta
+   cells**. Fed the density prior — `m_mean = 0.1138 kg` against a true 0.6 kg, off by a
+   factor of 5.3 — it moves to candidate 48, labelled **0.000**. Fed the *authored* theta the
+   simulator actually applied, it still picks 48 in `off_x02cm`, and picks 27 or 22 (both
+   labelled 1.000) in the other three cells. So the prior is wrong **and** the conditioning
+   does not reliably rescue the pick when the belief is correct: a 1 cm shift in the true CoM
+   flips the head's argmax between a candidate that never fails and one that never succeeds.
+   Adding information to this belief path does not monotonically improve it.
 3. **The analytic channel from v0 still works and is still the best estimator here.** The
    `belief` arm cuts the pooled CoM error E1 from 2.500 cm to 1.805 cm, and to 0.916 /
    0.242 cm in the two cells where the wrench update fired, recovering `m_post = 0.601 kg`
@@ -67,6 +72,8 @@ whose labelled `final_ok` rates are 1.000 and 0.000 — but the exact rates are.
 | head arms | `analysis/test_lift/head_arms.py` | `select_head`, `head_prob_at`, `delta_belief` |
 | driver wiring | `scripts/test_lift_batch.py` | `--models-dir`, `--embeddings-file`; head arms in the episode loop |
 | evaluation sweep | `scripts/test_lift_eval_v1.sh` | 4 cells × 7 arms × 5 seeds, one Isaac process per cell |
+| aggregation | `analysis/test_lift/results.py` | `--by-arm`: pooled-per-arm table + per-cell E2 matrix |
+| off-line probe | `scripts/test_lift_head_probe.py` | scores the head under each conditioning; `--reach` |
 
 Arm ↔ spec label:
 
@@ -140,9 +147,19 @@ This is a real defect in the v1 training set and the most likely single cause of
 `head_filter` failure in §6.
 
 **cracker_box (Ruling 14) is a substrate defect, not a hard object.** 96.7 % of its
-test-lifts close on air and it lifts 0.5 % of the time; its median IK reach error is 1.0 cm,
-the worst of the four. Its 1 521 rows would have been 21 % of the dataset and would have
-taught the head only that this asset never lifts. Excluded everywhere in v1.
+test-lifts close on air and it lifts 0.5 % of the time. Its IK reach error at the grasp pose
+is also the worst of the four (`scripts/test_lift_head_probe.py --reach`, output in
+`head_scores_cube.txt`):
+
+| object | n | median `ik_err1` | within 1 cm | within 2 cm |
+|---|---|---|---|---|
+| banana | 754 | 0.0000 m | 0.594 | 0.607 |
+| cracker_box | 1521 | **0.0100 m** | **0.501** | 0.621 |
+| mug | 3497 | 0.0000 m | 0.826 | 0.875 |
+| rubiks_cube | 1417 | 0.0000 m | 0.831 | 0.921 |
+
+Its 1 521 rows would have been 21 % of the dataset and would have taught the head only that
+this asset never lifts. Excluded everywhere in v1.
 
 ---
 
@@ -261,10 +278,13 @@ bash scripts/test_lift_eval_v1.sh output/test_lift/v1/eval
     # seeds 0 1 2 3 4, --candidates-file .../candidates/rubiks_cube.npz
     #                  --embeddings-file .../embeddings/rubiks_cube.npz
     #                  --models-dir      .../models
-.venv/bin/python -u -m analysis.test_lift.results output/test_lift/v1/eval
+.venv/bin/python -u -m analysis.test_lift.results output/test_lift/v1/eval --by-arm
+    # the cell table, then the pooled-per-arm table (with first_ok_rate / advance_rate /
+    # n_updated), then the per-cell E2 matrix -> output/test_lift/v1/eval_table.md
 ```
 
-**E2 (final-lift success), per cell and pooled.** Each cell is 5 seeds.
+**E2 (final-lift success), per cell and pooled** — the per-cell columns are the `--by-arm`
+E2 matrix, the pooled columns its per-arm table. Each cell is 5 seeds.
 
 | arm | `off_x02cm` | `off_x03cm` | `off_y02cm` | `off_x03cm_m1.8kg` | **pooled E2** (n=20) | E3 grasps | `lift_ok` | advance |
 |---|---|---|---|---|---|---|---|---|
@@ -287,29 +307,68 @@ bash scripts/test_lift_eval_v1.sh output/test_lift/v1/eval
 
 **E3:** `top1` always advances (1.00 grasps). `next_best`, `belief` and `head_masked`
 average 1.50. `head_filter` and `head_phi` never advance and always pay for two grasps
-(2.00). Wall time is 91–99 s per 35-env cell, written identically into all of a cell's
+(2.00). Wall time is 90.7–99.3 s per 35-env cell, written identically into all of a cell's
 episodes (batch mode; see the driver docstring).
 
 **Why the head arms lose — the candidate each arm picks.** All seven arms rank the same 109
 cube candidates, so the arms differ only in their argmax.
 
-| conditioning | argmax | p(head) at 0 / 22 / 48 | labelled `final_ok` rate of the argmax |
+```
+.venv/bin/python -u scripts/test_lift_head_probe.py \
+    --models-dir output/test_lift/v1/models \
+    --embeddings output/test_lift/v1/embeddings/rubiks_cube.npz \
+    --candidates output/test_lift/v1/candidates/rubiks_cube.npz \
+    --labels output/test_lift/v1/labels --eval-root output/test_lift/v1/eval \
+    --object rubiks_cube --reach          # -> output/test_lift/v1/head_scores_cube.txt
+```
+
+Labelled outcome of the candidates named below, over the cube's 13 theta cells:
+**0** → `final_ok` 1.000, **22** → 1.000, **27** → 1.000, **1 / 48 / 54** → 0.000.
+
+| conditioning | argmax | p at 0 / 22 / 27 / 48 | labelled `final_ok` of the argmax |
 |---|---|---|---|
-| GraspGenX conf (A0) | **0** | conf 0.821 / 0.657 / 0.651 | **1.000** (13/13 thetas) |
-| head, unknown token (A2) | **22** | 0.409 / **0.565** / 0.489 | **1.000** (13/13) |
-| head, density prior (A3, A4) | **48** | 0.374 / 0.442 / **0.543** | **0.000** (0/13) |
-| head, near-delta at the true θ (A5) | **22** | 0.454 / **0.648** / 0.573 | **1.000** (13/13) |
+| GraspGenX conf (A0) | **0** | conf .821 / .657 / .634 / .651 | **1.000** |
+| head, unknown token (A2) | **22** | .409 / **.565** / .549 / .489 | **1.000** |
+| head, density prior (A3, A4) | **48** | .374 / .442 / .375 / **.543** | **0.000** |
 
-The density prior for the cube is `m_mean = 0.1138 kg` against a true 0.600 kg — a factor of
-5.3 low, because `prior_from_points` assumes ρ₀ = 600 kg/m³ and the cube is denser than
-that. Conditioned on it, the head moves its argmax onto a candidate that failed all 13
-labelled theta cells. Conditioned on the truth, it moves back. **The belief channel works;
-the prior fed into it is wrong for this object, and the head has no way to know that.**
+**The oracle must be probed at the authored CoM, not at the cell's nominal offset.**
+`--com-offset 0.02 0 0` shifts the asset's own body-frame CoM, which does not sit at the mesh
+centroid; the authored value the simulator applies and `head_oracle` conditions on is
+`[0.00992, 0.02901, -0.00240]`, over 2 cm from `[0.02, 0, 0]`. Probed at the authored theta
+the head reproduces `head_oracle`'s recorded `idx_first` exactly in all four cells:
 
-`head_filter`'s probability is a constant 0.5431 in every one of its 20 episodes, below
-`pi_go` = 0.7, so it never advances. That constant is not a bug: its chosen candidate never
-holds the 2 cm test-lift, `update_allowed` therefore never opens, its posterior stays equal
-to its prior, and the head returns the same number every time.
+| cell | mass | authored CoM (m) | A5 argmax | labelled `final_ok` | `head_oracle` `idx_first` / `idx_second` | E2 |
+|---|---|---|---|---|---|---|
+| `off_x02cm` | 0.6 | [ 0.00992, 0.02901, −0.00240] | **48** | **0.000** | 48 → 22 | 0.80 |
+| `off_x03cm` | 0.6 | [ 0.01992, 0.02901, −0.00240] | 27 | 1.000 | 27 → 22 | 0.00 |
+| `off_x03cm_m1.8kg` | 1.8 | [ 0.01992, 0.02901, −0.00240] | 22 | 1.000 | 22 → 27 | 0.00 |
+| `off_y02cm` | 0.6 | [−0.01008, 0.04901, −0.00240] | 27 | 1.000 | 27 (advanced) | 1.00 |
+
+Two things follow, and the second is the stronger claim.
+
+**The prior is wrong.** `prior_from_points` assumes ρ₀ = 600 kg/m³ and the cube is 5.3×
+denser, so `m_mean` reads 0.1138 kg against a true 0.600 kg. Conditioned on that, the head
+moves its argmax onto candidate 48, which failed all 13 labelled theta cells.
+
+**But the conditioning does not reliably help even when the belief is correct.** Handed the
+authored theta, the head still picks the failing candidate 48 in `off_x02cm` — one of the two
+non-degenerate cells. Its `head_oracle` E2 of 0.80 there is recovered by the abort-and-regrasp
+path (48 → 22), not by the ranking. And the three cells that do pick a good candidate expose
+how brittle the response is: a 1 cm change in the true CoM x-component (`off_x02cm` →
+`off_x03cm`) flips the argmax from a 0.000 candidate to a 1.000 one, and holding the CoM fixed
+while tripling the mass (`off_x03cm` → `off_x03cm_m1.8kg`) flips it again, 27 → 22. **The
+belief channel is high-gain and not monotone in belief quality**, which is a stronger and less
+comfortable finding than "the prior was bad".
+
+**Why `head_filter` and `head_phi` never advance.** The binding cause is the test-lift gate,
+not `pi_go`: both arms record `first_lift_ok` = **0/20**, because both pick candidate 48 and
+candidate 48 never holds a 2 cm test-lift (labelled `lift_ok` 0.000 over 13 thetas).
+`decide_advance` requires `ok1 AND p ≥ pi_go`, so the first conjunct alone already forces the
+abort. `pi_go` would have refused `head_filter` as well — its probability is a constant 0.5431
+in all 20 episodes, because with no test-lift `update_allowed` never opens and its posterior
+stays at its prior — but it would **not** have refused `head_phi` everywhere: φ's mean
+probability is 0.649 overall and 0.7185 in `off_x03cm_m1.8kg`. Had the test-lift held, those
+two arms would have decided differently.
 
 `head_phi` is the one arm whose posterior does move, and it moves the wrong way:
 `m_post` = 0.94–1.39 kg against a true 0.6 kg (and 1.29 kg against a true 1.8 kg), E1 post
@@ -408,13 +467,24 @@ the gap is +0.400. Knowing the true (mass, CoM) is worth 0.30–0.40 of final-li
 this head on this object; estimating it from one test-lift, with either filter, recovers
 none of that and gives back more than it earns.
 
-The gap is also an upper bound with a caveat attached: even A5 does not beat A2
-(0.450 against 0.500, one episode apart). On these cells a *correct* property belief buys
-the head nothing over no belief at all, which is v0's finding — the cells do not punish a bad
-CoM (`docs/studies/2026-09-08-test-lift-v0-results.md` §1) — reproduced with a learned
-re-ranker. **The estimation loss is real and large, but it is measured on a benchmark where
-the estimate is not worth much even when it is perfect.** v2 needs cells where the oracle
-separates from the no-property arm before the loss figure means anything.
+Two qualifications, both of which cut the number down.
+
+**A5 does not beat A2** (0.450 against 0.500, one episode apart). On these cells a *correct*
+property belief buys the head nothing over no belief at all — v0's finding, that the cells do
+not punish a bad CoM (`docs/studies/2026-09-08-test-lift-v0-results.md` §1), reproduced with a
+learned re-ranker.
+
+**And A5's 0.450 is not earned by its ranking.** Probed at the authored theta (§6), the oracle
+conditioning picks the *failing* candidate 48 in `off_x02cm`; that cell's 0.80 comes from the
+abort-and-regrasp path, which walks 48 → 22 after the test-lift fails. Across the four cells
+the oracle argmax is 48 / 27 / 22 / 27, so a correct belief lands on a labelled-0.000
+candidate in one of the two non-degenerate cells. The gap A5 − A4 therefore measures **how
+much better the loop does when the belief is right, not how much better the ranking is** —
+and even that is inflated by the re-grasp. The defensible statement is narrower than the
+prediction asked for: **estimating theta from one test-lift is worth less than nothing to
+this head, and knowing it exactly is worth little.** v2 needs cells where the oracle separates
+from the no-property arm, and a head whose response to a correct belief is monotone, before
+this figure means anything.
 
 ---
 
@@ -475,8 +545,9 @@ Quoted verbatim from the Task 9 dispatch.
 
 *Measured against Ruling 14's stated reason: 96.7 % close on air and `lift_ok` = 0.005, both
 as stated. The reach figure measures lower here — 50.1 % of cracker_box grasps reach within
-1 cm and 62.1 % within 2 cm, the worst of the four objects — so "91 % reach the pose" is not
-reproduced by `ik_err1`. The exclusion stands on the air-closure and lift numbers.*
+1 cm and 62.1 % within 2 cm, the worst of the four objects (§3, from
+`scripts/test_lift_head_probe.py --reach`) — so "91 % reach the pose" is not reproduced by
+`ik_err1`. The exclusion stands on the air-closure and lift numbers.*
 
 > **Ruling 9:** `build_dataset` stores `conf` (GraspGenX confidence per row, from
 > `load_labels`); `scripts/test_lift_train.py` then computes the A2 check: AUROC(head@unknown,
@@ -493,8 +564,14 @@ In priority order, each pointing at a section above.
    the same conclusion v0 reached and v1 did not fix.
 2. **Fix the mug's `post` regime** (§9 caveat 6) before training another belief-conditioned
    head. A third of the training mixture is currently a no-op.
-3. **Calibrate the density prior per object, or condition the head on a prior that carries
+3. **Test the head's response to belief quality before running any arm on it.** The
+   authored-theta probe (§6) is four lines of work and it says the head's argmax is not
+   monotone in belief quality: a correct belief picks a labelled-0.000 candidate in one of the
+   two informative cells, and a 1 cm CoM change or a 3× mass change flips the pick. A head
+   that fails that check cannot be read as "the estimate did not help"; it has not earned the
+   experiment. `scripts/test_lift_head_probe.py` now does this check.
+4. **Calibrate the density prior per object, or condition the head on a prior that carries
    its own uncertainty honestly.** A 5.3× mass error steered the head onto a candidate that
-   fails every labelled theta (§6).
-4. **Do not train φ on two objects and expect it to transfer.** 271.59 against 67.70 (§5) is
+   fails every labelled theta (§6). This is necessary but, by item 3, not sufficient.
+5. **Do not train φ on two objects and expect it to transfer.** 271.59 against 67.70 (§5) is
    memorisation, and the loop reproduces it (§6).

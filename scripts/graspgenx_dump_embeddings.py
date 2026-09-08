@@ -18,8 +18,8 @@ distance < 1.4 cm) and only then centres on the SURVIVING points' mean
 (graspgenx/grasp_server.py, ``remove_outliers=True`` by default). Skipping that step is
 invisible on a compact object -- banana and rubiks_cube keep 2048/2048 points -- but the
 mug loses 137 points off its rim and handle, which moves the centre and biases every
-rescored confidence down by 0.073 (max gap 0.288, far past GAP_TOL). With the removal
-applied the mug's gap is 0.024. Task 9 found this; do not drop the call.
+rescored confidence down by 0.073 (max gap 0.2816, far past GAP_TOL). With the removal
+applied the mug's gap is 0.0321. Task 9 found this; do not drop the call.
 """
 import argparse, os, sys
 import numpy as np, torch

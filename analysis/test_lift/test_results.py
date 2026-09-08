@@ -3,9 +3,11 @@
 import math
 
 import numpy as np
+import pytest
 
 from analysis.test_lift.episode_log import EPISODE_KEYS, write_episode
-from analysis.test_lift.results import aggregate, e1_perp_error, to_markdown
+from analysis.test_lift.results import (aggregate, e1_perp_error, e2_matrix, pool_by_arm,
+                                         to_markdown)
 
 
 def _episode(path, arm, c_true, c_post, final_ok, n_grasps, m_prior=1.0, m_post=1.2, mass_true=0.5):
@@ -106,3 +108,33 @@ def test_aggregate_mass_kg_defaults_to_mass_true(tmp_path):
     _episode(d / "seed_0.npz", "oracle", [0.03, 0, 0], [0.0, 0, 0], True, 1, mass_true=0.6)
     rows = aggregate(str(tmp_path))
     assert rows[0]["mass_kg"] == 0.6     # no _m<mass>kg suffix -> fall back to the episode's own mass
+
+
+def test_pool_by_arm_pools_across_cells_and_reports_the_decision_diagnostics(tmp_path):
+    """One arm, two cells, three episodes: the pooled row must average across BOTH cells and
+    must separate 'the test-lift failed' from 'the arm chose not to advance'."""
+    for cell, oks, grasps in (("off_x02cm", (True, True), (1, 2)), ("off_y02cm", (False,), (2,))):
+        d = tmp_path / "banana" / cell / "belief"
+        d.mkdir(parents=True)
+        for k, (ok, n) in enumerate(zip(oks, grasps)):
+            _episode(d / f"seed_{k}.npz", "belief", [0.02, 0, 0], [0.02, 0, 0], ok, n)
+    rows = pool_by_arm(str(tmp_path))
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["arm"] == "belief" and r["n"] == 3
+    assert r["e2_final_rate"] == pytest.approx(2 / 3)
+    assert r["e3_grasps_mean"] == pytest.approx(5 / 3)
+    assert r["advance_rate"] == pytest.approx(1 / 3)      # only the n_grasps == 1 episode
+    assert r["first_ok_rate"] == 1.0                      # _episode always sets first_lift_ok
+
+
+def test_e2_matrix_keeps_the_cells_apart(tmp_path):
+    """A pooled 0.5 can hide 1.0/0.0; the matrix must not."""
+    for cell, ok in (("off_x02cm", True), ("off_y02cm", False)):
+        d = tmp_path / "banana" / cell / "belief"
+        d.mkdir(parents=True)
+        _episode(d / "seed_0.npz", "belief", [0.02, 0, 0], [0.02, 0, 0], ok, 1)
+    cells, rows = e2_matrix(str(tmp_path))
+    assert cells == ["banana/off_x02cm", "banana/off_y02cm"]
+    assert rows[0]["banana/off_x02cm"] == 1.0 and rows[0]["banana/off_y02cm"] == 0.0
+    assert pool_by_arm(str(tmp_path))[0]["e2_final_rate"] == 0.5
