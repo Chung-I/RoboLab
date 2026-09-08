@@ -24,7 +24,8 @@ class FrankaIKAbsActionCfg(FrankaIKActionCfg):
 
 def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
                            com_offset_xyz: tuple, postfix: str,
-                           seed: int = 1) -> tuple[str, ObjectPhysicsEventsCfg]:
+                           seed: int = 1,
+                           with_camera: bool = False) -> tuple[str, ObjectPhysicsEventsCfg]:
     """Register a one-object test-lift env and return `(env_name, events_cfg)`.
 
     Physics events (mass/CoM pin) are NOT passed into `auto_discover_and_create_cfgs` --
@@ -33,11 +34,26 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
 
     In v0 the scene pose is deterministic by design, so `seed` does not move the object;
     seed variation enters the study through GraspGenX sampling and point subsampling.
+
+    `with_camera` is off by default and costs the whole episode budget when it is on.
+    The egocentric camera renders once every `render_interval` physics steps, and that
+    RTX render -- not the physics -- is what an episode spends its time on: measured
+    2026-09-08 on an RTX 5090, one grasp took 33 s with the camera (about 130 ms per
+    control step) and 4.6 s without it. Nothing in the study reads an image: the episode
+    driver reads `robot.data` and `scene[object].data` directly, the belief update takes
+    a wrench, and no policy consumes observations. Only `--video` needs the camera, so
+    only `--video` pays for it. With `with_camera=False` the env registers no camera and
+    no observation group at all, and `env.reset()` returns an empty observation dict.
     """
     # Proprio observations are not required for v0: the episode driver reads
     # robot.data directly, and no policy in this study consumes observations.
-    ImageObsCfg = generate_image_obs_from_cameras([EgocentricMirroredCameraCfg])
-    ObservationCfg = generate_obs_cfg({"image_obs": ImageObsCfg()})
+    if with_camera:
+        ImageObsCfg = generate_image_obs_from_cameras([EgocentricMirroredCameraCfg])
+        ObservationCfg = generate_obs_cfg({"image_obs": ImageObsCfg()})
+        camera_cfg = [EgocentricMirroredCameraCfg]
+    else:
+        ObservationCfg = generate_obs_cfg({})
+        camera_cfg = []
     result = auto_discover_and_create_cfgs(
         task_dir=TASK_DIR,
         tasks=task_file,
@@ -45,7 +61,7 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
         observations_cfg=ObservationCfg(),
         actions_cfg=FrankaIKAbsActionCfg(),
         robot_cfg=FrankaCfg,
-        camera_cfg=[EgocentricMirroredCameraCfg],
+        camera_cfg=camera_cfg,
         lighting_cfg=SphereLightCfg,
         background_cfg=HomeOfficeBackgroundCfg,
         contact_gripper=None,

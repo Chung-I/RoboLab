@@ -118,7 +118,10 @@ parser.add_argument("--video", action="store_true",
                     help="stream the egocentric camera to <out_dir>/seed_<k>.mp4 (off by default: no per-step image cost)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-args.enable_cameras = True
+# The camera is the whole episode cost (see robolab/registrations/test_lift/__init__.py):
+# an RTX render every render_interval steps. Only --video reads an image, so only
+# --video turns the render pipeline on.
+args.enable_cameras = bool(args.video)
 app = AppLauncher(args).app
 
 import numpy as np  # noqa: E402
@@ -342,7 +345,8 @@ def main():
     rng = np.random.default_rng(args.seed)
     params = GraspParams()
     env_name, events = register_test_lift_env(args.task_file, args.object, args.mass, tuple(args.com_offset),
-                                              postfix=f"_TL_{args.arm}_{args.seed}", seed=args.seed)
+                                              postfix=f"_TL_{args.arm}_{args.seed}", seed=args.seed,
+                                              with_camera=bool(args.video))
     _offset = np.asarray(args.com_offset, dtype=float)
     _axis = "x" if np.allclose(_offset, 0) else "xyz"[int(np.argmax(np.abs(_offset)))]
     out_dir = os.path.join(args.out, args.object,
