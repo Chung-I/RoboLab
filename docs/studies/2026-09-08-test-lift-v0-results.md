@@ -1,11 +1,14 @@
 # test-lift v0 — results
 
-**Date:** 2026-09-08
+**Date:** 2026-09-08 (cube cells re-run 2026-09-09, Task 10b)
 **Branch:** `study/test-lift-belief-rerank` (main checkout of `~/Codes/RoboLab`, base `9db0aaf`)
 **Plan:** `docs/studies/2026-09-08-test-lift-v0-plan.md`
 **Spec:** `~/Codes/daily-logs/researches/property-belief-manipulation/designs/2026-09-08-graded-commitment-design.md` §11
 **Ledger:** `.superpowers/sdd/2026-09-08-test-lift-v0-plan/progress.md`
-**wandb project:** `test-lift-belief-rerank` (final run `sweep2-final`, id `ibeewkgx`)
+**wandb project:** `test-lift-belief-rerank` (final run **`sweep2-final-cube-fixed`, id `kdr271g6`**,
+the 200 episodes of sweep 2 with the cleared cube scene of §2 fact 13. The earlier
+`sweep2-final`, id `ibeewkgx`, holds the same banana episodes and the discarded cube
+episodes from the uncleared-scene bug; do not read its cube rows.)
 
 ---
 
@@ -15,17 +18,26 @@ We built the full v0 loop in RoboLab: GraspGenX proposes grasps, a Gaussian beli
 (mass, centre of mass) re-ranks them, the robot does one 2 cm test-lift, the wrist wrench
 updates the belief, and the robot either advances or sets the object down and re-grasps.
 Five arms run against the same candidate set. We measured 200 episodes in sweep 2 and 150
-in sweep 1. The estimation channel works: on the banana, one test-lift cuts the CoM error
-from 1.51 cm to 0.10 cm and from 3.50 cm to 0.15 cm, and it does so on every episode where
-the test-lift really held. The decision channel is untested, because the cells we chose do
-not punish a bad CoM: the oracle arm, which knows the true CoM, does not beat the
-next-best-geometric arm anywhere. That is row 1 of the design's prediction table — CoM
-knowledge does not decide the outcome in these cells — not row 2, which would say the
-re-ranker is broken. The v0 answer is therefore: **the wrench → belief → re-rank flow
-works end to end and the estimate is good; the experiment cannot yet say whether the
-estimate buys anything, and v1 must build cells where off-CoM torque actually breaks the
-grasp.** Every `rubiks_cube` row in this document is invalid (§4.1) and no conclusion here
-rests on one.
+in sweep 1. The estimation channel works, and now on both objects: on the banana one
+test-lift cuts the CoM error from 1.51 cm to 0.10 cm and from 3.50 cm to 0.15 cm, and on
+the cube (cleared scene, §4.1) from 2.05 cm to 0.21 cm over the episodes that got an
+update, while the mass estimate goes from a 0.114 kg prior to 0.596 kg against a true
+0.600 kg. The decision channel is still untested, because the cells we chose do not punish
+a bad CoM: across all eight cells the oracle arm, which knows the true CoM, never beats the
+next-best-geometric arm — it ties it in seven and loses in one. That is row 1 of the
+design's prediction table — CoM knowledge does not decide the outcome in these cells — not
+row 2, which would say the re-ranker is broken. The v0 answer is therefore: **the wrench →
+belief → re-rank flow works end to end and the estimate is good; the experiment cannot yet
+say whether the estimate buys anything, and v1 must build cells where off-CoM torque
+actually breaks the grasp.**
+
+Two things changed on 2026-09-09. The cube scene was cluttered — a bowl sat 7.7 cm from the
+cube and the hand struck it — so the four cube cells were re-run in a cleared scene (§2
+fact 13) and every cube number below is from that re-run. The cube cells are now real data,
+and they say the same thing the banana cells say. The one cell where an arm separates is
+`rubiks_cube y02`, where `belief` reaches 0.400 against 0.000 for both `next_best` and
+`oracle`; at n = 5 that is two episodes and it is inside binomial noise (§4.8). Sweep 1's
+cube rows were **not** re-run and remain invalid (§4.3).
 
 ---
 
@@ -47,6 +59,7 @@ Each of these cost time to find, and each one constrains any future run on this 
 | 10 | **The camera cost 2.5x.** With `enable_cameras=True` the RTX renderer runs on every control step. | **~33 s per grasp with the camera, ~13 s without.** A no-video episode is 34 s wall / 26.6 s of stepping, against 88 s / 68 s with video. | `task-8d-report.md`, Ruling 31 |
 | 11 | **Batching beat process parallelism.** 4 single-env Isaac workers gave only 2.04x over 1 worker, because Isaac's ~20 s per-process boot does not overlap. One process with 25 envs runs a whole cell in **44 s** (39.1 s inside the driver) against 338 s for the same 25 episodes serially — **7.7x**. | Sweep 2: 8 cells, 200 episodes, 2 workers, **310 s total**. | `task-8d-report.md`, `task-8e-report.md`, Ruling 32 |
 | 12 | **Memory per process.** Peak VRAM 3 439 MiB, peak RSS 5 091 MiB for the 25-env batched driver — the same as ONE single-env process. The GraspGenX server holds 1 232 MiB of VRAM. 5 GB of RSS per process on a 30 GB box is what caps single-env parallelism at 4 workers. | — | `task-8e-report.md` §, `task-8d-report.md` |
+| 13 | **The cube scene ships cluttered, and the clutter, not the physics, decided every cube episode.** Of the 15 prims under `/world` in `assets/scenes/test_plate_banana_rubiks_cube.usda`, 11 carry an enabled `PhysicsRigidBodyAPI`: the `table` support fixture, the cube, and 9 neighbours. Four of those neighbours stood inside the gripper's approach corridor. Moving them out changed `tilt1` after the first grasp from 19–34° to 0.7–10.8° and `e2_final_rate` on the `x03` cell from 0.400 to 1.000. | Planar distance from the cube: `bowl` **0.077 m**, `dry_erase_marker` **0.126 m**, `bagel_06` **0.200 m**, `yogurt_cup` **0.294 m**. Pinned to open corners at **0.510 / 0.570 / 0.853 / 0.708 m**, mutually ≥ 0.40 m. Nearest declared body to the cube is now `bagel_00` at **0.389 m** by config and **0.350 m** after the settle. | §4.1, `robolab/tasks/test_lift/cube_test_lift_task.py`, Ruling 37 |
 
 ---
 
@@ -67,9 +80,14 @@ Sweep 2 (final), 8 cells × 5 arms × 5 seeds = 200 episodes:
 | rubiks_cube | (0, 0.02, 0) | 0.6 | `off_y02cm` |
 | rubiks_cube | (0.03, 0, 0) | **1.8** | `off_x03cm_m1.8kg` |
 
+The four banana cells ran 2026-09-08. The four `rubiks_cube` cells were re-run 2026-09-09 in
+the cleared scene (§4.1) with the same offsets, masses, arms and seeds; only the scene
+changed. No physics or grasp parameter differs between the two dates (§6 is unchanged).
+
 Sweep 1 (pilot) ran the first 6 cells only — no heavy cells — and used the **14 mm**
 test-lift bar. Sweep 2 uses the **12 mm** bar (Ruling 34). The two sweeps are therefore not
-directly comparable on `first_lift_ok` or on anything downstream of it.
+directly comparable on `first_lift_ok` or on anything downstream of it, and sweep 1's cube
+cells also predate the scene fix.
 
 Robot: Franka Panda with the Panda hand, `robolab.robots.franka_high_pd.FrankaCfg`,
 absolute differential IK, 15 Hz control.
@@ -124,20 +142,90 @@ failed lifts and produced `m_post = −0.849 kg`.
 
 ## 4. Results
 
-### 4.1 The `rubiks_cube` rows are INVALID
+### 4.1 The cube scene was cluttered; it was cleared and the cube cells re-run
 
-The `rubiks_cube` scene (`test_plate_banana_rubiks_cube.usda`) is cluttered: a bowl sits a
-few centimetres from the cube and the gripper strikes it on the way in, so every cube row
-in both sweeps measures a collision with the bowl rather than a grasp on the cube. **All
-`rubiks_cube` rows below — sweep 1, sweep 2, and the heavy cell — are invalid pending a
-re-run in a cleared scene** (Task 10b, Ruling 37). They are printed because the tables are
-regenerated verbatim, and no conclusion in this document rests on them. Every verdict in
-§4.4 is computed on the **banana cells only**.
+`assets/scenes/test_plate_banana_rubiks_cube.usda` is a clutter scene. A bowl sat 7.7 cm
+from the rubiks cube and the gripper struck it on the way in, so every cube episode of
+sweep 1 and of the first sweep 2 measured a collision rather than a grasp. All of that data
+is discarded.
+
+**What was measured.** The USD declares 15 prims under `/world`. Eleven carry an enabled
+`PhysicsRigidBodyAPI`; `franka_table`, `GroundPlane`, `Looks` and `PhysicsMaterial` do not.
+Of the eleven, `table` is the support fixture (it rests on the ground plane) and `rubiks_cube`
+is the target, which leaves nine neighbouring dynamic bodies. Planar distance from the cube
+at `(0.3103, −0.2562)`:
+
+| body | authored (x, y) m | dist to cube | pinned to (x, y) m | dist after |
+|---|---|---|---|---|
+| `bowl` | (0.3651, −0.3101) | **0.077** | (0.80, −0.40) | 0.510 |
+| `dry_erase_marker` | (0.4363, −0.2621) | **0.126** | (0.82, 0.00) | 0.570 |
+| `bagel_06` | (0.3168, −0.0568) | **0.200** | (0.83, 0.42) | 0.853 |
+| `yogurt_cup` | (0.5999, −0.2082) | **0.294** | (0.26, 0.45) | 0.708 |
+| `bagel_00` | (0.3418, 0.1315) | 0.389 | unchanged | 0.389 |
+| `banana` | (0.5778, 0.1063) | 0.451 | unchanged | 0.451 |
+| `plate_large` | (0.5882, 0.2263) | 0.557 | unchanged | 0.557 |
+| `banana_hanging_off` | (0.4085, 0.3105) | 0.575 | unchanged | 0.575 |
+| `banana_hanging_off_01` | (0.5185, 0.3701) | 0.660 | unchanged | 0.660 |
+
+**What was changed.** `robolab/tasks/test_lift/cube_test_lift_task.py`, not the USD, so the
+shipped scene keeps serving the other tasks that import it. All nine bodies are now declared
+as `RigidObjectCfg(prim_path=".../scene/<name>", spawn=None, init_state=...)`, which pins
+each pose at every reset; the four crowding ones move to open table corners and the other
+five keep their authored pose. Orientations are unchanged, and each moved body keeps its
+authored z: the table top is a flat slab (world bbox x `[0.1971, 0.8971]`, y
+`[−0.5001, 0.4999]`, top z `0.005`). The four moved bodies are mutually ≥ 0.40 m apart, all
+of them are ≥ 0.51 m from the cube, and the smallest world-AABB gap between any moved body
+and any other body is 13.5 mm. Mutual 0.35 m for all nine does not fit a 0.70 × 1.00 m
+table — the authored scene already rests the banana on the plate — so the bar is applied to
+the bodies that moved. The cube itself does not move: nothing immovable is near it, and
+`plate_large` carries `PhysicsVariant = "RigidBody"`, so it is a dynamic body, not a static
+one. All ten names are in `contact_object_list`, which is documentation only (contact
+sensors are off, Rulings 10 and 13).
+
+**Clearance, verified in sim.** One single-env `--video` episode of the cube cell
+(`--arm next_best --seed 0 --mass 0.6 --com-offset 0.03 0 0`). The driver now logs one
+`[clearance]` line per declared body after the settle:
+
+```
+[table] z_table=0.0025 obj_rest_z=0.0214
+[clearance] bagel_00 d_xy=0.3497 pos=(0.3418, 0.1315, 0.0178)
+[clearance] banana d_xy=0.4000 pos=(0.5787, 0.1060, 0.0418)
+[clearance] bowl d_xy=0.4905 pos=(0.8000, -0.4000, 0.0303)
+[clearance] plate_large d_xy=0.5069 pos=(0.5880, 0.2263, 0.0003)
+[clearance] dry_erase_marker d_xy=0.5226 pos=(0.8195, -0.0006, 0.0121)
+[clearance] banana_hanging_off d_xy=0.5331 pos=(0.4084, 0.3110, 0.0308)
+[clearance] banana_hanging_off_01 d_xy=0.6120 pos=(0.5181, 0.3686, 0.0292)
+[clearance] yogurt_cup d_xy=0.6736 pos=(0.2599, 0.4500, 0.0298)
+[clearance] bagel_06 d_xy=0.8019 pos=(0.8300, 0.4200, 0.0181)
+```
+
+**The nearest declared body is `bagel_00` at 0.350 m after the settle** (0.389 m at config
+level, before the cube drops 2.3 cm onto the table and slides). Both are above the 0.30 m
+bar. That episode also gave `tilt1 = 10.8°` after the first grasp, against 19–34° in the
+cluttered scene, and a second grasp that lifted.
+
+First frame of that episode's video, kept as the visual record:
+`output/test_lift/scene_check/scene_check_frame0.png` (video:
+`output/test_lift/scene_check/rubiks_cube/off_x03cm/next_best/seed_0.mp4`, log:
+`output/test_lift/scene_check/run.log`).
+
+**Test.** `tests/test_test_lift_batch.py::test_cube_scene_is_clear_of_the_cube` registers
+the cube env, resets a fresh env without stepping, asserts the nine declared bodies match
+the task's `NEIGHBOUR_POS` table, and asserts the nearest one is ≥ 0.30 m from the cube.
+`tests/test_test_lift_env.py` (banana task) still passes unchanged.
+
+**What was re-run.** The four cube cells of sweep 2, batch mode, `NWORKERS=2`, 100 episodes
+in **171 s**, 0 logs with `[FAIL]`. `output/test_lift/sweep2/rubiks_cube/` was deleted first;
+the pre-fix cell logs are kept beside the new ones with an `.invalid` suffix
+(`output/test_lift/sweep2/logs/rubiks_cube_*.invalid`). **Sweep 1's cube rows (§4.3) were
+not re-run and stay invalid.**
 
 ### 4.2 Sweep 2 — final data
 
-`uv run --extra isaac50 python -u -m analysis.test_lift.results output/test_lift/sweep2`
-(200 episodes, wandb run `sweep2-final`). `e1_prior_cm` / `e1_post_cm` are the
+`uv run --extra isaac50 python -u -m analysis.test_lift.results output/test_lift/sweep2
+--wandb --name sweep2-final-cube-fixed` (200 episodes, wandb run `sweep2-final-cube-fixed`,
+id `kdr271g6`). The 100 banana episodes are the originals; the 100 cube episodes are the
+2026-09-09 re-run in the cleared scene (§4.1). `e1_prior_cm` / `e1_post_cm` are the
 gravity-perpendicular CoM error before and after the test-lift, in cm. `n_updated` is how
 many of the 5 episodes actually got a wrench update, and `e1_post_cm_updated` is the
 posterior error over those episodes alone. `e3_wall_mean` is the **cell's** wall time in
@@ -165,31 +253,47 @@ batch mode, not a per-episode figure.
 | banana | 2 | y | 0.500 | next_best | 5 | 1.956 | 1.956 | 0.800 | 0.000 | 1.200 | 66.524 | 0 | nan |
 | banana | 2 | y | 0.500 | oracle | 5 | 1.956 | 1.956 | 0.800 | 0.000 | 1.200 | 66.524 | 0 | nan |
 | banana | 2 | y | 0.500 | top1 | 5 | 1.956 | 1.956 | 0.800 | nan | 1.000 | 66.524 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | x | 0.600 | belief | 5 | 2.049 | 5.103 | 0.000 | 0.000 | 2.000 | 79.491 | 1 | 17.314 |
-| ~~rubiks_cube~~ | 2 | x | 0.600 | fixed_threshold | 5 | 2.049 | 2.049 | 0.000 | 0.000 | 2.000 | 79.491 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | x | 0.600 | next_best | 5 | 2.049 | 2.049 | 0.400 | 0.250 | 1.800 | 79.491 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | x | 0.600 | oracle | 5 | 2.049 | 2.049 | 0.400 | 0.000 | 1.600 | 79.491 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | x | 0.600 | top1 | 5 | 2.049 | 2.049 | 0.200 | nan | 1.000 | 79.491 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 0.600 | belief | 5 | 3.049 | 3.040 | 0.400 | 0.000 | 1.600 | 78.713 | 2 | 2.983 |
-| ~~rubiks_cube~~ | 3 | x | 0.600 | fixed_threshold | 5 | 3.049 | 3.049 | 0.200 | 0.000 | 2.000 | 78.713 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 0.600 | next_best | 5 | 3.049 | 3.049 | 0.400 | 0.333 | 1.600 | 78.713 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 0.600 | oracle | 5 | 3.049 | 3.049 | 0.600 | 0.500 | 1.400 | 78.713 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 0.600 | top1 | 5 | 3.049 | 3.049 | 0.400 | nan | 1.000 | 78.713 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 1.800 | belief | 5 | 3.049 | 3.049 | 0.000 | 0.000 | 2.000 | 78.399 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 1.800 | fixed_threshold | 5 | 3.049 | 3.049 | 0.200 | 0.000 | 2.000 | 78.399 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 1.800 | next_best | 5 | 3.049 | 3.049 | 0.400 | 0.000 | 1.800 | 78.399 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 1.800 | oracle | 5 | 3.049 | 3.049 | 0.600 | 0.200 | 2.000 | 78.399 | 0 | nan |
-| ~~rubiks_cube~~ | 3 | x | 1.800 | top1 | 5 | 3.049 | 3.049 | 0.200 | nan | 1.000 | 78.399 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | y | 0.600 | belief | 5 | 1.922 | 1.559 | 0.200 | 0.000 | 1.800 | 79.161 | 1 | 0.119 |
-| ~~rubiks_cube~~ | 2 | y | 0.600 | fixed_threshold | 5 | 1.922 | 1.922 | 0.200 | 0.200 | 2.000 | 79.161 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | y | 0.600 | next_best | 5 | 1.922 | 1.922 | 0.200 | 0.000 | 1.800 | 79.161 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | y | 0.600 | oracle | 5 | 1.922 | 1.922 | 0.200 | 0.000 | 1.800 | 79.161 | 0 | nan |
-| ~~rubiks_cube~~ | 2 | y | 0.600 | top1 | 5 | 1.922 | 1.922 | 0.200 | nan | 1.000 | 79.161 | 0 | nan |
+| rubiks_cube | 2 | x | 0.600 | belief | 5 | 2.049 | 0.923 | 0.600 | 0.000 | 1.400 | 79.453 | 3 | 0.207 |
+| rubiks_cube | 2 | x | 0.600 | fixed_threshold | 5 | 2.049 | 2.049 | 0.600 | 0.333 | 1.600 | 79.453 | 0 | nan |
+| rubiks_cube | 2 | x | 0.600 | next_best | 5 | 2.049 | 2.049 | 0.600 | 0.000 | 1.400 | 79.453 | 0 | nan |
+| rubiks_cube | 2 | x | 0.600 | oracle | 5 | 2.049 | 2.049 | 0.600 | 0.000 | 1.400 | 79.453 | 0 | nan |
+| rubiks_cube | 2 | x | 0.600 | top1 | 5 | 2.049 | 2.049 | 0.600 | nan | 1.000 | 79.453 | 0 | nan |
+| rubiks_cube | 3 | x | 0.600 | belief | 5 | 3.049 | 3.047 | 1.000 | 1.000 | 1.400 | 78.594 | 3 | 3.048 |
+| rubiks_cube | 3 | x | 0.600 | fixed_threshold | 5 | 3.049 | 3.049 | 0.600 | 0.500 | 1.800 | 78.594 | 0 | nan |
+| rubiks_cube | 3 | x | 0.600 | next_best | 5 | 3.049 | 3.049 | 1.000 | 1.000 | 1.400 | 78.594 | 0 | nan |
+| rubiks_cube | 3 | x | 0.600 | oracle | 5 | 3.049 | 3.049 | 1.000 | 1.000 | 1.400 | 78.594 | 0 | nan |
+| rubiks_cube | 3 | x | 0.600 | top1 | 5 | 3.049 | 3.049 | 0.600 | nan | 1.000 | 78.594 | 0 | nan |
+| rubiks_cube | 3 | x | 1.800 | belief | 5 | 3.049 | 3.049 | 0.600 | 0.400 | 2.000 | 81.906 | 0 | nan |
+| rubiks_cube | 3 | x | 1.800 | fixed_threshold | 5 | 3.049 | 3.049 | 0.600 | 0.400 | 2.000 | 81.906 | 0 | nan |
+| rubiks_cube | 3 | x | 1.800 | next_best | 5 | 3.049 | 3.049 | 0.600 | 0.400 | 2.000 | 81.906 | 0 | nan |
+| rubiks_cube | 3 | x | 1.800 | oracle | 5 | 3.049 | 3.049 | 0.600 | 0.600 | 2.000 | 81.906 | 0 | nan |
+| rubiks_cube | 3 | x | 1.800 | top1 | 5 | 3.049 | 3.049 | 0.400 | nan | 1.000 | 81.906 | 0 | nan |
+| rubiks_cube | 2 | y | 0.600 | belief | 5 | 1.922 | 1.657 | 0.400 | 0.000 | 1.800 | 81.900 | 1 | 0.564 |
+| rubiks_cube | 2 | y | 0.600 | fixed_threshold | 5 | 1.922 | 1.922 | 0.000 | 0.000 | 2.000 | 81.900 | 0 | nan |
+| rubiks_cube | 2 | y | 0.600 | next_best | 5 | 1.922 | 1.922 | 0.000 | 0.000 | 2.000 | 81.900 | 0 | nan |
+| rubiks_cube | 2 | y | 0.600 | oracle | 5 | 1.922 | 1.922 | 0.000 | 0.000 | 2.000 | 81.900 | 0 | nan |
+| rubiks_cube | 2 | y | 0.600 | top1 | 5 | 1.922 | 1.922 | 0.200 | nan | 1.000 | 81.900 | 0 | nan |
+
+**What the scene fix bought.** `e2_final_rate` on the 20 cube arm-cells, before and after:
+
+| cell | belief | next_best | fixed_threshold | oracle | top1 |
+|---|---|---|---|---|---|
+| x02 | 0.000 → **0.600** | 0.400 → **0.600** | 0.000 → **0.600** | 0.400 → **0.600** | 0.200 → **0.600** |
+| x03 | 0.400 → **1.000** | 0.400 → **1.000** | 0.200 → **0.600** | 0.600 → **1.000** | 0.400 → **0.600** |
+| x03 @1.8 kg | 0.000 → **0.600** | 0.400 → **0.600** | 0.200 → **0.600** | 0.600 → 0.600 | 0.200 → **0.400** |
+| y02 | 0.200 → **0.400** | 0.200 → **0.000** | 0.200 → **0.000** | 0.200 → **0.000** | 0.200 → 0.200 |
+
+Mean over the 20 cells: **0.270 → 0.530**. Wrench updates on the cube went from 4 to 7 of
+the 20 belief-arm episodes. The `y02` cell is the one that got worse for four of five arms;
+n = 5, so that is one or two episodes either way.
 
 ### 4.3 Sweep 1 — pilot
 
 `uv run --extra isaac50 python -u -m analysis.test_lift.results output/test_lift/sweep1`
 (150 episodes, 6 cells, no heavy cells, **14 mm test-lift bar**). Kept as the pilot only.
+**Sweep 1 ran before the scene fix and was not re-run, so its `rubiks_cube` rows — struck
+through below — are invalid for the reason of §4.1 and nothing in this document rests on
+them.**
 
 | object | offset_cm | offset_axis | mass_kg | arm | n | e1_prior_cm | e1_post_cm | e2_final_rate | e2_second_rate | e3_grasps_mean | e3_wall_mean | n_updated | e1_post_cm_updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -226,12 +330,15 @@ batch mode, not a per-episode figure.
 
 ### 4.4 The three §11.4 predictions
 
-Judged on the banana cells of sweep 2 only (§4.1). The prior width for the CoM is
-`sigma_c_frac × half_extent` with `sigma_c_frac = 0.3`. The banana's logged half-extents
-are `[0.054, 0.089, 0.018] m`, so the prior standard deviations are
-`[1.62, 2.67, 0.54] cm`.
+Judged on all eight sweep-2 cells — four banana and four cube — now that the cube cells are
+real data (§4.1). The prior width for the CoM is `sigma_c_frac × half_extent` with
+`sigma_c_frac = 0.3`. The banana's logged half-extents are `[0.054, 0.089, 0.018] m`, so
+its prior standard deviations are `[1.62, 2.67, 0.54] cm`. The cube's logged prior
+covariance gives `[0.873, 0.864, 0.869] cm`, i.e. half-extents `[0.029, 0.029, 0.029] m` —
+a 5.8 cm cube, not the 7 cm this document said before.
 
-**Prediction 1 — "E1 improves by more than the prior width." HELD, on the light banana.**
+**Prediction 1 — "E1 improves by more than the prior width." HELD on both objects wherever
+the test-lift really held, with one cube cell that does not move at all.**
 
 | cell | prior (cm) | posterior (cm) | improvement (cm) | prior σ on the offset axis (cm) | verdict |
 |---|---|---|---|---|---|
@@ -239,9 +346,39 @@ are `[0.054, 0.089, 0.018] m`, so the prior standard deviations are
 | banana x04, 0.5 kg | 3.503 | 0.153 (5/5 updated) | 3.35 | 1.62 | **held**, 2.1 σ |
 | banana x04, 1.5 kg | 3.503 | 1.894 (3/5 updated) | 1.61 | 1.62 | marginal on the cell mean; **held on the 3 updated episodes** (0.817 cm, improvement 2.69 cm = 1.7 σ) |
 | banana y02, 0.5 kg | 1.956 | 1.378 (3/5 updated) | 0.58 | 2.67 | **not held** on the cell mean; 0.965 cm on the 3 updated episodes |
+| cube x02, 0.6 kg | 2.049 | 0.923 (3/5 updated) | 1.13 | 0.87 | **held**, 1.3 σ on the cell mean; **2.1 σ on the 3 updated episodes** (0.207 cm, improvement 1.84 cm) |
+| cube x03, 0.6 kg | 3.049 | 3.047 (3/5 updated) | 0.002 | 0.87 | **not held** — see below; the posterior does not move in the error direction |
+| cube x03, 1.8 kg | 3.049 | 3.049 (0/5 updated) | 0 | 0.87 | no episode passed the real-hold gate, so `b₁ = b₀` by construction |
+| cube y02, 0.6 kg | 1.922 | 1.657 (1/5 updated) | 0.27 | 0.87 | not held on the cell mean; **1.6 σ on the single updated episode** (0.564 cm, improvement 1.36 cm) |
 
 The estimate is good whenever the test-lift really held. The cell means are dragged by the
 episodes where it did not, because the gate of §3.4 then leaves `b₁ = b₀`.
+
+**The cube's mass channel is the cleanest result in the table.** Every updated cube episode
+takes `m_prior = 0.114 kg` to `m_post = 0.596-0.597 kg` against a true 0.600 kg. The
+uniform-density prior at `rho0 = 600 kg/m³` is a 5x underestimate on this object (§4.6), and
+one test-lift removes it.
+
+**The `cube x03` cell is an open question, not a scene artefact.** Three of its five belief
+episodes were updated and the reported E1 did not move. Per-episode, e.g.
+`output/test_lift/sweep2/rubiks_cube/off_x03cm/belief/seed_0.npz`:
+
+```
+c_prior_o = [-0.0104,  0.0299, -0.0013]
+c_post_o  = [-0.0104,  0.0296,  0.0017]      <- moved 3.0 mm, all of it in z
+com_true_o= [ 0.0199,  0.0290, -0.0024]
+m_prior 0.1138 -> m_post 0.5965  (true 0.600)
+hold wrench (hand frame) = [-0.892, 0.077, -5.821,  0.007, -0.217, -0.050]
+```
+
+The whole 3.03 cm error is in x, and the posterior moved only in z. The same arm on the
+`x02` cell moves x correctly (`-0.0105 → +0.0092` against a true `+0.0099`). Two candidates,
+neither yet tested: (a) at this grasp pose the hold torque's informative direction maps onto
+the object's z, so the identified subspace misses the error; (b) `results.e1_perp_error`
+projects with a **fixed** `g_o = (0, 0, −1)` while the driver updates with the gravity
+measured at the hold (Ruling 23), and the two disagree whenever the object is tilted in the
+fingers. (b) would mean the metric, not the filter, is wrong. This is a new item for v1 —
+see §8.
 
 **Prediction 2 — "E2 for v0 sits between next_best and oracle, closer to oracle." NOT HELD.**
 
@@ -251,27 +388,38 @@ episodes where it did not, because the gate of §3.4 then leaves `b₁ = b₀`.
 | banana x04 | 0.800 | 1.000 | 1.000 | belief is **below both** |
 | banana x04 @1.5 kg | 0.800 | 1.000 | 0.600 | oracle is the **worst** arm |
 | banana y02 | 0.800 | 0.800 | 0.800 | three-way tie |
+| cube x02 | 0.600 | 0.600 | 0.600 | three-way tie |
+| cube x03 | 1.000 | 1.000 | 1.000 | all at ceiling |
+| cube x03 @1.8 kg | 0.600 | 0.600 | 0.600 | three-way tie |
+| cube y02 | 0.400 | 0.000 | 0.000 | belief is **above both** — the only separation in the study |
 
-There is no interval between `next_best` and `oracle` for the belief arm to sit in, because
-`oracle ≈ next_best` in every cell. The prediction cannot be evaluated as written.
+There is still no interval between `next_best` and `oracle` for the belief arm to sit in,
+because `oracle = next_best` in every one of the eight cells except `banana x04 @1.5 kg`,
+where the oracle is worse. The prediction cannot be evaluated as written. The `cube y02`
+cell is the only place an arm separates at all, and it separates in the belief arm's favour
+(0.400 against 0.000); at n = 5 that is two episodes against zero and it is inside binomial
+noise (§4.8). It is a lead for v1, not a result.
 
 **Prediction 3 — "If v0 ≈ next_best, the update is not reaching the grasp choice, and the
 re-ranker is the first thing to inspect." The antecedent holds. The consequent does NOT
 follow.**
 
-`belief ≈ next_best` on three of four banana cells and below it on one. But the design's
-prediction table has two rows, and this is **row 1**, not row 2:
+`belief = next_best` on five of the eight cells, below it on one (`banana x04`) and above it
+on one (`cube y02`). But the design's prediction table has two rows, and this is **row 1**,
+not row 2:
 
 * **Row 1 (what we see): `oracle ≈ next_best` ⇒ CoM knowledge does not change the outcome
-  in these cells.** An arm handed the true CoM does no better than an arm that ignores it.
-  The cells therefore cannot separate any arm from any other, and the belief arm matching
-  `next_best` is uninformative about the re-ranker.
+  in these cells.** Across eight cells an arm handed the true CoM ties `next_best` seven
+  times and loses once; it never wins. The cells therefore cannot separate any arm from any
+  other, and the belief arm matching `next_best` is uninformative about the re-ranker.
 * Row 2 would need `oracle > next_best` — the CoM mattering — with `belief ≈ next_best`
   anyway. Only then would the re-ranker be the suspect.
 
-The failures we do see on the banana are geometric: a grasp that misses or slips, not a
-grasp that loses to torque. **The first thing to inspect is the cell design, not the
-re-ranker.**
+Clearing the cube scene mattered for this verdict: before the fix, the cube's row-1 reading
+could have been an artefact of the bowl collision. It is not — with the scene cleared and
+success rates up (§4.2), `oracle = next_best` on all four cube cells too. The failures we
+see on both objects are geometric: a grasp that misses or slips, not a grasp that loses to
+torque. **The first thing to inspect is the cell design, not the re-ranker.**
 
 ### 4.5 Cost (E3)
 
@@ -280,49 +428,90 @@ both x cells (it always advances after a successful test-lift) and **2.0** at 1.
 `fixed_threshold` arm uses 1.8-2.0 everywhere, because its `‖τ‖ ≤ 0.15 N·m` bar rejects
 holds the belief arm accepts. `top1` is 1.0 by construction.
 
-### 4.6 The 17.3 cm posterior — an open bug
+On the cube the belief arm costs **1.4** grasps on both light x cells, **1.8** on `y02` and
+**2.0** on the heavy cell — it aborts more often than on the banana because the cube's
+first-lift rate is lower. It never costs more than `fixed_threshold`, which is 1.6-2.0 on
+the same cells, and on `x02` and `x03` it matches `next_best` and `oracle` exactly (1.4).
+The extra grasp buys the CoM estimate at no cost against the geometric baseline in those two
+cells.
 
-One episode moved the CoM estimate 17.3 cm on a ~7 cm object.
+### 4.6 The unbounded CoM update — an open bug, and how the re-run changed the evidence
 
-* **File:** `output/test_lift/sweep2/rubiks_cube/off_x02cm/belief/seed_2.npz`
+The pre-fix cube data contained one episode that moved the CoM estimate 17.3 cm on a 5.8 cm
+object. **That episode no longer exists**: the file
+(`output/test_lift/sweep2/rubiks_cube/off_x02cm/belief/seed_2.npz`) was regenerated by the
+re-run of §4.1, and the pre-fix numbers below are quoted from the Task 10 write-up, not from
+a file still on disk. Its cell log survives as
+`output/test_lift/sweep2/logs/rubiks_cube_off_x02cm_cell.log.invalid`.
+
+The discarded episode read:
+
 * `m_prior = 0.1139 kg`, `m_post = 0.4733 kg`, `m_true = 0.600 kg`
 * `c_true = [0.0099, 0.0290, −0.0024]`, `c_prior = [−0.0105, 0.0299, −0.0003]`,
   `c_post = [0.0465, 0.1983, 0.0225]`
 * prior perpendicular error **2.047 cm** → posterior **17.314 cm**
 * hold wrench `[−1.762, 2.761, −4.800, −0.765, −0.220, −0.365]`, no-load bias ≈ 1e-9
 
-This single episode is what turns the `rubiks_cube x02 belief` row from 2.049 → 5.103 cm.
-Two things are wrong at once. The uniform-density prior at `rho0 = 600 kg/m³` gives
-`m_prior = 0.114 kg` against a true 0.600 kg — a 5x underestimate — and the Kalman step has
-no bound, so a torque of 0.765 N·m at `m̂ = 0.473 kg` implies a 16 cm lever arm and the
-update takes it at face value. `R_tau = (0.005)² I` is small enough that the measurement
-dominates the prior completely. The posterior lands outside the object. This row is invalid
-for the scene reason of §4.1 as well, but the unbounded-step bug is independent of the
-scene and will recur.
+**The bug is not fixed, and it is not a scene artefact.** Two things were wrong at once. The
+uniform-density prior at `rho0 = 600 kg/m³` gives `m_prior = 0.114 kg` against a true
+0.600 kg — a 5x underestimate, still true in the re-run — and the Kalman step has no bound,
+so a torque of 0.765 N·m at `m̂ = 0.473 kg` implies a 16 cm lever arm and the update takes it
+at face value. `R_tau = (0.005)² I` is small enough that the measurement dominates the prior
+completely, and the posterior lands outside the object.
 
-### 4.7 The cube failure mode
+**What the cleared scene changed is the size of the excursion, not the mechanism.** Over the
+7 updated cube episodes of the re-run the worst posterior perpendicular error is **3.14 cm**
+(`off_x03cm/belief/seed_1.npz`), and the largest posterior CoM norm is **5.59 cm**
+(`off_y02cm/belief/seed_3.npz`) against a 2.9 cm half-extent — still outside the object, so
+the convex-hull clamp of §8 item 2 is still needed. The 17.3 cm case was the bug being fed a
+wrench from a hand that had collided with the bowl; remove the collision and it stays inside
+one object diameter. Nothing bounds it.
 
-*(Retained for the record. The cube cells are invalid — §4.1 — and this paragraph is a
-description of what the logs show, not a finding.)*
+### 4.7 The cube failure mode, after the scene fix
 
-Read from `output/test_lift/spot/logs/rubiks_cube_off_x03cm_*.log.raw`
-(`z_table = 0.0026`, `obj_rest_z = 0.0391`):
+Read from `output/test_lift/spot/logs/rubiks_cube_off_x03cm_*_0.log` (spot re-run,
+`MODE=single`, seed 0, 5 arms, `x03` at the default 0.6 kg; `z_table = 0.0025`,
+`obj_rest_z = 0.0214`):
 
 ```
-arm               [second] ik_err   gap      tilt1(1st)  obj z at 2nd reach -> after test-lift   lift_ok
-belief            0.0038           0.0027    4.6 deg     0.0328 -> 0.0463  (+13.5 mm)            True
-fixed_threshold   0.0000           0.0559   19.0 deg     0.0214 -> 0.0398  (+18.4 mm)            False
-next_best         0.0030           0.0027   34.1 deg     0.0257 -> 0.0209  (-4.8 mm)             False
-oracle            0.0243           0.0120   24.4 deg     0.0303 -> 0.0208  (-9.5 mm)             False
-top1              --               --        1.8 deg     advanced on grasp 1, no second grasp    --
+arm               [second] ik_err   gap      tilt1(1st)  obj z at 2nd reach -> after test-lift   lift_ok  final_ok
+belief            0.0000           0.0376    0.7 deg     0.0214 -> 0.0405  (+19.1 mm)            True     True
+fixed_threshold   0.0000           0.0466    4.5 deg     0.0214 -> 0.0390  (+17.6 mm)            True     True
+next_best         0.0000           0.0013    9.1 deg     0.0214 -> 0.0421  (+20.7 mm)            False    False
+oracle            0.0000           0.0595   38.3 deg     0.0214 -> 0.0384  (+17.0 mm)            False    True
+top1              --               --        0.8 deg     advanced on grasp 1, no second grasp    --       True
 ```
 
-The second grasp is not an IK failure: `ik_err` is 0.0-2.4 mm and `approach_z` is −0.92 to
-−0.99. The hand arrives where it was asked. But the cube's z at the second reach is
-0.0214-0.0328 against a 0.0391 rest height, so it is lying tipped after grasp 1, whose
-`tilt1` was 19-34° for the three arms that abort. `next_best` and `oracle` then shut the
-pads to 2.7 and 12.0 mm on air. This is **consistent with a collision against the adjacent
-bowl during the first approach**, and is to be confirmed after the scene fix (Task 10b).
+**The bowl collision is gone, and it shows in three places.**
+
+1. **The cube now settles flat.** `obj_rest_z` is **0.0214** against **0.0391** in the
+   cluttered scene, while `z_table` is unchanged at 0.0025-0.0026. The object's lowest point
+   was always on the table; its origin was 17.7 mm higher. That is a cube resting tipped on
+   an edge, which is what a body dropped 2.3 cm next to a bowl does.
+2. **The cube is at its rest height when the second grasp arrives.** `obj z at 2nd reach` is
+   0.0214 for every arm — exactly `obj_rest_z`. In the cluttered scene it was 0.0214-0.0328
+   against a 0.0391 rest height, i.e. displaced by the first grasp every time.
+3. **First-grasp tilt collapsed.** `tilt1` was 19.0-34.1° for the three arms that aborted;
+   it is now 0.7-9.1° for those same three. The clearance run of §4.1 gave 10.8°.
+
+**What still fails is the second grasp's finger closure, and it is not the scene.** The
+second grasp is not an IK failure in either run: `ik_err` is now **0.0000 m on all four**
+arms that take one, and `approach_z` is −0.888 to −0.999. Every arm's cube rises 17.0-20.7 mm
+on the test-lift, above the 12 mm bar. Two arms still fail the real-hold gate, and for
+opposite reasons:
+
+* `next_best` closes to a **1.3 mm** finger gap — below the 2 mm `MIN_FINGER_GAP` — so the
+  pads met each other, not the cube, and the 20.7 mm rise is the cube being flicked rather
+  than carried.
+* `oracle` holds the fingers **59.5 mm** apart and its first grasp tilted the cube **38.3°**,
+  the largest tilt in either run. A 38° tilt with the scene cleared is the grasp itself, not
+  a neighbour: the oracle's CoM-optimal candidate on this object is a pose that rolls the
+  cube.
+
+So the cube's residual failure mode after the fix is **grasp geometry on a small box** — pads
+that meet on air or a candidate that tips the object — not clutter. That is the same failure
+family as the banana's (§4.4, prediction 3), and it is why §8 item 3 (a candidate confidence
+floor) and item 4 (cells where torque decides) both stay on the v1 list.
 
 ### 4.8 Caveats
 
@@ -337,8 +526,17 @@ bowl during the first approach**, and is to be confirmed after the scene fix (Ta
   per-episode figure. The column will mislead anyone reading it cold.
 * Sweep 1 used the 14 mm test-lift bar and sweep 2 the 12 mm bar. `first_lift_ok` and
   everything downstream of it differ for that reason alone.
-* The wandb project holds two runs over the same 200 sweep-2 files: the sweep's own
-  end-of-run aggregation (`sweep-20260908-2326`) and the named `sweep2-final`.
+* The wandb project now holds five aggregations. **`sweep2-final-cube-fixed` (id `kdr271g6`)
+  is the one to read.** `sweep2-final` (id `ibeewkgx`) and `sweep-20260908-2326` cover the
+  same 200 files with the **pre-fix** cube episodes. `sweep-20260909-0014` (id `het31rni`) is
+  the cube re-run's own end-of-sweep aggregation over the same files as
+  `sweep2-final-cube-fixed`. `sweep-20260909-0019` (id `0leynpwv`) is the spot run's
+  aggregation over the 10 spot episodes and is not sweep data — the sweep script runs
+  `analysis.test_lift.results` on whatever directory it was given.
+* **The cube spot videos and the cube sweep-2 cells are different runs of the same cell.**
+  The spot run is `MODE=single`, which calls GraspGenX once per episode; the sweep is
+  `MODE=batch`, which calls it once per seed for all five arms. §4.7's outcomes will not
+  match the `x03` row of §4.2 episode for episode.
 
 ---
 
@@ -476,25 +674,33 @@ the demo picks a top-down grasp on its own without an approach filter, which is 
 
 ## 7. Videos
 
-Ten spot videos, one per (object, arm) at seed 0, from a separate single-mode run
-(`MODE=single`, `--video`, 312 s at 4 workers, Ruling 35). Outcomes read from the matching
-`seed_0.npz` and the run logs.
+Ten spot videos, one per (object, arm) at seed 0, from separate single-mode runs
+(`MODE=single`, `--video`, Ruling 35). The five banana videos are the original run (312 s at
+4 workers); the five cube videos were **re-recorded on 2026-09-09 in the cleared scene**
+(255 s at 2 workers) and the pre-fix cube videos were deleted. Outcomes read from the
+matching `seed_0.npz` and the run logs.
 
 | path | outcome |
 |---|---|
-| `output/test_lift/spot/banana/off_x04cm/belief/seed_0.mp4` | test-lift held, advanced on grasp 1, **one grasp only** (936 KB, the short file) |
+| `output/test_lift/spot/banana/off_x04cm/belief/seed_0.mp4` | test-lift held, advanced on grasp 1, **one grasp only** (958 KB, the short file) |
 | `output/test_lift/spot/banana/off_x04cm/next_best/seed_0.mp4` | aborted after grasp 1, ran a second grasp (1.6 MB) |
 | `output/test_lift/spot/banana/off_x04cm/fixed_threshold/seed_0.mp4` | aborted on the `‖τ‖ > 0.15` rule, ran a second grasp (1.6 MB) |
 | `output/test_lift/spot/banana/off_x04cm/oracle/seed_0.mp4` | aborted after grasp 1, ran a second grasp (1.6 MB) |
-| `output/test_lift/spot/banana/off_x04cm/top1/seed_0.mp4` | advanced unconditionally, **one grasp only** (948 KB) |
-| `output/test_lift/spot/rubiks_cube/off_x03cm/belief/seed_0.mp4` | second grasp held marginally (13.5 mm rise, 2.7 mm gap), lift-clear then dropped it → `final_ok=False` |
-| `output/test_lift/spot/rubiks_cube/off_x03cm/next_best/seed_0.mp4` | grasp 1 tilted the cube 34.1°, second grasp shut on air (2.7 mm), cube never left the table |
-| `output/test_lift/spot/rubiks_cube/off_x03cm/fixed_threshold/seed_0.mp4` | grasp 1 tilted the cube 19.0°, second grasp rose 18.4 mm but failed the gate (gap 55.9 mm) |
-| `output/test_lift/spot/rubiks_cube/off_x03cm/oracle/seed_0.mp4` | grasp 1 tilted the cube 24.4°, second grasp shut on 12.0 mm of air, cube back on the table |
-| `output/test_lift/spot/rubiks_cube/off_x03cm/top1/seed_0.mp4` | advanced on grasp 1 (tilt 1.8°), **one grasp only** (956 KB) |
+| `output/test_lift/spot/banana/off_x04cm/top1/seed_0.mp4` | advanced unconditionally, **one grasp only** (969 KB) |
+| `output/test_lift/spot/rubiks_cube/off_x03cm/belief/seed_0.mp4` | grasp 1 missed (`ik_err` 27.3 mm, tilt 0.7°, no hold); second grasp rose 19.1 mm with a 37.6 mm gap and held → `final_ok=True` (1.65 MB) |
+| `output/test_lift/spot/rubiks_cube/off_x03cm/next_best/seed_0.mp4` | grasp 1 tilted the cube 9.1°; second grasp rose 20.7 mm but the pads closed to **1.3 mm** — below `MIN_FINGER_GAP` — so the gate rejected it → `final_ok=False` (1.78 MB) |
+| `output/test_lift/spot/rubiks_cube/off_x03cm/fixed_threshold/seed_0.mp4` | grasp 1 tilted the cube 4.5°; second grasp rose 17.6 mm with a 46.6 mm gap and held → `final_ok=True` (1.70 MB) |
+| `output/test_lift/spot/rubiks_cube/off_x03cm/oracle/seed_0.mp4` | grasp 1 tilted the cube **38.3°**, the largest tilt in the study; second grasp rose 17.0 mm with the fingers 59.5 mm apart, `lift_ok=False` (1.61 MB) |
+| `output/test_lift/spot/rubiks_cube/off_x03cm/top1/seed_0.mp4` | advanced on grasp 1 (tilt 0.8°), **one grasp only** (972 KB) |
 
-The five cube videos show the invalid scene of §4.1 and are useful only for confirming the
-bowl collision.
+The five cube videos now show the cleared scene, so they are the record of the residual
+failure mode of §4.7 (finger closure and one 38° tipping grasp), not of the bowl collision.
+The pre-fix cube run's logs are kept as
+`output/test_lift/spot/logs/rubiks_cube_off_x03cm_*.invalid` for the before/after
+comparison; its videos are gone.
+
+Scene-clearance still frame (§4.1): `output/test_lift/scene_check/scene_check_frame0.png`,
+first frame of `output/test_lift/scene_check/rubiks_cube/off_x03cm/next_best/seed_0.mp4`.
 
 Cross-check video (GraspGenX's own simulator, §5):
 `~/Codes/GraspGenX/end2end/runs/franka_single/franka_single.mp4`.
@@ -503,45 +709,71 @@ Cross-check video (GraspGenX's own simulator, §5):
 
 ## 8. What v1 must change, ranked
 
-This list mirrors the design doc's §11.8, in the same order (Ruling 38).
+Items 1-6 are the design doc's §11.8 list, in its order and with its wording as the head of
+each entry (Ruling 38). Items 7-8 are **not** in §11.8: 7 was already in this document and 8
+came out of the cube re-run. Both should be folded into the design doc.
 
-1. **Filter candidates against the scene cloud before re-ranking.** v0 hands GraspGenX the
-   object-only point cloud, so a candidate can drive the gripper into a neighbour. That is
-   what broke every cube cell (§4.1): a bowl sits a few centimetres from the cube. Build the
-   scene cloud from every rigid body plus the table — ground truth is free in simulation —
-   run a point-cloud collision check, and give the re-ranker only collision-free candidates.
-   GraspGenX's own end2end demo already does exactly this and it matters: 36 of its 80
-   grasps survived the check (§5.2). This is also where the candidate-set coverage risk
-   lives (`surveys/2026-09-08-clutter-grasping-and-object-relations.md` §3.1/§4.1):
-   detectors filter collisions geometrically, and none re-ranks by physics.
-2. **Bound the CoM update.** Add an innovation gate — reject a wrench whose implied lever
-   arm exceeds the object's own extent — and clamp the posterior mean into the convex hull
-   of the object's point cloud. The 17.3 cm posterior of §4.6 is a 2.5x-object-diameter step
-   taken from one measurement, and `R_tau = 2.5e-5` is small enough that this will recur on
-   any noisy hold. Also fix the prior: `rho0 = 600 kg/m³` gave 0.114 kg against a true
-   0.600 kg on the cube.
-3. **Add a candidate confidence floor.** v0 keeps every candidate GraspGenX returns and lets
-   the re-ranker sort them, so the belief arm can promote a geometrically bad grasp on the
-   strength of its physics term. GraspGenX's own end2end demo thresholds at **0.7** (§5.2:
-   79 of 200 survive) before it plans anything. Use the same floor, so the belief only
-   re-orders grasps that are geometrically sound.
-4. **Build cells where off-CoM torque actually breaks the grasp.** This is the reason v0
-   cannot answer its own question. `oracle ≈ next_best` everywhere means the CoM never
-   decides the outcome. Two levers: push the CoM offset far enough that a centroid grasp
-   loses (the banana's half-extents are `[5.4, 8.9, 1.8] cm`, so a 4 cm x-offset is still
-   inside the body), or weaken the grip force so the torque margin binds. `F_grip = 40 N`
-   with `mu = 0.8` and `r_pad = 0.01` gives a margin of 0.32 N·m, against measured hold
-   torques of 0.03-0.30 N·m — the margin is barely reachable. Lower it.
-5. **Use the tilt signal as information, not only as a gate.** Object tilt at the hold
-   currently only rejects an episode (`TILT_MAX_DEG = 15°`). A tilt is a rotation about the
-   grasp axis driven by the very torque the belief wants to estimate, and it is observable
-   without a wrist sensor. Feed it into the likelihood.
-6. **Vectorize video capture.** Batch mode has no video, so every spot video costs a
-   separate single-env run at 33 s per grasp. A batched recorder would remove the
-   single-env driver's remaining reason to exist.
-7. **Raise n.** n = 5 per arm per cell cannot separate two arms whose true rates differ by
-   less than about 0.4. With the batched driver at 44 s per 25 episodes, n = 20 costs about
-   3 minutes per cell.
+1. **Scene-cloud collision filter before re-ranking.** v0 hands GraspGenX the object-only
+   point cloud, so a candidate can drive the gripper into a neighbour. Build the scene cloud
+   from every rigid body plus the table — ground truth is free in simulation — run
+   GraspGenX's scene mode / point-cloud collision check, and give the re-ranker only
+   collision-free candidates. GraspGenX's own end2end demo already does exactly this and it
+   matters: 36 of its 80 grasps survived the check (§5.2). This is also where the
+   candidate-set coverage risk lives
+   (`surveys/2026-09-08-clutter-grasping-and-object-relations.md` §3.1/§4.1): detectors
+   filter collisions geometrically, and none re-ranks by physics.
+   **Now measured, not argued.** The cube cell is the worked example, and §4.1 moved the
+   neighbours out of reach by hand rather than filtering candidates. That hand fix bought
+   mean `e2_final_rate` on the cube from 0.270 to 0.530 and first-grasp tilt from 19-34° to
+   0.7-9.1° (§4.2, §4.7). A real filter is what makes the same gain available in a scene you
+   are not allowed to rearrange — which is every scene that is not a benchmark of your own.
+2. **Innovation gate + convex-hull clamp on the CoM update.** Reject a wrench whose implied
+   lever arm exceeds the object's own extent, and clamp the posterior mean into the convex
+   hull of the object's point cloud. §4.6: the discarded pre-fix episode took a 17.3 cm step
+   on a 5.8 cm object from one measurement, and `R_tau = 2.5e-5` is small enough that the
+   measurement dominates the prior. Clearing the scene shrank the worst case to a 3.14 cm
+   posterior error with a 5.59 cm posterior CoM norm against a 2.9 cm half-extent — **still
+   outside the object**, so nothing bounds it, only the input got tamer. Also fix the prior:
+   `rho0 = 600 kg/m³` gives 0.114 kg against a true 0.600 kg on the cube, unchanged by the
+   re-run.
+3. **Candidate confidence floor before re-ranking (GraspGenX's own pipeline uses 0.7).** v0
+   keeps every candidate GraspGenX returns and lets the re-ranker sort them, so an arm can
+   promote a geometrically bad grasp on the strength of its physics term. GraspGenX's own
+   end2end demo thresholds at 0.7 (§5.2: 79 of 200 survive) before it plans anything. The
+   cleared-scene spot run gives this item its own evidence: with clutter removed, the
+   oracle's chosen candidate still tipped the cube 38.3° and `next_best`'s second grasp still
+   closed the pads to 1.3 mm on air (§4.7). Those are bad candidates, not bad scenes.
+4. **Cells where off-CoM torque actually breaks the grasp (or a weaker grip force), so the
+   oracle can separate from next_best.** This is the reason v0 cannot answer its own
+   question, and the cube re-run made the evidence stronger rather than weaker: across all
+   **eight** cells the oracle ties `next_best` seven times and loses once, and never wins
+   (§4.4). Two levers: push the CoM offset far enough that a centroid grasp loses (the
+   banana's half-extents are `[5.4, 8.9, 1.8] cm` and the cube's are `[2.9, 2.9, 2.9] cm`, so
+   a 4 cm banana offset and a 3 cm cube offset are both still inside the body), or weaken the
+   grip force so the torque margin binds. `F_grip = 40 N` with `mu = 0.8` and `r_pad = 0.01`
+   gives a margin of 0.32 N·m against measured hold torques of 0.03-0.30 N·m — barely
+   reachable. Lower it.
+5. **Use the tilt (swing) signal as CoM-direction information instead of only rejecting it.**
+   Object tilt at the hold currently only rejects an episode (`TILT_MAX_DEG = 15°`). A tilt is
+   a rotation about the grasp axis driven by the very torque the belief wants to estimate, and
+   it is observable without a wrist sensor. The cleared scene makes this cheaper to exploit:
+   tilt is now the grasp's own signal rather than a collision artefact (§4.7).
+6. **Video capture in batch mode.** Batch mode has no video, so every spot video costs a
+   separate single-env run at 33 s per grasp — the cube re-record cost 255 s for five
+   episodes, against 171 s for all 100 batched ones.
+7. **Raise n.** *(Not in §11.8.)* n = 5 per arm per cell cannot separate two arms whose true
+   rates differ by less than about 0.4. The one separation in the whole study — `belief`
+   0.400 against `next_best`/`oracle` 0.000 on `cube y02` (§4.4) — is two episodes against
+   zero and cannot be called. With the batched driver at ~43 s per 25 episodes, n = 20 costs
+   about 3 minutes per cell.
+8. **Make E1's gravity projection match the filter's.** *(Not in §11.8; new from the cube
+   re-run.)* `analysis/test_lift/results.py::e1_perp_error` projects out a **fixed**
+   `g_o = (0, 0, −1)`, while the driver updates the belief with the gravity measured at the
+   hold (Ruling 23). The two disagree whenever the object is tilted in the fingers, and the
+   `cube x03` cell — three updated episodes, posterior moved 3.0 mm entirely in z, reported
+   E1 unchanged at 3.05 cm (§4.4) — is exactly the shape that discrepancy would produce.
+   Log `g_o` at the hold per episode and compute E1 against it, then re-read that cell before
+   concluding anything about the filter.
 
 ---
 
