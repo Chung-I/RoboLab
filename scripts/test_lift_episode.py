@@ -87,10 +87,16 @@ import time
 import cv2  # noqa: F401  must be imported before isaaclab
 from isaaclab.app import AppLauncher
 
-# Defaults measured in Task 8c (see the module docstring). They are declared before the
-# parser because two flags take them as their default value.
-APPROACH_Z_MAX = -0.85   # keep candidates whose world approach axis points down
-GRASP_DEPTH_OFFSET = 0.01  # push every hand target this far along its own approach axis (m)
+# Every constant and both decision rules live in analysis/test_lift/batch.py, so that this
+# driver and scripts/test_lift_batch.py cannot drift apart (Task 8e). That module is pure
+# numpy -- no Isaac, no robolab -- so importing it here, before AppLauncher runs, is safe,
+# and it has to be here: two flags take APPROACH_Z_MAX / GRASP_DEPTH_OFFSET as their default.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from analysis.test_lift.batch import (APPROACH_Z_MAX, CLEAR_DZ, CLEAR_OK_FRAC, CLOSE,  # noqa: E402
+                                      GRASP_DEPTH_OFFSET, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
+                                      MOVE_STEPS, OPEN, SETTLE_STEPS, STANDOFF, TILT_MAX_DEG,
+                                      decide_advance, offset_dir_name, real_hold)
+
 FRAME_CHECK_N = 8        # candidates tried per --frame-check invocation
 
 parser = argparse.ArgumentParser()
@@ -145,17 +151,8 @@ from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
 from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams, hold_probability,  # noqa: E402
                                        select_belief, select_next_best_geometric, select_oracle)
 
-STANDOFF = 0.10       # pre-grasp distance along -approach (m)
-LIFT_DZ = 0.02        # test-lift height (m)
-LIFT_OK_FRAC = 0.7    # fraction of LIFT_DZ a test-lift must clear to count as a hold (Ruling 29)
-CLEAR_DZ = 0.15       # lift-clear height (m)
-HOLD_STEPS = 15       # 1 s at 15 Hz
-MOVE_STEPS = 45       # 3 s per motion segment
-SETTLE_STEPS = 60     # let the object come to rest before any pose is read
 ORACLE_CHECK_N = 6    # candidates --oracle-check may try before giving up on a hold
-TILT_MAX_DEG = 15.0   # object tilt from the settle orientation allowed for a real hold (Ruling 25)
-VIDEO_FPS = 15         # control rate
-OPEN, CLOSE = 1.0, -1.0
+VIDEO_FPS = 15        # control rate
 
 Z_TABLE = 0.0  # world z of the surface the object rests on; set once in main() after the settle
 
@@ -269,9 +266,8 @@ def attempt_report(rb, env, grasp_o, T_obj_w, idx, ok, ik_err, tag):
           f"ik_err={ik_err:.4f} approach_z={appr_z:.3f} obj={np.round(obj, 4)}", flush=True)
 
 
-def lift_ok(env, name, z_before, dz, frac=0.5):
-    z = env.scene[name].data.root_pose_w[0, 2].item()
-    return (z - z_before) > frac * dz
+def object_rise(env, name, z_before) -> float:
+    return env.scene[name].data.root_pose_w[0, 2].item() - z_before
 
 
 def tilt_deg(R_a, R_b) -> float:
@@ -328,8 +324,8 @@ def run_grasp(rb, env, name, target7, log, R_settle):
     rb.step(up, CLOSE, MOVE_STEPS // 2)
     w_hold, hold_trace = rb.wrench_h(target7=up, grip=CLOSE)
     tilt = tilt_deg(R_settle, object_T_w(env, name)[:3, :3])
-    ok = (lift_ok(env, name, z0, LIFT_DZ, frac=LIFT_OK_FRAC)
-          and rb.finger_gap() > 0.002 and tilt < TILT_MAX_DEG)
+    ok = real_hold(object_rise(env, name, z0), LIFT_DZ, rb.finger_gap(), tilt,
+                   LIFT_OK_FRAC, TILT_MAX_DEG)
     log["wrench_bias_h"], log["wrench_hold_h"] = bias, w_hold
     log["wrench_bias_trace_h"], log["wrench_trace_h"] = bias_trace, hold_trace
     return ok, bias, w_hold, rb.hand_T_w(), z0, reach_err, tilt
@@ -347,10 +343,7 @@ def main():
     env_name, events = register_test_lift_env(args.task_file, args.object, args.mass, tuple(args.com_offset),
                                               postfix=f"_TL_{args.arm}_{args.seed}", seed=args.seed,
                                               with_camera=bool(args.video))
-    _offset = np.asarray(args.com_offset, dtype=float)
-    _axis = "x" if np.allclose(_offset, 0) else "xyz"[int(np.argmax(np.abs(_offset)))]
-    out_dir = os.path.join(args.out, args.object,
-                           f"off_{_axis}{int(round(np.linalg.norm(_offset) * 100)):02d}cm", args.arm)
+    out_dir = os.path.join(args.out, args.object, offset_dir_name(args.com_offset), args.arm)
     os.makedirs(out_dir, exist_ok=True)
     set_output_dir(out_dir)
     env, _ = create_env(env_name, device=args.device, seed=args.seed, num_envs=1, use_fabric=True, events=events)
@@ -414,7 +407,7 @@ def main():
                 tgt = hand_target(grasps_o[i], T_obj, rb.origin, args.yaw_fix, args.grasp_depth_offset)
                 ok, _, _, _, z0, ik_err, tilt = run_grasp(rb, env, args.object, tgt, {}, R_settle)
                 held += bool(ok)
-                rise = env.scene[args.object].data.root_pose_w[0, 2].item() - z0
+                rise = object_rise(env, args.object, z0)
                 appr_z = float((np.asarray(T_obj)[:3, :3] @ np.asarray(grasps_o[i])[:3, 2])[2])
                 print(f"[frame-check] yaw_fix={args.yaw_fix} azmax={args.approach_z_max} "
                       f"doff={args.grasp_depth_offset} cand={k} idx={int(i)} conf={confs[i]:.3f} "
@@ -493,22 +486,19 @@ def main():
             end_episode(env)
             return
 
-        # ---- decide ----
+        # ---- decide ---- (the per-arm rules live in analysis/test_lift/batch.py)
+        hp = float("nan")
         if args.arm == "belief":
             hp = hold_probability(grasps_o[i1], b1, g_hold, params, rng)
             log["hold_prob_first"] = hp
-            advance = ok1 and hp >= args.pi_go
-        elif args.arm == "fixed_threshold":
-            advance = ok1 and np.linalg.norm(tau_h) <= args.tau_thr
-        elif args.arm == "top1":
-            advance = True
-        else:  # next_best, oracle: advance iff the test-lift held
-            advance = ok1
+        advance = decide_advance(args.arm, ok1, hp, float(np.linalg.norm(tau_h)),
+                                 args.pi_go, args.tau_thr)
 
         n_grasps, final_ok, ik_err2 = 1, False, float("nan")
         if advance:
             rb.step(lifted_target(tgt1, CLEAR_DZ), CLOSE, MOVE_STEPS)
-            final_ok = lift_ok(env, args.object, z0, CLEAR_DZ) and rb.finger_gap() > 0.002
+            final_ok = real_hold(object_rise(env, args.object, z0), CLEAR_DZ, rb.finger_gap(), 0.0,
+                                frac=CLEAR_OK_FRAC, tilt_max=float("inf"))
         else:
             set_down(rb, tgt1)
             T_obj2 = object_T_w(env, args.object)
@@ -532,7 +522,8 @@ def main():
             ok2, _, _, _, z0b, ik_err2, _ = run_grasp(rb, env, args.object, tgt2, {}, R_settle)
             attempt_report(rb, env, grasps_o[i2], T_obj2, i2, ok2, ik_err2, "second")
             rb.step(lifted_target(tgt2, CLEAR_DZ), CLOSE, MOVE_STEPS)
-            final_ok = lift_ok(env, args.object, z0b, CLEAR_DZ) and rb.finger_gap() > 0.002
+            final_ok = real_hold(object_rise(env, args.object, z0b), CLEAR_DZ, rb.finger_gap(), 0.0,
+                                frac=CLEAR_OK_FRAC, tilt_max=float("inf"))
             n_grasps = 2
             log.update(idx_second=i2, second_lift_ok=ok2)
 
