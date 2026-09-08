@@ -4,14 +4,20 @@
 import numpy as np
 import pytest
 
-from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, BRANCH_STEPS, CLEAR_DZ,
-                                      HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC, MIN_FINGER_GAP, MOVE_STEPS,
-                                      OBJECT_MASS_KG, SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
-                                      branch_stage_a_schedule, decide_advance, env_index, grasp_schedule,
-                                      hand_target, offset_dir_name, phase_schedule, reachable_candidates,
-                                      real_hold, seed_of, setdown_schedule, tilt_deg, unreachable_after_move,
-                                      world_approach_z)
+from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, BRANCH_STEPS,
+                                      CLEAR_DZ, FINGER_JOINTS, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
+                                      MIN_FINGER_GAP, MOVE_STEPS, OBJECT_MASS_KG, R_F, R_TAU,
+                                      SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
+                                      assert_finger_joints, branch_stage_a_schedule, decide_advance,
+                                      env_index, grasp_schedule, hand_target, offset_dir_name,
+                                      phase_schedule, reachable_candidates, real_hold, seed_of,
+                                      select_first, select_second, setdown_schedule, tilt_deg,
+                                      unreachable_after_move, update_allowed, world_approach_z)
+from analysis.test_lift.belief import GaussianBelief
 from analysis.test_lift.frames import HAND_YAW_FIX, grasp_to_hand_target, pose7_to_T
+from analysis.test_lift.physics import GRAVITY_G
+from analysis.test_lift.rerank import (GraspParams, select_belief, select_next_best_geometric,
+                                       select_oracle)
 
 TASK_BUDGET_STEPS = 180 * 15  # episode_length_s = 180 in the task files, 15 Hz control
 
@@ -264,3 +270,105 @@ def test_tilt_deg_identity_and_thirty_degrees():
     assert tilt_deg(np.eye(3), _rot_x(-30.0)) == pytest.approx(30.0, abs=1e-9)  # unsigned
     assert tilt_deg(np.eye(3), _rot_x(180.0)) == pytest.approx(180.0, abs=1e-6)
     assert APPROACH_Z_MAX == -0.85
+
+
+# --------------------------------------------------------------------------- selectors
+def _candidate_set():
+    """Three candidates whose confidence order is NOT the physics order.
+
+    Candidate 0 has the highest confidence but its fingertips sit far from the true CoM, so
+    the lever arm -- and therefore the gravity torque -- is largest there. A belief or oracle
+    ranking that uses the CoM has to prefer a different candidate from the one confidence
+    alone picks; that is what makes this set able to tell the three selectors apart.
+    """
+    grasps = np.stack([_grasp(t=(0.10, 0.0, 0.0)),
+                       _grasp(t=(0.00, 0.0, 0.0)),
+                       _grasp(t=(0.05, 0.0, 0.0))])
+    confs = np.array([0.9, 0.5, 0.6])
+    belief = GaussianBelief(m_mean=0.5, m_var=0.05**2,
+                            c_mean=np.array([0.02, 0.0, 0.0]), c_cov=np.eye(3) * 0.01**2)
+    return grasps, confs, belief, np.array([0.0, 0.0, -1.0]), GraspParams(n_samples=256)
+
+
+def test_select_first_maps_each_arm_to_its_own_selector():
+    grasps, confs, belief, g_hat, params = _candidate_set()
+    m_true, c_true = 0.5, np.array([0.05, 0.0, 0.0])
+
+    # confidence-only arms
+    for arm in ("next_best", "fixed_threshold", "top1"):
+        assert select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
+                            np.random.default_rng(0)) == select_next_best_geometric(confs)
+    # belief arm: the same call rerank.select_belief makes, on the same rng stream
+    assert (select_first("belief", grasps, confs, belief, m_true, c_true, g_hat, params,
+                         np.random.default_rng(7))
+            == select_belief(grasps, confs, belief, g_hat, params, np.random.default_rng(7)))
+    # oracle arm: ranks with the TRUE mass and CoM, not the belief
+    assert (select_first("oracle", grasps, confs, belief, m_true, c_true, g_hat, params,
+                         np.random.default_rng(0))
+            == select_oracle(grasps, confs, m_true, c_true, g_hat, params))
+
+
+def test_select_first_covers_every_arm_and_rejects_anything_else():
+    grasps, confs, belief, g_hat, params = _candidate_set()
+    for arm in ARMS:
+        i = select_first(arm, grasps, confs, belief, 0.5, np.zeros(3), g_hat, params,
+                         np.random.default_rng(0))
+        assert 0 <= i < len(confs)
+    with pytest.raises(ValueError):
+        select_first("belief_v2", grasps, confs, belief, 0.5, np.zeros(3), g_hat, params,
+                     np.random.default_rng(0))
+
+
+def test_selectors_honour_exclude_and_second_matches_first():
+    grasps, confs, belief, g_hat, params = _candidate_set()
+    m_true, c_true = 0.5, np.array([0.05, 0.0, 0.0])
+    for arm in ARMS:
+        first = select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
+                             np.random.default_rng(3))
+        second = select_second(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
+                               np.random.default_rng(3), exclude=(first,))
+        assert second != first
+        # select_second is the same map as select_first, only the inputs differ
+        assert second == select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
+                                      np.random.default_rng(3), exclude=(first,))
+
+
+# --------------------------------------------------------------------------- update gate
+def test_update_allowed_boundary_is_half_the_prior_weight():
+    m_prior = 0.4
+    thr = 0.5 * m_prior * GRAVITY_G          # 1.962 N
+    assert update_allowed(True, np.array([0.0, 0.0, -thr]), m_prior) is True          # exactly at it
+    assert update_allowed(True, np.array([0.0, 0.0, -thr * 1.001]), m_prior) is True  # above
+    assert update_allowed(True, np.array([0.0, 0.0, -thr * 0.999]), m_prior) is False # below
+    # the norm, not one component: a force split across axes still counts, and one component
+    # on its own is well under the bar
+    split = thr * 1.001 / np.sqrt(2)
+    assert update_allowed(True, np.array([split, 0.0, -split]), m_prior) is True
+    assert update_allowed(True, np.array([0.0, 0.0, -split]), m_prior) is False
+
+
+def test_update_allowed_needs_a_real_hold_whatever_the_force():
+    assert update_allowed(False, np.array([0.0, 0.0, -100.0]), 0.4) is False
+
+
+def test_update_allowed_reproduces_the_task_8_partial_support_case():
+    """3.10 N of a 4.905 N object: the +y oracle check. Passes the gate, which is why the
+    gate alone was judged too weak and the tilt / gap guards of Ruling 25 were added."""
+    assert update_allowed(True, np.array([0.0, 0.0, -3.10]), 0.5) is True
+    # ... and the empty-gripper case the gate DOES catch
+    assert update_allowed(True, np.array([0.0, 0.0, -0.02]), 0.5) is False
+
+
+def test_measurement_noise_constants():
+    assert R_F == pytest.approx(0.05**2)
+    np.testing.assert_allclose(R_TAU, np.eye(3) * 0.005**2)
+
+
+# --------------------------------------------------------------------------- finger joints
+def test_assert_finger_joints_accepts_the_franka_order():
+    assert_finger_joints(["panda_joint1", "panda_joint7", *FINGER_JOINTS])
+
+
+def test_assert_finger_joints_rejects_a_reordered_articulation():
+    with pytest.raises(AssertionError):
+        assert_finger_joints([*FINGER_JOINTS, "panda_joint7"])

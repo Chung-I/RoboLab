@@ -76,10 +76,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, CLEAR_DZ,  # noqa: E402
                                       CLEAR_OK_FRAC, CLOSE, GRASP_DEPTH_OFFSET, HOLD_STEPS,
                                       LIFT_DZ, LIFT_OK_FRAC, MOVE_STEPS, OBJECT_MASS_KG, OPEN,
-                                      SETTLE_STEPS, STANDOFF, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
+                                      R_F, R_TAU, SETTLE_STEPS, STANDOFF, TILT_MAX_DEG,
+                                      TOTAL_STEPS, arm_of, assert_finger_joints,
                                       branch_stage_a_schedule, decide_advance, hand_target,
                                       offset_dir_name, phase_schedule, reachable_candidates,
-                                      real_hold, seed_of, tilt_deg, unreachable_after_move)
+                                      real_hold, seed_of, select_first, select_second, tilt_deg,
+                                      unreachable_after_move, update_allowed)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--task-file", required=True)
@@ -118,8 +120,7 @@ from analysis.test_lift.frames import (gravity_in_object_frame, lifted_target,  
                                        wrench_hand_to_object)
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
-from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams, hold_probability,  # noqa: E402
-                                       select_belief, select_next_best_geometric, select_oracle)
+from analysis.test_lift.rerank import FRANKA_PANDA_DEPTH, GraspParams, hold_probability  # noqa: E402
 
 N_POINTS = 2048   # surface points fed to GraspGenX and to the density prior (as in Task 8)
 
@@ -137,6 +138,7 @@ class VecRobot:
         self.robot = env.scene["robot"]
         self.n = int(env.num_envs)
         self.hand = list(self.robot.data.body_names).index("panda_hand")
+        assert_finger_joints(self.robot.data.joint_names)           # finger_gap() reads [-2:]
         self.origins = env.scene.env_origins.cpu().numpy()          # (N, 3)
         self.n_steps = 0
 
@@ -201,22 +203,6 @@ def object_T_w(env, name) -> np.ndarray:
 
 def object_z(env, name) -> np.ndarray:
     return env.scene[name].data.root_pose_w[:, 2].cpu().numpy()     # (N,)
-
-
-def select_first(arm, grasps_o, confs, b0, g_o, params, rng, c_true) -> int:
-    if arm == "oracle":
-        return select_oracle(grasps_o, confs, args.mass, c_true, g_o, params)
-    if arm == "belief":
-        return select_belief(grasps_o, confs, b0, g_o, params, rng)
-    return select_next_best_geometric(confs)
-
-
-def select_second(arm, grasps_o, confs, b1, g_o, params, rng, c_true, exclude) -> int:
-    if arm == "belief":
-        return select_belief(grasps_o, confs, b1, g_o, params, rng, exclude=exclude)
-    if arm == "oracle":
-        return select_oracle(grasps_o, confs, args.mass, c_true, g_o, params, exclude=exclude)
-    return select_next_best_geometric(confs, exclude=exclude)
 
 
 class Cell:
@@ -381,8 +367,8 @@ def main():
             grasps_o, confs = cands[seed_of(i, n_seeds)]
             b0 = prior_from_points(pts)
             c_true = authored[i]                   # already includes the applied offset (Task 6)
-            i1 = select_first(cell.arms[i], grasps_o, confs, b0,
-                              gravity_in_object_frame(T_obj[i]), params, rngs[i], c_true)
+            i1 = select_first(cell.arms[i], grasps_o, confs, b0, args.mass, c_true,
+                              gravity_in_object_frame(T_obj[i]), params, rngs[i])
             tgt1[i] = hand_target(grasps_o[i1], T_obj[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
             b0s.append(b0)
             i1s.append(int(i1))
@@ -414,15 +400,13 @@ def main():
             # gripper and a partly supported object under-reports its weight; either drives the
             # Kalman mass mean negative. Leaving the posterior equal to the prior is how
             # results.py tells an update from a skip, with no extra log key.
-            supported = float(np.linalg.norm(f_o)) >= 0.5 * b0.m_mean * GRAVITY_G
             b1 = b0
             if cell.arms[i] == "belief":
-                if bool(g1["ok"][i]) and supported:
-                    b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold,
-                                            R_f=0.05**2, R_tau=np.eye(3) * 0.005**2)
+                if update_allowed(bool(g1["ok"][i]), f_o, b0.m_mean):
+                    b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold, R_f=R_F, R_tau=R_TAU)
                 else:
                     print(f"[no-update] env={i} seed={cell.seeds[i]} first_lift_ok={bool(g1['ok'][i])} "
-                          f"supported={supported} |f_o|={np.linalg.norm(f_o):.3f}N "
+                          f"|f_o|={np.linalg.norm(f_o):.3f}N "
                           f"(0.5*m_prior*G={0.5 * b0.m_mean * GRAVITY_G:.3f}N); "
                           "posterior left at the prior", flush=True)
             beliefs_post[i] = b1
@@ -477,9 +461,9 @@ def main():
                 print(f"[warn] env={i}: every candidate is unreachable after set_down; "
                       "excluding only the first grasp", flush=True)
                 exclude2 = (i1s[i],)
-            i2 = select_second(cell.arms[i], grasps_o, confs, beliefs_post[i],
-                               gravity_in_object_frame(T_obj2[i]), params, rngs[i],
-                               logs[i]["com_true_o"], exclude2)
+            i2 = select_second(cell.arms[i], grasps_o, confs, beliefs_post[i], args.mass,
+                               logs[i]["com_true_o"], gravity_in_object_frame(T_obj2[i]),
+                               params, rngs[i], exclude2)
             tgt2[i] = hand_target(grasps_o[i2], T_obj2[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
             logs[i]["idx_second"] = int(i2)
 

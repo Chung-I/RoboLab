@@ -22,10 +22,14 @@ Four constraints shape this driver:
   home pose with the differential-IK term dead and the finger gap pinned open at 0.0800,
   which is where Task 8's apparent 2-3 cm reach shortfall came from.
 * The scene must settle before anything is measured. The tasks spawn the object
-  above the table (the banana starts at z = 0.08 and comes to rest at z = 0.0212),
-  so a pose read straight after ``env.reset()`` is ~6 cm stale and every grasp
-  target derived from it misses. ``SETTLE_STEPS`` holds the arm still until the
-  object stops falling.
+  above the table (the banana starts at z = 0.08), so a pose read straight after
+  ``env.reset()`` is several cm stale and every grasp target derived from it
+  misses. ``SETTLE_STEPS`` holds the arm still until the object stops falling.
+  The rest height is NOT a constant of the object: the applied CoM offset changes
+  which face the object settles on, so it is measured per cell after the settle and
+  printed on the ``[table]`` line as ``obj_rest_z``. Sweep 2 measured 0.0208 m for
+  the banana at a 2 cm x-offset and 0.0101 m at 4 cm, and 0.0341 / 0.0214 / 0.0344 m
+  for the cube at x 2 cm / x 3 cm / y 2 cm. Never hard-code one of these.
 * GraspGen only sees the object's point cloud, so it proposes grasps on every
   side of it -- including approaches from underneath, which no arm on a table can
   execute. Measured 2026-09-08: the highest-confidence candidate approached along
@@ -56,9 +60,12 @@ object's z gain over the commanded 2 cm test-lift, across the grips.
 The cause is fingertip depth, not IK and not an oblique sweep. At the grasp pose the hand
 sits exactly where it was told to: ``d_along`` and ``d_lat`` are 0.0000 m on 12 of the 16
 zero-offset attempts, and the brief's suspected 2-3 cm shortfall never appears. What
-separates a grip from a miss is ``tip_z``, the fingertip midpoint above the table. The
-settled banana spans 0 to about 36 mm above the table (rest z 0.0212, table 0.0030, so a
-half-height of 18 mm). Every attempt with ``tip_z <= 0.027`` closed on the object (8 of 8
+separates a grip from a miss is ``tip_z``, the fingertip midpoint above the table. In THIS
+cell -- the banana with no CoM offset, whose measured ``obj_rest_z`` was 0.0212 m over a
+table top at 0.0030 m -- the settled banana spanned 0 to about 36 mm above the table (a half
+height of 18 mm). Other cells settle differently (see the ``[table]`` line of each run), so
+the numbers below describe this measurement, not the object. Every attempt with
+``tip_z <= 0.027`` closed on the object (8 of 8
 over A+B+C); of 10 attempts with ``tip_z >= 0.031``, 9 closed on air (gap 0.0002) because
 the pads shut around the banana's crown. GraspGenX's ``franka_panda`` depth of 0.1034 m
 puts the tips at the surface it was asked for, which is one pad-width too high to hold a
@@ -96,10 +103,12 @@ from isaaclab.app import AppLauncher
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (APPROACH_Z_MAX, CLEAR_DZ, CLEAR_OK_FRAC, CLOSE,  # noqa: E402
                                       GRASP_DEPTH_OFFSET, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
-                                      MOVE_STEPS, OBJECT_MASS_KG, OPEN, SETTLE_STEPS, STANDOFF,
-                                      TILT_MAX_DEG, decide_advance, hand_target, neighbour_distances,
-                                      offset_dir_name, reachable_candidates, real_hold, tilt_deg,
-                                      unreachable_after_move)
+                                      MOVE_STEPS, OBJECT_MASS_KG, OPEN, R_F, R_TAU, SETTLE_STEPS,
+                                      STANDOFF, TILT_MAX_DEG, assert_finger_joints, decide_advance,
+                                      hand_target, neighbour_distances, offset_dir_name,
+                                      reachable_candidates, real_hold, select_first, select_second,
+                                      tilt_deg, unreachable_after_move, update_allowed,
+                                      world_approach_z)
 
 FRAME_CHECK_N = 8        # candidates tried per --frame-check invocation
 
@@ -153,8 +162,7 @@ from analysis.test_lift.frames import (gravity_in_object_frame, lifted_target,  
                                        wrench_hand_to_object)
 from analysis.test_lift.graspgen import GraspGenClient, sample_surface_points  # noqa: E402
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
-from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams, hold_probability,  # noqa: E402
-                                       select_belief, select_next_best_geometric, select_oracle)
+from analysis.test_lift.rerank import FRANKA_PANDA_DEPTH, GraspParams, hold_probability  # noqa: E402
 
 ORACLE_CHECK_N = 6    # candidates --oracle-check may try before giving up on a hold
 VIDEO_FPS = 15        # control rate
@@ -167,6 +175,7 @@ class Robot:
         self.env = env
         self.robot = env.scene["robot"]
         self.hand = list(self.robot.data.body_names).index("panda_hand")
+        assert_finger_joints(self.robot.data.joint_names)   # finger_gap() reads joint_pos[-2:]
         self.origin = env.scene.env_origins[0].cpu().numpy()
         self.video = None    # set by main() when --video is given
         self.cam_key = None
@@ -222,7 +231,7 @@ def object_points_o(env, name, n, rng):
 
 def attempt_report(rb, env, grasp_o, T_obj_w, idx, ok, ik_err, tag):
     """Why a grasp attempt held or did not: IK error, approach tilt, where the object went."""
-    appr_z = float((np.asarray(T_obj_w)[:3, :3] @ np.asarray(grasp_o)[:3, 2])[2])
+    appr_z = float(world_approach_z([grasp_o], T_obj_w)[0])
     obj = env.scene[args.object].data.root_pose_w[0, :3].cpu().numpy()
     print(f"[{tag}] idx={int(idx)} lift_ok={ok} gap={rb.finger_gap():.4f} "
           f"ik_err={ik_err:.4f} approach_z={appr_z:.3f} obj={np.round(obj, 4)}", flush=True)
@@ -375,7 +384,7 @@ def main():
                 ok, _, _, _, z0, ik_err, tilt = run_grasp(rb, env, args.object, tgt, {}, R_settle)
                 held += bool(ok)
                 rise = object_rise(env, args.object, z0)
-                appr_z = float((np.asarray(T_obj)[:3, :3] @ np.asarray(grasps_o[i])[:3, 2])[2])
+                appr_z = float(world_approach_z([grasps_o[i]], T_obj)[0])
                 print(f"[frame-check] yaw_fix={args.yaw_fix} azmax={args.approach_z_max} "
                       f"doff={args.grasp_depth_offset} cand={k} idx={int(i)} conf={confs[i]:.3f} "
                       f"lift_ok={ok} finger_gap={rb.finger_gap():.4f} ik_err={ik_err:.4f} "
@@ -387,13 +396,8 @@ def main():
             end_episode(env)
             return
 
-        # ---- first grasp ----
-        if args.arm == "oracle":
-            i1 = select_oracle(grasps_o, confs, args.mass, c_true, g_o, params)
-        elif args.arm == "belief":
-            i1 = select_belief(grasps_o, confs, b0, g_o, params, rng)
-        else:
-            i1 = select_next_best_geometric(confs)
+        # ---- first grasp ---- (the arm -> selector map lives in analysis/test_lift/batch.py)
+        i1 = select_first(args.arm, grasps_o, confs, b0, args.mass, c_true, g_o, params, rng)
         tgt1 = hand_target(grasps_o[i1], T_obj, rb.origin, args.yaw_fix, args.grasp_depth_offset)
         ok1, bias, w_hold, T_hand, z0, ik_err1, tilt1 = run_grasp(rb, env, args.object, tgt1, log, R_settle)
         log.update(idx_first=i1, first_lift_ok=ok1)
@@ -420,21 +424,14 @@ def main():
         T_obj_hold = object_T_w(env, args.object)
         g_hold = gravity_in_object_frame(T_obj_hold)   # gravity at the hold, not at the settle pose
         f_o, tau_o, p_hand_o = wrench_hand_to_object(f_h, tau_h, T_hand, T_obj_hold)
-        # Only a real hold carries the object's load. A failed test-lift measures an empty
-        # gripper, and a partly supported object under-reports its weight (measured: 3.10 N
-        # of 4.905 N). Either one drives the Kalman mass mean negative, after which every
-        # sample in GaussianBelief.sample() clips to the same floor and the hold probability
-        # saturates at 1.0 -- observed as m_post = -0.849 kg with hold_prob_first = 1.0.
-        # When no update happens the posterior is left equal to the prior, which is how the
-        # results module can tell the two apart without a new log key.
-        supported = float(np.linalg.norm(f_o)) >= 0.5 * b0.m_mean * GRAVITY_G
-        do_update = bool(ok1) and supported
+        # The gate and the measurement noise both live in analysis/test_lift/batch.py, so this
+        # driver and the batched one run the same filter (final review Q2).
+        do_update = update_allowed(ok1, f_o, b0.m_mean)
         b1 = b0
         if do_update and (args.arm == "belief" or args.oracle_check):
-            b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold,
-                                    R_f=0.05**2, R_tau=np.eye(3) * 0.005**2)
+            b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold, R_f=R_F, R_tau=R_TAU)
         elif args.arm == "belief" or args.oracle_check:
-            print(f"[no-update] first_lift_ok={ok1} supported={supported} "
+            print(f"[no-update] first_lift_ok={ok1} "
                   f"|f_o|={np.linalg.norm(f_o):.3f}N (0.5*m_prior*G="
                   f"{0.5 * b0.m_mean * GRAVITY_G:.3f}N); posterior left at the prior", flush=True)
         log.update(m_post=b1.m_mean, c_post_o=b1.c_mean, c_post_cov=b1.c_cov)
@@ -479,12 +476,8 @@ def main():
                       "excluding only the first grasp", flush=True)
                 exclude2 = (int(i1),)
             g_o2 = gravity_in_object_frame(T_obj2)
-            if args.arm == "belief":
-                i2 = select_belief(grasps_o, confs, b1, g_o2, params, rng, exclude=exclude2)
-            elif args.arm == "oracle":
-                i2 = select_oracle(grasps_o, confs, args.mass, c_true, g_o2, params, exclude=exclude2)
-            else:
-                i2 = select_next_best_geometric(confs, exclude=exclude2)
+            i2 = select_second(args.arm, grasps_o, confs, b1, args.mass, c_true, g_o2,
+                               params, rng, exclude2)
             tgt2 = hand_target(grasps_o[i2], T_obj2, rb.origin, args.yaw_fix, args.grasp_depth_offset)
             ok2, _, _, _, z0b, ik_err2, _ = run_grasp(rb, env, args.object, tgt2, {}, R_settle)
             attempt_report(rb, env, grasps_o[i2], T_obj2, i2, ok2, ik_err2, "second")

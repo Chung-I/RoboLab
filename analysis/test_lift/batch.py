@@ -37,6 +37,9 @@ from __future__ import annotations
 import numpy as np
 
 from analysis.test_lift.frames import grasp_to_hand_target, pose7_to_T
+from analysis.test_lift.physics import GRAVITY_G
+from analysis.test_lift.rerank import (select_belief, select_next_best_geometric,
+                                       select_oracle)
 
 # ---------------------------------------------------------------------------------------
 # Grasp / motion constants. Measured in Task 8c (see scripts/test_lift_episode.py's module
@@ -66,6 +69,86 @@ ARMS = ("belief", "next_best", "fixed_threshold", "oracle", "top1")
 #: so a heavy cell and the default cell at the same CoM offset never write to the same place.
 #: ``scripts/test_lift_sweep.sh`` reads this dict instead of keeping its own copy.
 OBJECT_MASS_KG = {"banana": 0.5, "rubiks_cube": 0.6}
+
+#: The two Franka finger joints, in the order the articulation lists them. Both drivers read
+#: the finger gap as ``joint_pos[..., -2] + joint_pos[..., -1]``, which is only the gap if the
+#: last two joints really are the fingers; :func:`assert_finger_joints` pins that at
+#: construction instead of letting a re-ordered articulation return a silently wrong number.
+FINGER_JOINTS = ("panda_finger_joint1", "panda_finger_joint2")
+
+# ---------------------------------------------------------------------------------------
+# Measurement noise of the wrench update, and the gate that decides whether the update may
+# run at all. Both drivers import these, so the filter they run is the same filter.
+# ---------------------------------------------------------------------------------------
+#: Force-channel measurement variance (N^2). 0.05 N standard deviation on each component of
+#: the hand-frame force, which is the scale of the bias-subtraction residual measured in
+#: Task 8's oracle check (mass recovered to within 2 g of the true 0.5 kg).
+R_F = 0.05**2
+#: Torque-channel measurement covariance (N^2 m^2), 0.005 N m per axis. The CoM channel is
+#: far more sensitive than the mass channel, so this is deliberately tight; it is also why a
+#: single update can take an unbounded step (results doc section 4.6) and why v1 adds an
+#: innovation gate.
+R_TAU = np.eye(3) * 0.005**2
+
+
+def update_allowed(ok: bool, f_o, m_prior: float) -> bool:
+    """May the wrench of this test-lift be fed to the filter?
+
+    Two conditions. The test-lift must have held (``ok``, i.e. :func:`real_hold`), because a
+    failed test-lift measures an empty gripper. And the measured object-frame force must
+    carry at least half the prior's weight, because a partly supported object under-reports
+    it (measured in Task 8: 3.10 N of 4.905 N). Either violation drives the Kalman mass mean
+    negative, after which every sample in ``GaussianBelief.sample`` clips to the same floor
+    and the hold probability saturates at 1.0 -- observed as ``m_post = -0.849 kg`` with
+    ``hold_prob_first = 1.0``.
+
+    When this returns False the caller leaves the posterior equal to the prior, which is how
+    ``results.py`` tells an update from a skip without a new log key.
+    """
+    return bool(ok) and float(np.linalg.norm(f_o)) >= 0.5 * float(m_prior) * GRAVITY_G
+
+
+def assert_finger_joints(joint_names) -> None:
+    """Fail loudly if the last two articulation joints are not the Franka fingers."""
+    last2 = tuple(str(n) for n in list(joint_names)[-2:])
+    if last2 != FINGER_JOINTS:
+        raise AssertionError(
+            f"finger_gap() reads joint_pos[-2:], which needs the last two joints to be "
+            f"{FINGER_JOINTS}; the articulation ends with {last2}")
+
+
+# ---------------------------------------------------------------------------------------
+# Arm -> selector. One dispatch, imported by BOTH drivers (final review Q1): the two used to
+# inline the same if/elif and could drift apart.
+# ---------------------------------------------------------------------------------------
+def select_first(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rng, exclude=()) -> int:
+    """The grasp each arm picks BEFORE any test-lift, i.e. from the prior.
+
+    * ``oracle`` -- ranks with the true mass and CoM (a delta belief).
+    * ``belief`` -- ranks with the density prior.
+    * ``next_best`` / ``fixed_threshold`` / ``top1`` -- take GraspGenX's own confidence.
+
+    ``exclude`` is accepted for symmetry with :func:`select_second`; the first grasp of an
+    episode passes nothing.
+    """
+    if arm not in ARMS:
+        raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+    if arm == "oracle":
+        return select_oracle(grasps_o, confs, m_true, c_true, g_hat, params, exclude=exclude)
+    if arm == "belief":
+        return select_belief(grasps_o, confs, belief, g_hat, params, rng, exclude=exclude)
+    return select_next_best_geometric(confs, exclude=exclude)
+
+
+def select_second(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rng, exclude=()) -> int:
+    """The re-grasp after an abort. Same arm -> selector map as :func:`select_first`.
+
+    The two differ only in what the caller hands them: ``belief`` gets the POSTERIOR here,
+    ``g_hat`` is gravity in the object frame after the object moved, and ``exclude`` holds
+    the grasp already tried plus every candidate that stopped approaching downward.
+    """
+    return select_first(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rng, exclude)
+
 
 
 # ---------------------------------------------------------------------------------------
