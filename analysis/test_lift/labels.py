@@ -43,6 +43,35 @@ def label_from_continuous(rise1, gap1, tilt1, frac=LIFT_OK_FRAC):
                      for r, g, t in zip(rise1, gap1, tilt1)])
 
 
+def failure_modes(tbl) -> dict:
+    """Per object, the three ``real_hold`` conditions, each counted on its own.
+
+    :func:`analysis.test_lift.batch.real_hold` requires all three of ``rise1 >
+    LIFT_OK_FRAC * LIFT_DZ``, ``gap1 > MIN_FINGER_GAP`` and ``tilt1 < TILT_MAX_DEG``.  This
+    splits a failed test-lift into which condition it failed, which is what the results doc
+    quotes as "closed on air / rose > 1.2 cm / tilt >= 15 deg":
+
+    * ``closed_on_air`` -- ``gap1 <= MIN_FINGER_GAP``: the fingers met, so nothing is held;
+    * ``rose`` -- ``rise1 > LIFT_OK_FRAC * LIFT_DZ`` (1.2 cm of the 2 cm test-lift);
+    * ``tilted`` -- ``tilt1 >= TILT_MAX_DEG`` (15 deg from the settle orientation).
+
+    The three are not exclusive and do not sum to 1: one test-lift can fail two of them.
+    """
+    out = {}
+    for obj in np.unique(tbl["object"]):
+        m = tbl["object"] == obj
+        gap1 = np.asarray(tbl["gap1"], float)[m]
+        rise1 = np.asarray(tbl["rise1"], float)[m]
+        tilt1 = np.asarray(tbl["tilt1"], float)[m]
+        out[str(obj)] = dict(
+            n=int(m.sum()),
+            closed_on_air=float(np.mean(gap1 <= MIN_FINGER_GAP)),
+            rose=float(np.mean(rise1 > LIFT_OK_FRAC * LIFT_DZ)),
+            tilted=float(np.mean(tilt1 >= TILT_MAX_DEG)),
+        )
+    return out
+
+
 def theta_sensitivity(tbl, label: str = "lift_ok") -> dict:
     """Per object: how much does one candidate's outcome move as theta changes?
 
@@ -96,7 +125,7 @@ def analytic_calibration(tbl, params: GraspParams, g_hat_o=(0.0, 0.0, -1.0),
     return dict(ece=float(ece), brier=float(np.mean((p - y) ** 2)), bins=bins)
 
 
-def main(root, exclude=()):
+def main(root, exclude=(), show_failure_modes: bool = False):
     tbl = load_labels(root)
     if exclude:
         keep = np.array([str(o) not in set(exclude) for o in tbl["object"]])
@@ -106,6 +135,11 @@ def main(root, exclude=()):
     final = np.asarray(tbl["final_ok"], dtype=bool)
     print(f"{len(tbl['lift_ok'])} labels, objects {sorted(set(tbl['object']))}, "
           f"lift_ok rate {tbl['lift_ok'].mean():.3f}, final_ok rate {final.mean():.3f}")
+    if show_failure_modes:
+        for obj, s in failure_modes(tbl).items():
+            print(f"failure-modes {obj}: n={s['n']} closed_on_air={s['closed_on_air']:.3f} "
+                  f"rose>{LIFT_OK_FRAC * LIFT_DZ * 100:.1f}cm={s['rose']:.3f} "
+                  f"tilt>={TILT_MAX_DEG:.0f}deg={s['tilted']:.3f}")
     for label in ("lift_ok", "final_ok"):
         for obj, s in theta_sensitivity(tbl, label).items():
             print(f"theta-sensitivity[{label}] {obj}: n={s['n']} n_cands={s['n_cands']} "
@@ -120,5 +154,7 @@ def main(root, exclude=()):
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
+    fm = "--failure-modes" in argv
+    argv = [a for a in argv if a != "--failure-modes"]
     root = argv[0] if argv else "output/test_lift/v1/labels"
-    main(root, tuple(argv[1:]))
+    main(root, tuple(argv[1:]), show_failure_modes=fm)

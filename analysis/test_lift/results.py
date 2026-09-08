@@ -85,7 +85,7 @@ def pool_by_arm(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
     """
     per = defaultdict(list)
     for path in sorted(glob.glob(os.path.join(root, "*", "off_*", "*", "seed_*.npz"))):
-        obj, off, arm = path.split(os.sep)[-4:-1]
+        off, arm = path.split(os.sep)[-3:-1]
         if not _OFFSET_DIR_RE.match(off):
             continue
         per[arm].append(read_episode(path))

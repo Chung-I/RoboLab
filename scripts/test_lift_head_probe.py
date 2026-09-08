@@ -9,9 +9,13 @@ figures in §3 and §10. No Isaac, no GraspGenX server: it reads the dumped cand
 dumped embeddings, the trained checkpoints and the label tree, and prints.
 
 **The oracle conditioning must use the AUTHORED centre of mass, not the cell's nominal
-offset.** ``--com-offset 0.02 0 0`` is a shift applied to the asset's own body-frame CoM,
-which is not at the mesh centroid; the cube's authored CoM at that cell is
-``[0.00992, 0.02901, -0.00240]``, over 2 cm away from ``[0.02, 0, 0]``. ``head_oracle``
+offset.** ``--com-offset 0.02 0 0`` is a shift *added to* the asset's authored body-frame
+CoM, and the addition is exact: the cube's authored CoM at offset 0 is
+``[-0.01008, 0.02901, -0.00240]``, so the cell reads ``[0.00992, 0.02901, -0.00240]``, over
+2 cm away from ``[0.02, 0, 0]``. What is displaced is the body-frame ORIGIN, not the CoM:
+the authored CoM sits on the mesh centroid ``[-0.01037, 0.02992, -0.00125]`` to within
+1.5 mm, while the origin itself is 3.2 cm from that centroid, dominated by
+y = 2.99 cm. ``head_oracle``
 conditions on the authored value (the driver reads it from
 ``root_physx_view.get_coms()`` and logs it as ``com_true_o``), so a probe at the nominal
 offset scores a belief no arm ever held. This script therefore reads ``(mass_true,
@@ -167,8 +171,16 @@ def main(argv=None):
                     float(z["ik_err1"]) if "ik_err1" in z.files else np.nan)
         for obj, v in sorted(per.items()):
             v = np.asarray(v)
-            print(f"    {obj:<13} n={len(v):>5} median={np.nanmedian(v):.4f} m  "
-                  f"frac<1cm={np.nanmean(v < 0.01):.3f}  frac<2cm={np.nanmean(v < 0.02):.3f}")
+            # A row whose npz carries no ``ik_err1`` reads NaN. ``np.nanmean(v < 0.01)``
+            # would compare NaN first (which is False) and then average that False in, so a
+            # missing value would silently count as "did not reach within 1 cm". Drop the
+            # non-finite rows before the mean and print how many survived.
+            fin = np.isfinite(v)
+            f1 = float(np.mean(v[fin] < 0.01)) if fin.any() else float("nan")
+            f2 = float(np.mean(v[fin] < 0.02)) if fin.any() else float("nan")
+            print(f"    {obj:<13} n={len(v):>5} (finite {int(fin.sum())}) "
+                  f"median={np.nanmedian(v):.4f} m  "
+                  f"frac<1cm={f1:.3f}  frac<2cm={f2:.3f}")
 
 
 if __name__ == "__main__":

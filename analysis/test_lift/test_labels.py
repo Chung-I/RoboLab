@@ -6,7 +6,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from analysis.test_lift.labels import analytic_calibration, label_from_continuous, load_labels, theta_sensitivity
+from analysis.test_lift.labels import (analytic_calibration, failure_modes, label_from_continuous, load_labels,
+                                       theta_sensitivity)
 from analysis.test_lift.rerank import GraspParams
 
 
@@ -40,3 +41,19 @@ def test_analytic_calibration_returns_ece_in_unit_interval(tmp_path):
     tbl = load_labels(str(tmp_path))
     r = analytic_calibration(tbl, GraspParams())
     assert 0.0 <= r["ece"] <= 1.0 and 0.0 <= r["brier"] <= 1.0 and len(r["bins"]) == 10
+
+
+def test_failure_modes_counts_each_real_hold_condition_separately(tmp_path):
+    """The three columns of the results-doc failure table are independent counts.
+
+    Row 0 holds (gap 0.02 m, rise 0.015 m, tilt 5 deg); row 1 closed on air AND did not rise
+    (gap 0.0 m, rise 0.002 m). So one of two rows closed on air, one of two rose, and neither
+    tilted -- the columns must not sum to 1.
+    """
+    _write(tmp_path, "obj", 0, 0, ok=True)
+    _write(tmp_path, "obj", 0, 1, ok=False)
+    s = failure_modes(load_labels(str(tmp_path)))["obj"]
+    assert s["n"] == 2
+    assert s["closed_on_air"] == pytest.approx(0.5)
+    assert s["rose"] == pytest.approx(0.5)
+    assert s["tilted"] == pytest.approx(0.0)
