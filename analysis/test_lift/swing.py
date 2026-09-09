@@ -80,7 +80,8 @@ def along_gravity_from_swing(tau_pre_o, f_pre_o, phi: float, axis_o, g_hat_o, p_
     below the axis at angle ``phi`` from its settle orientation, so ``d_along = d_perp /
     tan(phi)`` is the CoM offset along gravity (below the contact line, positive = below).
 
-    Returns nan if ``|phi|`` is too small (< 2 deg) for the geometry to be reliable.
+    Returns nan if ``|phi|`` is too small (< 2 deg) for the geometry to be reliable, or if
+    ``||f_pre_o||`` is near zero (no force to divide by -- an empty gripper).
     """
     del g_hat_o, p_tip_o  # already baked into tau_pre_o / f_pre_o by the caller
     if abs(phi) < np.deg2rad(MIN_SWING_DEG):
@@ -90,6 +91,8 @@ def along_gravity_from_swing(tau_pre_o, f_pre_o, phi: float, axis_o, g_hat_o, p_
     tau = np.asarray(tau_pre_o, dtype=float)
     f = np.asarray(f_pre_o, dtype=float)
     m_G = float(np.linalg.norm(f))
+    if m_G < 1e-9:
+        return float("nan")
     d_perp = -float(np.dot(tau, axis)) / m_G
     return float(d_perp / np.tan(phi))
 

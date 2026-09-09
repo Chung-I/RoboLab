@@ -189,16 +189,27 @@ def test_e1_along_error_is_the_component_e1_perp_error_throws_away():
     assert abs(math.hypot(perp, along) - float(np.linalg.norm(err))) < 1e-12
 
 
+def _swing_e(held, frac, d_along, arm="belief"):
+    return {"arm": np.array(arm), "held1": np.array(held),
+            "swing_axis_frac1": np.array(frac), "d_along1": np.array(d_along)}
+
+
 def test_swing_update_fired_needs_held_the_axis_fraction_and_a_finite_d_along():
-    def e(held, frac, d_along):
-        return {"held1": np.array(held), "swing_axis_frac1": np.array(frac),
-                "d_along1": np.array(d_along)}
+    e = _swing_e
     assert swing_update_fired(e(True, 0.9, 0.01)) is True
     assert swing_update_fired(e(True, 0.8, 0.01)) is True      # the gate is >=, not >
     assert swing_update_fired(e(True, 0.79, 0.01)) is False    # off-axis: Ruling 6 skips it
     assert swing_update_fired(e(False, 0.9, 0.01)) is False    # never left the table
     assert swing_update_fired(e(True, 0.9, float("nan"))) is False   # |phi| below MIN_SWING_DEG
     assert swing_update_fired({"m_post": 1.0}) is False        # a v0/v1 file has no swing keys
+
+
+def test_swing_update_fired_requires_the_belief_arm():
+    """head_filter takes the same wrench gate as belief but never the swing update on top of
+    it (scripts/test_lift_batch.py:790): all three other conditions true, arm is not belief."""
+    assert swing_update_fired(_swing_e(True, 0.9, 0.01, arm="head_filter")) is False
+    assert swing_update_fired(_swing_e(True, 0.9, 0.01, arm="next_best")) is False
+    assert swing_update_fired(_swing_e(True, 0.9, 0.01, arm="belief")) is True
 
 
 def test_aggregate_reports_the_along_gravity_error_separately_from_the_perpendicular_one(tmp_path):

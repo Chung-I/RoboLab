@@ -53,12 +53,25 @@ def e1_along_error(c_est, c_true, g_o) -> float:
 def swing_update_fired(e) -> bool:
     """Did this episode's belief take the SWING update (Ruling 6 of v3)?
 
-    The driver applies it only when all three hold: the test-lift ``held1``, the settle->hold
-    rotation was predominantly about the finger axis (``swing_axis_frac1 >= 0.8``, the
-    pendulum model's own assumption), and the resulting along-gravity distance came out finite
-    (``d_along1``; it is nan when ``|phi|`` is below ``MIN_SWING_DEG`` or the lift did not
-    hold). v0/v1 files carry none of these keys and never took a swing update.
+    The driver applies it only when all four hold: the episode's arm is ``belief`` (only that
+    arm reaches the swing update in ``scripts/test_lift_batch.py`` -- ``head_filter`` runs the
+    same wrench gate but never the swing one, and ``head_phi`` does not take this path at all),
+    the test-lift ``held1``, the settle->hold rotation was predominantly about the finger axis
+    (``swing_axis_frac1 >= 0.8``, the pendulum model's own assumption), and the resulting
+    along-gravity distance came out finite (``d_along1``; it is nan when ``|phi|`` is below
+    ``MIN_SWING_DEG`` or the lift did not hold). v0/v1 files carry none of these keys and never
+    took a swing update.
+
+    CAVEAT: the driver has a fifth gate this function does NOT reproduce -- ``abs(d_along) <=
+    d_along_max`` (``scripts/test_lift_batch.py:806``), the object's half-extent along the
+    swing axis. That bound is not logged to the npz, so an episode that fails only this gate
+    still reads as fired here. Every caller of this function (in particular the
+    ``n_swing_updates`` column below) is therefore an UPPER BOUND on the number of swing
+    updates that actually fired, not an exact count, until the driver logs ``d_along_max1``
+    (v4 item; see doc §9).
     """
+    if "arm" not in e or str(np.ravel(e["arm"])[0]) != "belief":
+        return False
     for k in ("held1", "swing_axis_frac1", "d_along1"):
         if k not in e:
             return False
@@ -107,10 +120,12 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
       the gravity-perpendicular ones. The wrench update can only move the perpendicular part,
       so `e1_along_cm` is the column the swing update has to move to have done anything.
     * `n_swung` -- episodes whose test-lift rotated the object past `TILT_MAX_DEG` (`swung1`).
-    * `n_swing_updates` -- of those, the ones the driver actually fed to
-      `belief.update_from_swing` (:func:`swing_update_fired`, i.e. Ruling 6's axis-fraction
-      gate and a finite `d_along1`). `n_swung - n_swing_updates` is how often the pendulum
-      assumption failed.
+    * `n_swing_updates` -- of those, the ones :func:`swing_update_fired` says the driver fed to
+      `belief.update_from_swing` (the `belief` arm, Ruling 6's axis-fraction gate, and a finite
+      `d_along1`). `n_swung - n_swing_updates` is how often the pendulum assumption failed.
+      CAVEAT: this is an UPPER BOUND, not an exact count -- the driver also rejects a swing
+      update when `abs(d_along) > d_along_max`, the object's half-extent, and that bound is
+      not logged to the npz, so :func:`swing_update_fired` cannot check it (v4 item; doc §9).
     * `m_post_err_kg` -- mean `|m_post - mass_true|` over the updated episodes, NaN if none.
       With no mass prior (v3 §14) this is the mass estimate's whole error, not a shrinkage.
     """

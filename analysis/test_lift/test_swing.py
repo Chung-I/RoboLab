@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Swing geometry: the tilted test-lift's pendulum measurement (spec §11.2, §14)."""
 import numpy as np
-import pytest
 
-from analysis.test_lift.swing import (along_gravity_from_swing, axis_fraction, swing_axis_o,
+from analysis.test_lift.swing import (along_gravity_from_swing, axis_fraction,
                                       tilt_about_axis, tilt_from_wrench_trace)
 
 
@@ -28,6 +27,13 @@ def test_pendulum_geometry_recovers_the_along_gravity_offset():
     phi = np.arctan2(d_perp, d_along)                         # the swing that hangs c below the axis
     assert np.isclose(along_gravity_from_swing(tau, f, phi, ax, g, p_tip), d_along, atol=1e-9)
     assert np.isnan(along_gravity_from_swing(tau, f, np.deg2rad(1.0), ax, g, p_tip))
+
+
+def test_pendulum_geometry_returns_nan_on_zero_force_instead_of_raising():
+    """An empty gripper (||f|| == 0) must return nan, not raise ZeroDivisionError."""
+    ax = np.array([1.0, 0, 0]); g = np.array([0, 0, -1.0]); p_tip = np.zeros(3)
+    tau = np.array([0.0, 0.0, 0.01])
+    assert np.isnan(along_gravity_from_swing(tau, np.zeros(3), np.deg2rad(30), ax, g, p_tip))
 
 
 def test_wrench_tilt_side_measurement():

@@ -83,6 +83,7 @@ for obj in $OBJECTS; do
 import sys; sys.path.insert(0, '$REPO')
 from analysis.test_lift.batch import OBJECT_MASS_KG, offset_dir_name
 print(offset_dir_name([float(v) for v in '$off'.split()], float('$mass'), OBJECT_MASS_KG['$obj']))")
+    [[ -n "$tag" ]] || { echo "[FAIL] tag"; exit 1; }
     log="$OUT/logs/${obj}_${tag}.log"
     {
       echo "=== $(date +%H:%M:%S) $obj $tag mass=$mass off=[$off] arms=[$ARMS_STR] seeds=[$SEEDS_STR] ==="
