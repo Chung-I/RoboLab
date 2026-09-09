@@ -79,7 +79,9 @@ DRIVER_ASSIGNED_ARMS = ("label", *HEAD_ARMS)
 #: overrides it gets a ``_m<mass>kg`` suffix on its episode directory (:func:`offset_dir_name`),
 #: so a heavy cell and the default cell at the same CoM offset never write to the same place.
 #: ``scripts/test_lift_sweep.sh`` reads this dict instead of keeping its own copy.
-OBJECT_MASS_KG = {"banana": 0.5, "rubiks_cube": 0.6, "mug": 0.5, "cracker_box": 0.5}
+OBJECT_MASS_KG = {"banana": 0.5, "rubiks_cube": 0.6, "mug": 0.5, "cracker_box": 0.5,
+                  "wood_hammer": 0.6, "cordless_drill": 1.2, "mustard": 0.6,
+                  "spam_can": 0.4, "measuring_cup": 0.2}
 
 #: The two Franka finger joints, in the order the articulation lists them. Both drivers read
 #: the finger gap as ``joint_pos[..., -2] + joint_pos[..., -1]``, which is only the gap if the
