@@ -27,8 +27,9 @@ Five findings, in order of how much they constrain what comes next.
 
 1. **The swing update never fired — not once in 400 episodes.** There were **zero
    held-and-swung lifts**. The two objects that hold (`banana`, `rubiks_cube`) rotate 2–3°,
-   far below the swing threshold; the two that rotate 19–21° (`mug`, `mustard`) never leave
-   the table, so the driver correctly refuses to treat a partly-supported object as a pendulum.
+   far below the swing threshold. Of the two that never leave the table, only the mug rotates
+   19–21°; mustard's median tilt is 5.9°, with 22 of its 100 episodes past the swing threshold
+   anyway. The driver correctly refuses to treat a partly-supported object as a pendulum.
    Ruling 6's axis-fraction gate was never consulted, because nothing reached it. The v3
    premise — "a swing reveals the along-gravity CoM" — is **not refuted and not supported**; it
    was not testable at a 2 cm test-lift on these four objects (§3).
@@ -38,8 +39,9 @@ Five findings, in order of how much they constrain what comes next.
 
 3. **Where the test-lift holds, the wrench update is excellent.** Over the 30 updated episodes
    the perpendicular CoM error goes from a 2.23 cm prior to **0.469 cm**, and the mass, taken
-   from the hold force with **no prior at all**, is within 0.4 g of truth on four of the five
-   updated cells. The §14 no-prior decision works when there is a measurement (§4).
+   from the hold force with **no prior at all**, is within 0.4 g of truth on four of the six
+   updated cells; the cube's `off_x02cm` is 12.9 g off and the banana heavy cell 174 g. The
+   §14 no-prior decision works when there is a measurement (§4).
 
 4. **Removing the mass prior costs the second grasp, and the v0 control isolates it exactly.**
    `belief` v3 scores E2 0.438 against the v0 control's 0.500, and the two runs differ in
@@ -85,8 +87,11 @@ building any more estimator.
    along gravity. Ruling 6 puts it behind an assumption check — see §3, which is the first
    time that check has been run.
 
-The v0 control (§5) is this pipeline with change 1 reverted (`--mass-prior`), so any belief-arm
-difference between the two runs is attributable to changes 1–3 rather than to the new objects.
+The v0 control (§5) is this pipeline with change 1 reverted (`--mass-prior`). In practice only
+change 1 differs between the two runs: with zero held-and-swung episodes anywhere in this sweep
+(§3), `held == real_hold` in every cell, so changes 2 and 3 never diverge from v0 behaviour.
+The control therefore isolates change 1 exactly, and any belief-arm difference between the two
+runs is attributable to the mass prior alone rather than to the new objects.
 
 ### The v3 object set: five candidates, two criteria, one survivor
 
@@ -117,6 +122,10 @@ for f in sorted(glob.glob("output/test_lift/v*/candidates/*.npz")):
 | `wood_hammer` | 17 | 70.6 | 100.0 | **FAIL** | 0.0063 | PASS | no |
 | `cordless_drill` | 95 | 65.6 | 33.3 | **FAIL** | 0.0494 | **FAIL** | no |
 | `spam_can` | 110 | 68.8 | 9.1 | **FAIL** | 0.0028 | PASS | no |
+
+`n candidates` is the full size of the object's candidate dump. `reach %` and `close-on-air %`
+are measured over only the first 32 of those candidates (17 for `wood_hammer`, which has fewer
+than 32 in its dump), not over all `n candidates`.
 
 Task 3's own report ends with "**PASS: `mustard`, `measuring_cup`**". That list is superseded:
 Ruling 3 voids the cup, because its mesh frame sits 5 cm above its physics root and every
@@ -280,8 +289,8 @@ Four readings, in order of confidence.
 
 1. **Where the update runs, the perpendicular CoM error collapses.** Over the 30 updated
    episodes the post error averages **0.469 cm** against a prior of 2.23 cm — a factor of about
-   five, and on three banana cells it is under 1 mm. This is the wrench update doing exactly
-   what the physics says it can do.
+   five, and on two banana cells it is under 1 mm (a third, `off_x02cm`, is 1.008 mm). This is
+   the wrench update doing exactly what the physics says it can do.
 
 2. **The along-gravity error does not move: 0.516 cm → 0.517 cm pooled.** This is the number
    v3 was built to change and it is unchanged to three decimal places. It is not noise
@@ -292,15 +301,19 @@ Four readings, in order of confidence.
    information about the along-gravity component. **With zero swing updates (§3) there was no
    mechanism in the run that could identify it**, and the numbers agree.
 
-3. **The mass estimate with no prior is very good, except when the mass is 3×.** On the three
-   default-mass banana cells and the cube's `off_y02cm` the error is 0.1–0.4 g on a 0.5–0.6 kg
-   object. The one outlier is `banana off_x03cm @ 1.5 kg`, at **0.174 kg (11.6 %)**, and the
-   error is one-sided: all five seeds UNDER-read the mass (`m_post` = 1.427, 1.358, 1.315,
-   1.393, 1.137 kg against a true 1.5 kg). A consistent under-read means the hold force during
-   the measurement window was below `m g`, so something was still carrying part of the weight;
-   the cause is **not established here** and this is the only heavy cell that updated at all.
-   What can be said: the no-prior mass update is excellent at the masses the gripper handles
-   easily and is not yet verified at 3× the default.
+3. **The mass estimate with no prior is very good on four of the six updated cells, and off by
+   an order of magnitude more on the other two.** On the three default-mass banana cells and
+   the cube's `off_y02cm` the error is 0.1–0.4 g on a 0.5–0.6 kg object. The two outliers are
+   `banana off_x03cm @ 1.5 kg`, at **0.174 kg (11.6 %, 174 g)**, and the cube's `off_x02cm`, at
+   **0.0129 kg (12.9 g)** on a 0.6 kg object. The banana error is one-sided: all five seeds
+   UNDER-read the mass (`m_post` = 1.427, 1.358, 1.315, 1.393, 1.137 kg against a true 1.5 kg).
+   A consistent under-read means the hold force during the measurement window was below `m g`,
+   so something was still carrying part of the weight; the cause is **not established here**
+   and this is the only heavy cell that updated at all. The cube's `off_x02cm` error has no
+   such explanation on record — it is a default-mass cell, so the 3× hypothesis does not apply
+   to it. What can be said: the no-prior mass update is excellent at the masses the gripper
+   handles easily and is not yet verified at 3× the default, and it is not uniformly excellent
+   even at default mass.
 
 4. **Half the cells never update at all.** 30 of 80 belief episodes took the wrench update; the
    other 50 are the four mug cells, the four mustard cells and the cube's two 3 cm cells, where
@@ -424,6 +437,9 @@ So the honest reading of the §14 decision is: **removing the first-grasp mass p
 `belief` arm its second-grasp ranking whenever the test-lift fails, and it bought nothing
 measurable in exchange** — E1⊥ post is 1.637 vs 1.617 cm and the mass error is 0.031 vs
 0.029 kg, both marginally in the control's favour and both inside the noise of n = 5 cells.
+(The two mass numbers are not from the identical estimator: `update_mass`'s no-prior branch
+computes `m = ||f|| / G`, while its prior branch computes `m_obs = f . g_hat / G`
+(`analysis/test_lift/belief.py:64-70`), so v3 and the control read the hold force differently.)
 The one E2 difference is a 5-episode cell. This does not overturn §14 — the decision was about
 not assuming a density the study cannot know — but it does say the decision needs a fallback
 for the no-hold case better than "rank geometrically".
@@ -462,8 +478,9 @@ The v3 plan asked three questions. Two have clear answers and one has none.
 Where the test-lift holds, the wrench update is strong: over 30 updated episodes the
 gravity-perpendicular CoM error falls from a 2.23 cm prior to **0.469 cm** (§4), and the mass
 estimate, taken from the hold force with **no prior at all**, lands within 0.4 g of truth on
-four of the five updated cells. That is the §14 decision working as intended: an infinite prior
-variance makes the posterior equal the measurement, and the measurement is good.
+four of the six updated cells; the cube's `off_x02cm` is 12.9 g off and the banana heavy cell
+174 g. That is the §14 decision working as intended for the majority of cells: an infinite
+prior variance makes the posterior equal the measurement, and the measurement is usually good.
 
 The gravity-parallel component does not improve: **0.516 cm → 0.517 cm pooled**. Design §11.2
 predicted this for a static hold and v3's answer to it was the swing update, which never ran
@@ -632,8 +649,11 @@ In priority order.
    height on one object and pick the knee.
 
 3. **Decide the swing model's status on evidence, not on hope.** §3 is the first empirical test
-   of the pendulum model, and Ruling 6 pre-registered that it might come back near zero. Three
-   outcomes, each with a different v4:
+   of the pendulum model, and Ruling 6 pre-registered that it might come back near zero. The
+   axis-fraction check is one of two untested assumptions behind `along_gravity_from_swing`;
+   the other, still unchecked by anything in this run, is that the settle-to-hold rotation
+   reaches the pendulum's settled hanging angle rather than being caught mid-swing when the
+   test-lift ends. Three outcomes, each with a different v4:
    - If the axis fraction is near zero everywhere, the model is wrong for this gripper and the
      right move is to drop the `along_gravity_from_swing` path and estimate the along-gravity
      CoM some other way (two lifts at different wrist orientations is the obvious candidate:
@@ -645,3 +665,11 @@ In priority order.
 
    Whichever holds, `tilt_from_wrench_trace` should be deleted or rebuilt rather than left in
    the tree as a diagnostic nobody trusts (Ruling 7).
+
+4. **Log `d_along_max1` (the half-extent bound) to the npz.** The driver rejects a swing update
+   when `abs(d_along) > d_along_max`, the object's half-extent along the swing axis
+   (`scripts/test_lift_batch.py:806`), but that bound is never written to the episode log. So
+   `analysis.test_lift.results.swing_update_fired` cannot reproduce this gate and can only
+   report an UPPER BOUND on `n_swing_updates`, not the exact count (this task's fix; see
+   `swing_update_fired`'s docstring). Logging `d_along_max1` alongside `d_along1` closes that
+   gap and lets the aggregator report the true fired count.

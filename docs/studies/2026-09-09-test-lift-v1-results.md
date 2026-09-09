@@ -174,7 +174,8 @@ head's `post` regime was therefore trained on 3 497 rows that carry no posterior
 This is a real defect in the v1 training set and the most likely single cause of the
 `head_filter` failure in §6.
 
-**cracker_box (Ruling 14) is a substrate defect, not a hard object.** 96.7 % of its
+**cracker_box (Ruling 14) is a substrate defect, not a hard object.** (cause corrected in the
+v3 results doc §7 caveat 6) 96.7 % of its
 test-lifts close on air and it lifts 0.5 % of the time. Its IK reach error at the grasp pose
 is also the worst of the four (`scripts/test_lift_head_probe.py --reach`, output in
 `head_scores_cube.txt`):
@@ -680,7 +681,8 @@ Quoted verbatim from the Task 9 dispatch.
 > `build_dataset` gains an `exclude_objects` argument / `--exclude` flag; default excludes
 > nothing, the v1 run passes `cracker_box`. Reason to state in the results doc: 91% of its
 > candidates reach the pose but 97% close on air (lift 0.5%), consistent with the
-> food-packing asset's physics-root/mesh offset — a substrate defect.
+> food-packing asset's physics-root/mesh offset — a substrate defect. (cause corrected in the
+> v3 results doc §7 caveat 6)
 
 *Measured against Ruling 14's stated reason: 96.7 % close on air and `lift_ok` = 0.005, both
 as stated. The reach figure measures lower here — 50.1 % of cracker_box grasps reach within
