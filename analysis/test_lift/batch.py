@@ -58,6 +58,7 @@ TILT_MAX_DEG = 15.0         # object tilt from the settle orientation allowed fo
 
 HOLD_STEPS = 15             # 1 s at 15 Hz
 MOVE_STEPS = 45             # 3 s per motion segment
+LIFT_STEPS = MOVE_STEPS // 2  # the test-lift segment length (22 steps)
 SETTLE_STEPS = 60           # let the object come to rest before any pose is read
 
 OPEN, CLOSE = 1.0, -1.0
@@ -101,21 +102,29 @@ R_F = 0.05**2
 R_TAU = np.eye(3) * 0.005**2
 
 
-def update_allowed(ok: bool, f_o, m_prior: float) -> bool:
+def update_allowed(held: bool, f_o, m_prior: float) -> bool:
     """May the wrench of this test-lift be fed to the filter?
 
-    Two conditions. The test-lift must have held (``ok``, i.e. :func:`real_hold`), because a
-    failed test-lift measures an empty gripper. And the measured object-frame force must
-    carry at least half the prior's weight, because a partly supported object under-reports
-    it (measured in Task 8: 3.10 N of 4.905 N). Either violation drives the Kalman mass mean
-    negative, after which every sample in ``GaussianBelief.sample`` clips to the same floor
-    and the hold probability saturates at 1.0 -- observed as ``m_post = -0.849 kg`` with
-    ``hold_prob_first = 1.0``.
+    Two conditions. The test-lift must have held (``held``, i.e. :func:`hold_verdict`'s
+    first element -- tilt no longer gates this: a swung-but-held lift still measures a real
+    wrench, and its swing is exactly what :func:`~analysis.test_lift.swing.along_gravity_from_swing`
+    reads), because a failed test-lift measures an empty gripper. And, when a mass prior
+    exists, the measured object-frame force must carry at least half the prior's weight,
+    because a partly supported object under-reports it (measured in Task 8: 3.10 N of 4.905
+    N). Either violation drives the Kalman mass mean negative, after which every sample in
+    ``GaussianBelief.sample`` clips to the same floor and the hold probability saturates at
+    1.0 -- observed as ``m_post = -0.849 kg`` with ``hold_prob_first = 1.0``. The first
+    grasp of an episode has no mass prior (``m_prior = nan``), so that second test is
+    skipped: there is nothing yet to compare the force against.
 
     When this returns False the caller leaves the posterior equal to the prior, which is how
     ``results.py`` tells an update from a skip without a new log key.
     """
-    return bool(ok) and float(np.linalg.norm(f_o)) >= 0.5 * float(m_prior) * GRAVITY_G
+    if not bool(held):
+        return False
+    if np.isnan(m_prior):
+        return True
+    return float(np.linalg.norm(f_o)) >= 0.5 * float(m_prior) * GRAVITY_G
 
 
 def assert_finger_joints(joint_names) -> None:
@@ -135,7 +144,11 @@ def select_first(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rn
     """The grasp each arm picks BEFORE any test-lift, i.e. from the prior.
 
     * ``oracle`` -- ranks with the true mass and CoM (a delta belief).
-    * ``belief`` -- ranks with the density prior.
+    * ``belief`` -- no mass prior exists yet at the first pick (by decision, mass comes
+      from the measured force after the test-lift, see ``prior_from_points(mass_prior=...)``
+      and ``update_mass``), so this falls back to GraspGenX's own confidence, exactly like
+      ``next_best`` (spec §14). :func:`select_second` is the one that ranks ``belief`` with
+      the density/posterior, once a mass estimate exists.
     * ``next_best`` / ``fixed_threshold`` / ``top1`` -- take GraspGenX's own confidence.
 
     ``exclude`` is accepted for symmetry with :func:`select_second`; the first grasp of an
@@ -151,18 +164,21 @@ def select_first(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rn
             "(this module is pure numpy and must not import torch)")
     if arm == "oracle":
         return select_oracle(grasps_o, confs, m_true, c_true, g_hat, params, exclude=exclude)
-    if arm == "belief":
-        return select_belief(grasps_o, confs, belief, g_hat, params, rng, exclude=exclude)
     return select_next_best_geometric(confs, exclude=exclude)
 
 
 def select_second(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rng, exclude=()) -> int:
-    """The re-grasp after an abort. Same arm -> selector map as :func:`select_first`.
+    """The re-grasp after an abort or the second lift, once a mass estimate exists.
 
-    The two differ only in what the caller hands them: ``belief`` gets the POSTERIOR here,
-    ``g_hat`` is gravity in the object frame after the object moved, and ``exclude`` holds
-    the grasp already tried plus every candidate that stopped approaching downward.
+    ``belief`` ranks with the POSTERIOR here (:func:`~analysis.test_lift.rerank.select_belief`)
+    -- unlike :func:`select_first`, which has no mass prior to sample from at the first pick.
+    Every other arm maps the same way :func:`select_first` does; the two differ only in what
+    the caller hands them: ``g_hat`` is gravity in the object frame after the object moved,
+    and ``exclude`` holds the grasp already tried plus every candidate that stopped
+    approaching downward.
     """
+    if arm == "belief":
+        return select_belief(grasps_o, confs, belief, g_hat, params, rng, exclude=exclude)
     return select_first(arm, grasps_o, confs, belief, m_true, c_true, g_hat, params, rng, exclude)
 
 
@@ -177,7 +193,7 @@ def grasp_schedule(tag: str) -> list[tuple[str, int]]:
         (f"{tag}_bias", HOLD_STEPS),          # no-load wrench window, still at the pre-grasp
         (f"{tag}_approach", MOVE_STEPS),      # move onto the grasp pose, gripper open
         (f"{tag}_close", MOVE_STEPS // 2),    # close the fingers
-        (f"{tag}_testlift", MOVE_STEPS // 2), # commanded LIFT_DZ test-lift
+        (f"{tag}_testlift", LIFT_STEPS),      # commanded LIFT_DZ test-lift
         (f"{tag}_hold", HOLD_STEPS),          # loaded wrench window
     ]
 
@@ -252,19 +268,35 @@ def seed_of(env_i: int, n_seeds: int) -> int:
 # ---------------------------------------------------------------------------------------
 # Decision rules (spec §11.3)
 # ---------------------------------------------------------------------------------------
+def hold_verdict(rise: float, dz: float, gap: float, tilt_deg: float, frac: float,
+                 tilt_max: float, min_gap: float) -> tuple[bool, bool]:
+    """Split what v0/v1's single ``real_hold`` conflated: did the grasp hold, and did it swing?
+
+    ``held`` -- the object rose by more than ``frac * dz`` and the fingers are still more
+    than ``min_gap`` apart (so they closed on the object, not on air). ``swung`` -- the
+    object tilted at least ``tilt_max`` from its settle orientation.
+
+    v0/v1 discarded every swung test-lift, even a held one, but a swing is the most
+    informative test-lift there is (spec §14): it hangs the CoM below the finger axis,
+    which reveals the CoM component along gravity that a static hold cannot identify. So
+    ``held`` alone now gates :func:`update_allowed`, and ``swung`` only gates which belief
+    update runs (wrench vs. swing) -- see the driver.
+    """
+    held = bool(float(rise) > float(frac) * float(dz) and float(gap) > float(min_gap))
+    swung = bool(float(tilt_deg) >= float(tilt_max))
+    return held, swung
+
+
 def real_hold(rise: float, dz: float, gap: float, tilt_deg: float,
               frac: float = LIFT_OK_FRAC, tilt_max: float = TILT_MAX_DEG,
               min_gap: float = MIN_FINGER_GAP) -> bool:
-    """Did the test-lift actually pick the object up? (Ruling 25, bar lowered by Ruling 29.)
-
-    Three conditions, all required: the object rose by more than ``frac * dz``; the fingers
-    are still more than ``min_gap`` apart (so they closed on the object, not on air); and
-    the object tilted less than ``tilt_max`` from its settle orientation (so a grasp that
-    clips the object and spins it does not count).
+    """Did the test-lift pick the object up WITHOUT swinging? (Ruling 25, bar lowered by
+    Ruling 29.) ``held and not swung`` (:func:`hold_verdict`) -- kept for callers that still
+    want the single v0/v1 boolean (labels.py, the driver); ``update_allowed`` now takes
+    ``held`` alone instead, so a swung-but-held lift is not thrown away.
     """
-    return bool(float(rise) > float(frac) * float(dz)
-                and float(gap) > float(min_gap)
-                and float(tilt_deg) < float(tilt_max))
+    held, swung = hold_verdict(rise, dz, gap, tilt_deg, frac, tilt_max, min_gap)
+    return held and not swung
 
 
 def decide_advance(arm: str, ok1: bool, hold_prob: float, tau_norm: float,

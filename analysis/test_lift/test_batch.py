@@ -6,11 +6,11 @@ import pytest
 
 from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, BRANCH_STEPS,
                                       CLEAR_DZ, FINGER_JOINTS, HOLD_STEPS, LIFT_DZ, LIFT_OK_FRAC,
-                                      MIN_FINGER_GAP, MOVE_STEPS, OBJECT_MASS_KG, R_F, R_TAU,
-                                      SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
+                                      LIFT_STEPS, MIN_FINGER_GAP, MOVE_STEPS, OBJECT_MASS_KG, R_F,
+                                      R_TAU, SETTLE_STEPS, TILT_MAX_DEG, TOTAL_STEPS, arm_of,
                                       assert_finger_joints, assign_candidates, branch_stage_a_schedule,
                                       DRIVER_ASSIGNED_ARMS, decide_advance, env_index,
-                                      grasp_schedule, hand_target,
+                                      grasp_schedule, hand_target, hold_verdict,
                                       offset_dir_name, phase_schedule, reachable_candidates, real_hold,
                                       seed_of, select_first, select_second, setdown_schedule, theta_grid,
                                       tilt_deg, unreachable_after_move, update_allowed, world_approach_z)
@@ -26,8 +26,9 @@ TASK_BUDGET_STEPS = 180 * 15  # episode_length_s = 180 in the task files, 15 Hz 
 # --------------------------------------------------------------------------- schedule
 def test_grasp_schedule_matches_the_single_driver_segments():
     assert [n for _, n in grasp_schedule("g1")] == [
-        MOVE_STEPS, HOLD_STEPS, MOVE_STEPS, MOVE_STEPS // 2, MOVE_STEPS // 2, HOLD_STEPS]
+        MOVE_STEPS, HOLD_STEPS, MOVE_STEPS, MOVE_STEPS // 2, LIFT_STEPS, HOLD_STEPS]
     assert [n for _, n in setdown_schedule()] == [MOVE_STEPS // 2, MOVE_STEPS // 3, MOVE_STEPS]
+    assert LIFT_STEPS == MOVE_STEPS // 2 == 22
 
 
 def test_stage_a_is_the_union_of_both_paths_cut_points():
@@ -299,10 +300,11 @@ def test_select_first_maps_each_arm_to_its_own_selector():
     for arm in ("next_best", "fixed_threshold", "top1"):
         assert select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
                             np.random.default_rng(0)) == select_next_best_geometric(confs)
-    # belief arm: the same call rerank.select_belief makes, on the same rng stream
+    # belief arm: no mass prior exists before the first test-lift (spec §14), so the first
+    # pick falls back to GraspGenX's own confidence, exactly like next_best/top1
     assert (select_first("belief", grasps, confs, belief, m_true, c_true, g_hat, params,
                          np.random.default_rng(7))
-            == select_belief(grasps, confs, belief, g_hat, params, np.random.default_rng(7)))
+            == select_next_best_geometric(confs))
     # oracle arm: ranks with the TRUE mass and CoM, not the belief
     assert (select_first("oracle", grasps, confs, belief, m_true, c_true, g_hat, params,
                          np.random.default_rng(0))
@@ -333,9 +335,15 @@ def test_selectors_honour_exclude_and_second_matches_first():
         second = select_second(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
                                np.random.default_rng(3), exclude=(first,))
         assert second != first
-        # select_second is the same map as select_first, only the inputs differ
-        assert second == select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
-                                      np.random.default_rng(3), exclude=(first,))
+        if arm == "belief":
+            # select_second("belief") still uses the POSTERIOR (rerank.select_belief);
+            # select_first("belief") no longer does, since the first pick has no mass prior
+            assert second == select_belief(grasps, confs, belief, g_hat, params,
+                                           np.random.default_rng(3), exclude=(first,))
+        else:
+            # select_second is the same map as select_first, only the inputs differ
+            assert second == select_first(arm, grasps, confs, belief, m_true, c_true, g_hat, params,
+                                          np.random.default_rng(3), exclude=(first,))
 
 
 # --------------------------------------------------------------------------- update gate
@@ -403,3 +411,21 @@ def test_assign_candidates_clamps_and_flags_padding():
     idx, pad = assign_candidates(n_cand=70, start=64, n_envs=8)
     assert idx.tolist() == [64, 65, 66, 67, 68, 69, 69, 69]
     assert pad.tolist() == [False] * 6 + [True] * 2
+
+
+# --------------------------------------------------------------------------- held vs. swung
+def test_hold_verdict_separates_held_from_swung():
+    assert hold_verdict(0.015, 0.02, 0.02, 5.0, 0.6, 15.0, 0.002) == (True, False)
+    assert hold_verdict(0.015, 0.02, 0.02, 16.0, 0.6, 15.0, 0.002) == (True, True)
+    assert hold_verdict(0.005, 0.02, 0.02, 5.0, 0.6, 15.0, 0.002) == (False, False)
+    assert real_hold(0.015, 0.02, 0.02, 16.0) is False and real_hold(0.015, 0.02, 0.02, 5.0) is True
+
+
+def test_belief_first_pick_is_geometric_without_a_mass_prior():
+    confs = np.array([0.2, 0.9, 0.5])
+    assert select_first("belief", np.tile(np.eye(4), (3, 1, 1)), confs, None, 0.5, np.zeros(3), np.array([0, 0, -1.0]), None, None) == 1
+
+
+def test_update_allowed_ignores_tilt_and_a_nan_prior():
+    assert update_allowed(True, np.array([0, 0, -5.0]), float("nan")) is True
+    assert update_allowed(False, np.array([0, 0, -5.0]), 0.5) is False

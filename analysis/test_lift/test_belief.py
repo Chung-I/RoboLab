@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from analysis.test_lift.belief import GaussianBelief, prior_from_points, update_com, update_from_wrench, update_mass
+from analysis.test_lift.belief import (GaussianBelief, prior_from_points, update_com,
+                                       update_from_swing, update_from_wrench, update_mass)
 from analysis.test_lift.physics import GRAVITY_G, gravity_wrench
 
 G_DOWN = np.array([0.0, 0.0, -1.0])
@@ -11,6 +12,13 @@ G_DOWN = np.array([0.0, 0.0, -1.0])
 
 def _box_points(hx, hy, hz, n=2000, rng=np.random.default_rng(0)):
     return rng.uniform([-hx, -hy, -hz], [hx, hy, hz], size=(n, 3))
+
+
+def _cube_points():
+    """The 8 corners of a 7 cm cube, tiled so a convex hull always has plenty of points."""
+    h = 0.035
+    corners = np.array([[x, y, z] for x in (-h, h) for y in (-h, h) for z in (-h, h)])
+    return np.tile(corners, (4, 1))
 
 
 def test_prior_centroid_and_mass():
@@ -57,3 +65,20 @@ def test_sample_shapes():
     m, c = b.sample(64, np.random.default_rng(1))
     assert m.shape == (64,) and c.shape == (64, 3)
     assert (m > 0).all()
+
+
+def test_no_mass_prior_returns_the_measurement():
+    b = prior_from_points(_cube_points(), mass_prior=False)
+    assert np.isnan(b.m_mean) and np.isinf(b.m_var)
+    b1 = update_mass(b, f_meas_o=np.array([0, 0, -0.6 * 9.81]), g_hat_o=np.array([0, 0, -1.0]), R_f=0.01)
+    assert np.isclose(b1.m_mean, 0.6) and np.isclose(b1.m_var, 0.01 / 9.81 ** 2)
+    with pytest.raises(ValueError, match="no mass prior"):
+        b.sample(4, np.random.default_rng(0))
+
+
+def test_update_from_swing_moves_only_the_along_gravity_component():
+    b = GaussianBelief(m_mean=0.6, m_var=0.01, c_mean=np.zeros(3), c_cov=np.diag([1e-4, 1e-4, 1e-2]))
+    g = np.array([0, 0, -1.0]); p = np.zeros(3)
+    b1 = update_from_swing(b, d_along=0.03, sigma_along=0.005, g_hat_o=g, p_tip_o=p)
+    assert np.isclose(b1.c_mean[2], -0.03, atol=2e-3) and np.allclose(b1.c_mean[:2], 0)   # 3 cm BELOW the tips = along +g
+    assert b1.c_cov[2, 2] < b.c_cov[2, 2] and np.isclose(b1.c_cov[0, 0], b.c_cov[0, 0])
