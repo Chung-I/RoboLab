@@ -92,10 +92,11 @@ from isaaclab.app import AppLauncher
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.test_lift.batch import (ADVANCE_FINAL_STEP, APPROACH_Z_MAX, ARMS, CLEAR_DZ,  # noqa: E402
                                       CLEAR_OK_FRAC, CLOSE, GRASP_DEPTH_OFFSET, HEAD_ARMS, HOLD_STEPS,
-                                      LIFT_DZ, LIFT_OK_FRAC, MOVE_STEPS, OBJECT_MASS_KG, OPEN,
+                                      LIFT_DZ, LIFT_OK_FRAC, LIFT_STEPS, MIN_FINGER_GAP, MOVE_STEPS,
+                                      OBJECT_MASS_KG, OPEN,
                                       R_F, R_TAU, SETTLE_STEPS, STANDOFF, TILT_MAX_DEG,
                                       TOTAL_STEPS, arm_of, assert_finger_joints, assign_candidates,
-                                      branch_stage_a_schedule, decide_advance, hand_target,
+                                      branch_stage_a_schedule, decide_advance, hand_target, hold_verdict,
                                       candidate_keep_mask, offset_dir_name, phase_schedule, reachable_candidates,
                                       real_hold, seed_of, select_first, select_second, tilt_deg,
                                       unreachable_after_move, update_allowed)
@@ -133,6 +134,12 @@ parser.add_argument("--models-dir", default=None,
 parser.add_argument("--embeddings-file", default=None,
                     help="npz of frozen GraspGenX embeddings e_g for the SAME candidate set as "
                          "--candidates-file (required by the head_* arms)")
+parser.add_argument("--mass-prior", dest="mass_prior", action="store_true", default=False,
+                    help="v0 behaviour: the first-grasp prior carries a density mass "
+                         "(rho0 * hull volume). Off by default in v3.")
+parser.add_argument("--no-mass-prior", dest="mass_prior", action="store_false",
+                    help="v3 default: no mass prior at the first grasp -- the belief arm's first "
+                         "pick is geometric and the mass comes from the measured test-lift force.")
 parser.add_argument("--label-all", action="store_true",
                     help="label mode: env i executes candidate START+i under one theta; all envs advance")
 parser.add_argument("--theta-id", type=int, default=-1)
@@ -151,7 +158,8 @@ from robolab.core.task.predicate_logic import _read_local_mesh_points  # noqa: E
 from robolab.core.world.world_state import get_world  # noqa: E402
 from robolab.registrations.test_lift import register_test_lift_env  # noqa: E402
 
-from analysis.test_lift.belief import prior_from_points, update_from_wrench  # noqa: E402
+from analysis.test_lift.belief import (prior_from_points, update_from_swing,  # noqa: E402
+                                       update_from_wrench)
 from analysis.test_lift.collision import (gripper_points_world, load_gripper_points,  # noqa: E402
                                           scene_collision, table_collision)
 from analysis.test_lift.episode_log import write_episode  # noqa: E402
@@ -166,8 +174,16 @@ from analysis.test_lift.head_arms import delta_belief, head_prob_at, select_head
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
 from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams,  # noqa: E402
                                        fingertip_points, hold_probability)
+from analysis.test_lift.swing import (along_gravity_from_swing, swing_axis_o,  # noqa: E402
+                                      tilt_about_axis, tilt_from_wrench_trace)
 
 N_POINTS = 2048   # surface points fed to GraspGenX and to the density prior (as in Task 8)
+
+#: Measurement standard deviation (m) of the swing's along-gravity CoM offset, the scalar
+#: ``swing.along_gravity_from_swing`` returns. 5 mm: the pendulum geometry divides the
+#: pre-swing torque by ``tan(phi)``, so it is far noisier than the static torque channel
+#: (``R_TAU``, 5 mN m per axis) that ``update_com`` already used. Spec section 11.2.
+SIGMA_ALONG = 0.005
 
 
 class VecRobot:
@@ -289,14 +305,19 @@ def run_batched_grasp(rb, env, cell, tgt, tag, idle_mask=None, idle_tgt=None):
     waits out the re-grasp the aborting envs are doing. Their entries in the returned arrays
     are still filled in (the reads are batched) but are meaningless and are never used.
 
-    Returns a dict of per-env arrays: ``ok`` (the real-hold verdict), ``bias``/``w_hold`` and
-    their traces, ``T_hand`` at the hold, ``z0`` (object z before the test-lift), ``reach_err``,
-    ``tilt``, ``rise``, ``gap`` and ``T_obj_hold``.
+    Returns a dict of per-env arrays: ``ok`` / ``held`` / ``swung`` (the verdicts),
+    ``bias``/``w_hold`` and their traces, ``lift_trace`` (the test-lift's own wrench trace),
+    ``T_hand`` at the hold, ``z0`` (object z before the test-lift), ``reach_err``, ``tilt``,
+    ``rise``, ``gap`` and ``T_obj_hold``.
 
     ``ok`` is ``batch.real_hold``, identical to the single-env driver's: the object must rise
     by more than ``LIFT_OK_FRAC`` = 60% of the commanded 2 cm (12 mm, Ruling 34), the fingers
     must still be more than ``MIN_FINGER_GAP`` apart, and the object must have tilted less
-    than ``TILT_MAX_DEG`` from its settle orientation.
+    than ``TILT_MAX_DEG`` from its settle orientation. v3 splits it (``batch.hold_verdict``):
+    ``held`` is the first two tests, ``swung`` the tilt one, and ``ok == held & ~swung``. The
+    belief filter is gated on ``held`` alone, because a swung-but-held test-lift measures a
+    real load AND a pendulum angle; the ADVANCE decision still uses ``ok``, so a swung hold
+    aborts and re-grasps on the richer posterior.
     """
     n = rb.n
     idle = np.zeros(n, dtype=bool) if idle_mask is None else np.asarray(idle_mask, dtype=bool)
@@ -333,16 +354,25 @@ def run_batched_grasp(rb, env, cell, tgt, tag, idle_mask=None, idle_tgt=None):
 
     rb.step(*plan(tgt, CLOSE), MOVE_STEPS // 2)
     z0 = object_z(env, args.object).copy()
-    rb.step(*plan(up, CLOSE), MOVE_STEPS // 2)
+    # The test-lift itself is now RECORDED, not just stepped: wrench_window steps LIFT_STEPS
+    # (= MOVE_STEPS // 2, the same 22 steps the v0/v1 rb.step ran, so the schedule is
+    # unchanged) and returns the per-step hand wrench. Its first steps are the PRE-swing
+    # wrench the pendulum measurement reads (swing.along_gravity_from_swing); its decay is
+    # the side measurement of the swing angle (swing.tilt_from_wrench_trace).
+    _, lift_trace = rb.wrench_window(*plan(up, CLOSE), LIFT_STEPS)
     w_hold, hold_trace = rb.wrench_window(*plan(up, CLOSE), HOLD_STEPS)
 
     T_obj_hold = object_T_w(env, args.object)
     gap = rb.finger_gap()
     rise = object_z(env, args.object) - z0
     tilt = np.array([tilt_deg(cell.R_settle[i], T_obj_hold[i][:3, :3]) for i in range(n)])
-    ok = np.array([real_hold(rise[i], LIFT_DZ, gap[i], tilt[i], LIFT_OK_FRAC, TILT_MAX_DEG)
-                   for i in range(n)])
-    return dict(ok=ok, bias=bias, bias_trace=bias_trace, w_hold=w_hold, hold_trace=hold_trace,
+    verdict = [hold_verdict(rise[i], LIFT_DZ, gap[i], tilt[i], LIFT_OK_FRAC, TILT_MAX_DEG,
+                            MIN_FINGER_GAP) for i in range(n)]
+    held = np.array([v[0] for v in verdict])
+    swung = np.array([v[1] for v in verdict])
+    ok = held & ~swung                    # identical to batch.real_hold, by its definition
+    return dict(ok=ok, held=held, swung=swung, bias=bias, bias_trace=bias_trace, w_hold=w_hold,
+                hold_trace=hold_trace, lift_trace=lift_trace,
                 T_hand=rb.hand_T_w(), z0=z0, reach_err=reach_err, tip_z=tip_z, tilt=tilt,
                 rise=rise, gap=gap, T_obj_hold=T_obj_hold)
 
@@ -604,6 +634,10 @@ def main():
 
         # ---- priors, table height, first grasp choice ----
         authored = env.scene[args.object].root_physx_view.get_coms().cpu().numpy().reshape(N, -1)[:, :3]
+        # Object half-extent in its own frame: the bound the swing measurement is checked
+        # against below. Computed here, after a --candidates-file has replaced pts_by_env with
+        # its own points_o, so it always describes the point set the grasps were sampled from.
+        half_extent_o = [0.5 * (p.max(axis=0) - p.min(axis=0)) for p in pts_by_env]
         logs, tgt1, b0s, i1s = [], np.zeros((N, 7)), [], []
         if args.label_all:
             # Label mode forces n_seeds == 1, so every env shares the same candidate set
@@ -612,7 +646,14 @@ def main():
         for i in range(N):
             pts = pts_by_env[i]
             grasps_o, confs = cands[seed_of(i, n_seeds)]
-            b0 = prior_from_points(pts)
+            # v3: the first grasp of an episode has NO mass prior -- mass comes from the
+            # measured test-lift force (spec section 14), which is also what makes the belief
+            # arm's first pick geometric (batch.select_first). Two exceptions keep the v1
+            # artefacts readable whatever the flag says: --label-all writes the dataset's own
+            # m_prior column, and the head_* arms feed the prior's moments to a latent encoder
+            # trained on the density prior; a nan there would poison both.
+            b0 = prior_from_points(pts, mass_prior=(args.mass_prior or args.label_all
+                                                    or cell.arms[i] in HEAD_ARMS))
             c_true = authored[i]                   # already includes the applied offset (Task 6)
             if args.label_all:
                 i1 = int(cand_idx[i])
@@ -644,6 +685,8 @@ def main():
         g1 = run_batched_grasp(rb, env, cell, tgt1, "g1")
         for i in range(N):
             logs[i].update(first_lift_ok=bool(g1["ok"][i]),
+                           held1=bool(g1["held"][i]), swung1=bool(g1["swung"][i]),
+                           lift_trace_h=g1["lift_trace"][i],
                            wrench_bias_h=g1["bias"][i], wrench_hold_h=g1["w_hold"][i],
                            wrench_bias_trace_h=g1["bias_trace"][i], wrench_trace_h=g1["hold_trace"][i],
                            rise1=float(g1["rise"][i]), tilt1=float(g1["tilt"][i]),
@@ -660,6 +703,50 @@ def main():
             g_hold = gravity_in_object_frame(T_hold)      # gravity at the hold, not at the settle
             f_o, tau_o, p_hand_o = wrench_hand_to_object(f_h, tau_h, g1["T_hand"][i], T_hold)
             b0 = b0s[i]
+
+            # ---- the swing measurement, for EVERY env (the belief arm is the only one that
+            # folds it in, but tilt_wrench1 / d_along1 are logged for all of them) ----
+            grasp1_o = cands[seed_of(i, n_seeds)][0][i1s[i]]
+            axis_o = swing_axis_o(grasp1_o)                        # the finger axis, object frame
+            p_tip_o = fingertip_points(grasp1_o[None], params.depth)[0]
+            # The test-lift trace in the PRE-swing object frame: the settle pose T_obj[i] (the
+            # object has not swung yet when the lift starts) and the hand pose at the hold.
+            # APPROXIMATION: the hand pose at the START of the lift is not stored, and over the
+            # commanded 2 cm the hand translates but barely rotates. wrench_hand_to_object uses
+            # only the hand's ROTATION for f_o / tau_o, so the error is the IK's own orientation
+            # drift across 22 control steps, not the 2 cm of travel.
+            lift_o = trace_to_object_frame(g1["lift_trace"][i], g1["bias"][i], g1["T_hand"][i], T_obj[i])
+            pre = lift_o[:3]                                       # the first 3 lift steps
+            f_pre_o, tau_pre_o = pre[:, :3].mean(axis=0), pre[:, 3:].mean(axis=0)
+            phi = tilt_about_axis(cell.R_settle[i], T_hold[:3, :3], axis_o)
+            tilt_wrench = float(np.degrees(tilt_from_wrench_trace(lift_o, axis_o)))
+            d_along = float("nan")
+            if bool(g1["swung"][i]):
+                # The pendulum geometry assumes the object HANGS from the fingers: it reads
+                # d_perp off the pre-swing gravity torque and divides by tan(phi). An object
+                # that tilted without leaving the table is still partly supported, so its
+                # pre-swing wrench is not m*G and the quotient is meaningless (measured on the
+                # mug smoke: |f_o| = 3.75 N for a 0.5 kg object, d_along = -0.26 m). So
+                # d_along1 is nan unless the test-lift also HELD -- which is exactly the gate
+                # the belief update runs under anyway.
+                if bool(g1["held"][i]):
+                    d_along = along_gravity_from_swing(tau_pre_o, f_pre_o, phi, axis_o, g_hold, p_tip_o)
+                print(f"[swing] env={i} arm={cell.arms[i]} seed={cell.seeds[i]} "
+                      f"held={bool(g1['held'][i])} tilt_gt={float(g1['tilt'][i]):.1f} "
+                      f"phi_gt={float(np.degrees(phi)):+.1f} tilt_wrench={tilt_wrench:.1f} "
+                      f"d_along={d_along:+.4f}", flush=True)
+            logs[i].update(tilt_wrench1=tilt_wrench, d_along1=float(d_along))
+            # PLAUSIBILITY GATE on the swing measurement, measured on the mug smoke (task-2
+            # report): the mug's real swings rotate the object about an axis that is NOT the
+            # finger axis (total tilt 22.8 deg, but only 1.7-2.4 deg of it about axis_o), so
+            # along_gravity_from_swing divides a small torque by tan(2 deg) and returns
+            # d_along = 0.34 m for an object whose largest half-extent is 0.058 m. Feeding that
+            # to update_from_swing with sigma = 5 mm dragged c_post to -0.27 m along z. A CoM
+            # cannot lie outside the object's own extent, so the update is skipped when the
+            # measurement says it does. The RAW d_along1 is still logged either way, so the
+            # v3 analysis can study the measurement itself.
+            d_along_max = float(np.max(half_extent_o[i]))
+
             # Only a real hold carries the object's load. A failed test-lift measures an empty
             # gripper and a partly supported object under-reports its weight; either drives the
             # Kalman mass mean negative. Leaving the posterior equal to the prior is how
@@ -667,13 +754,26 @@ def main():
             b1 = b0
             # `head_filter` runs the SAME gated analytic update as `belief` -- it has to, the
             # head's z_post column was built with that gate (dataset.build_dataset), so an
-            # ungated posterior would be an input regime the head never saw.
+            # ungated posterior would be an input regime the head never saw. That is also why
+            # only `belief` moves to the v3 gate: `held` instead of `real_hold`, so a
+            # swung-but-held test-lift is kept, plus the swing update on top of the wrench one.
             if cell.arms[i] in ("belief", "head_filter"):
-                if update_allowed(bool(g1["ok"][i]), f_o, b0.m_mean):
+                gate = bool(g1["held"][i]) if cell.arms[i] == "belief" else bool(g1["ok"][i])
+                if update_allowed(gate, f_o, b0.m_mean):
                     b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold, R_f=R_F, R_tau=R_TAU)
+                    # A swing hangs the CoM below the finger axis, which identifies the
+                    # along-gravity component the static hold cannot see (spec section 11.2).
+                    if cell.arms[i] == "belief" and bool(g1["swung"][i]) and np.isfinite(d_along):
+                        if abs(float(d_along)) <= d_along_max:
+                            b1 = update_from_swing(b1, d_along, SIGMA_ALONG, g_hold, p_tip_o)
+                        else:
+                            print(f"[swing-reject] env={i} seed={cell.seeds[i]} "
+                                  f"d_along={float(d_along):+.4f} outside the object's half-extent "
+                                  f"{d_along_max:.4f}; swing update skipped", flush=True)
                 else:
                     print(f"[no-update] env={i} seed={cell.seeds[i]} arm={cell.arms[i]} "
-                          f"first_lift_ok={bool(g1['ok'][i])} "
+                          f"gate={gate} first_lift_ok={bool(g1['ok'][i])} "
+                          f"held={bool(g1['held'][i])} swung={bool(g1['swung'][i])} "
                           f"|f_o|={np.linalg.norm(f_o):.3f}N "
                           f"(0.5*m_prior*G={0.5 * b0.m_mean * GRAVITY_G:.3f}N); "
                           "posterior left at the prior", flush=True)
@@ -685,7 +785,12 @@ def main():
 
             hp = float("nan")
             if cell.arms[i] == "belief":
-                hp = hold_probability(cands[seed_of(i, n_seeds)][0][i1s[i]], b1, g_hold, params, rngs[i])
+                # Without a mass prior the posterior can still have NO mass: the test-lift did
+                # not hold, so the update was refused and m_var is still infinite.
+                # GaussianBelief.sample raises there by design, so leave hold_prob_first nan --
+                # decide_advance already aborts on `ok1` alone in that case.
+                if not np.isinf(b1.m_var):
+                    hp = hold_probability(grasp1_o, b1, g_hold, params, rngs[i])
                 logs[i]["hold_prob_first"] = hp
             elif cell.arms[i] in HEAD_ARMS:
                 # Logged for every head arm, but only head_filter / head_phi act on it
@@ -749,7 +854,16 @@ def main():
                                              logs[i]["com_true_o"]),
                                  exclude2)
             else:
-                i2 = select_second(cell.arms[i], grasps_o, confs, beliefs_post[i], args.mass,
+                # Same reason as hold_prob_first above: a `belief` env whose test-lift did not
+                # hold has no mass in its posterior, and select_belief would sample it. Rank it
+                # geometrically instead -- which is exactly what select_first("belief") does
+                # before any test-lift.
+                arm_i = cell.arms[i]
+                if arm_i == "belief" and np.isinf(beliefs_post[i].m_var):
+                    print(f"[no-mass] env={i} seed={cell.seeds[i]} arm=belief: posterior has no "
+                          "mass (test-lift did not hold); grasp 2 ranked geometrically", flush=True)
+                    arm_i = "next_best"
+                i2 = select_second(arm_i, grasps_o, confs, beliefs_post[i], args.mass,
                                    logs[i]["com_true_o"], gravity_in_object_frame(T_obj2[i]),
                                    params, rngs[i], exclude2)
             tgt2[i] = hand_target(grasps_o[i2], T_obj2[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
@@ -796,6 +910,8 @@ def main():
                   f"final_ok={bool(final_ok[i])} n_grasps={logs[i]['n_grasps']} "
                   f"ik_err1={g1['reach_err'][i]:.4f} tip_z1={g1['tip_z'][i]:+.4f} "
                   f"tilt1={g1['tilt'][i]:.1f} rise1={g1['rise'][i]:+.4f} "
+                  f"held1={bool(g1['held'][i])} swung1={bool(g1['swung'][i])} "
+                  f"tilt_wrench1={logs[i]['tilt_wrench1']:.1f} d_along1={logs[i]['d_along1']:+.4f} "
                   f"ik_err2={g2['reach_err'][i]:.4f}", flush=True)
         if args.label_all and n_pad_skipped:
             print(f"[pad] skipped {n_pad_skipped} envs", flush=True)
