@@ -45,6 +45,30 @@ def tilt_about_axis(R_settle: np.ndarray, R_hold: np.ndarray, axis_o: np.ndarray
     return float(np.dot(rotvec, axis))
 
 
+def axis_fraction(R_settle: np.ndarray, R_hold: np.ndarray, axis_o: np.ndarray) -> float:
+    """How much of the settle->hold rotation is ABOUT ``axis_o``: ``|rv . axis| / |rv|`` in [0, 1].
+
+    :func:`along_gravity_from_swing` models the swing as a pendulum rotation about the finger
+    axis. On real test-lifts that assumption can fail badly -- a mug measured in Task 2 rotated
+    22.8 deg in total but only 2 deg of it about the finger axis, the rest about the grasp y
+    axis (-19 deg) and the approach axis (-13 deg) -- and the pendulum then divides by
+    ``tan(2 deg)`` and returns a CoM offset several times the object's own size. This is the
+    scalar that makes the assumption checkable: 1.0 for a pure rotation about the axis, 0.0 for
+    a pure rotation perpendicular to it. The driver gates the swing update on it.
+
+    Returns 0.0 when the object did not rotate at all (``|rv| < 1e-6``), so a no-rotation case
+    can never pass a fraction gate.
+    """
+    axis = np.asarray(axis_o, dtype=float)
+    axis = axis / np.linalg.norm(axis)
+    R_rel = np.asarray(R_settle, dtype=float).T @ np.asarray(R_hold, dtype=float)
+    rv = Rotation.from_matrix(R_rel).as_rotvec()
+    n = float(np.linalg.norm(rv))
+    if n < 1e-6:
+        return 0.0
+    return float(abs(np.dot(rv, axis)) / n)
+
+
 def along_gravity_from_swing(tau_pre_o, f_pre_o, phi: float, axis_o, g_hat_o, p_tip_o) -> float:
     """The pendulum geometry: the CoM's offset along gravity, from the pre-swing wrench and
     the swing angle ``phi`` (``tilt_about_axis`` between settle and hold).

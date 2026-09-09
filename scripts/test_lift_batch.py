@@ -174,8 +174,8 @@ from analysis.test_lift.head_arms import delta_belief, head_prob_at, select_head
 from analysis.test_lift.physics import GRAVITY_G  # noqa: E402
 from analysis.test_lift.rerank import (FRANKA_PANDA_DEPTH, GraspParams,  # noqa: E402
                                        fingertip_points, hold_probability)
-from analysis.test_lift.swing import (along_gravity_from_swing, swing_axis_o,  # noqa: E402
-                                      tilt_about_axis, tilt_from_wrench_trace)
+from analysis.test_lift.swing import (along_gravity_from_swing, axis_fraction,  # noqa: E402
+                                      swing_axis_o, tilt_about_axis, tilt_from_wrench_trace)
 
 N_POINTS = 2048   # surface points fed to GraspGenX and to the density prior (as in Task 8)
 
@@ -184,6 +184,14 @@ N_POINTS = 2048   # surface points fed to GraspGenX and to the density prior (as
 #: pre-swing torque by ``tan(phi)``, so it is far noisier than the static torque channel
 #: (``R_TAU``, 5 mN m per axis) that ``update_com`` already used. Spec section 11.2.
 SIGMA_ALONG = 0.005
+
+#: The pendulum model assumes the object rotates ABOUT the finger axis. ``swing.axis_fraction``
+#: measures how true that is for one test-lift; below this fraction the swing update is skipped
+#: (controller Ruling 6). 0.8: the mug's held swing in the Task-2 smoke turned 22.8 deg in total
+#: but only 2 deg about the finger axis (-19 deg about the grasp y axis, -13 deg about the
+#: approach axis), a fraction of ~0.1, and the pendulum's 1/tan(phi) then returned a CoM offset
+#: six times the object's own size.
+SWING_AXIS_FRAC_MIN = 0.8
 
 
 class VecRobot:
@@ -719,6 +727,7 @@ def main():
             pre = lift_o[:3]                                       # the first 3 lift steps
             f_pre_o, tau_pre_o = pre[:, :3].mean(axis=0), pre[:, 3:].mean(axis=0)
             phi = tilt_about_axis(cell.R_settle[i], T_hold[:3, :3], axis_o)
+            swing_frac = axis_fraction(cell.R_settle[i], T_hold[:3, :3], axis_o)
             tilt_wrench = float(np.degrees(tilt_from_wrench_trace(lift_o, axis_o)))
             d_along = float("nan")
             if bool(g1["swung"][i]):
@@ -733,9 +742,11 @@ def main():
                     d_along = along_gravity_from_swing(tau_pre_o, f_pre_o, phi, axis_o, g_hold, p_tip_o)
                 print(f"[swing] env={i} arm={cell.arms[i]} seed={cell.seeds[i]} "
                       f"held={bool(g1['held'][i])} tilt_gt={float(g1['tilt'][i]):.1f} "
-                      f"phi_gt={float(np.degrees(phi)):+.1f} tilt_wrench={tilt_wrench:.1f} "
-                      f"d_along={d_along:+.4f}", flush=True)
-            logs[i].update(tilt_wrench1=tilt_wrench, d_along1=float(d_along))
+                      f"phi_gt={float(np.degrees(phi)):+.1f} frac={swing_frac:.2f} "
+                      f"tilt_wrench={tilt_wrench:.1f} d_along={d_along:+.4f}", flush=True)
+            logs[i].update(tilt_wrench1=tilt_wrench, d_along1=float(d_along),
+                           swing_axis_frac1=(float(swing_frac) if bool(g1["swung"][i])
+                                             else float("nan")))
             # PLAUSIBILITY GATE on the swing measurement, measured on the mug smoke (task-2
             # report): the mug's real swings rotate the object about an axis that is NOT the
             # finger axis (total tilt 22.8 deg, but only 1.7-2.4 deg of it about axis_o), so
@@ -763,13 +774,28 @@ def main():
                     b1 = update_from_wrench(b0, f_o, tau_o, p_hand_o, g_hold, R_f=R_F, R_tau=R_TAU)
                     # A swing hangs the CoM below the finger axis, which identifies the
                     # along-gravity component the static hold cannot see (spec section 11.2).
-                    if cell.arms[i] == "belief" and bool(g1["swung"][i]) and np.isfinite(d_along):
-                        if abs(float(d_along)) <= d_along_max:
-                            b1 = update_from_swing(b1, d_along, SIGMA_ALONG, g_hold, p_tip_o)
-                        else:
+                    if cell.arms[i] == "belief" and bool(g1["swung"][i]):
+                        # Three gates, in the order the model fails. The FIRST is the pendulum
+                        # assumption itself -- was the rotation about the finger axis? -- and it
+                        # is checked before `d_along` is even looked at, so an off-axis swing is
+                        # reported as such rather than hidden behind MIN_SWING_DEG's nan.
+                        if swing_frac < SWING_AXIS_FRAC_MIN:
+                            print(f"[swing-skip] env={i} frac={swing_frac:.2f} "
+                                  f"tilt={float(g1['tilt'][i]):.1f} reason=off_axis (below "
+                                  f"{SWING_AXIS_FRAC_MIN}: the object did not rotate about the "
+                                  "finger axis); swing update skipped", flush=True)
+                        elif not np.isfinite(d_along):
+                            print(f"[swing-skip] env={i} frac={swing_frac:.2f} "
+                                  f"tilt={float(g1['tilt'][i]):.1f} reason=phi_below_min "
+                                  f"(|phi|={abs(float(np.degrees(phi))):.1f} deg, "
+                                  "along_gravity_from_swing returned nan); swing update skipped",
+                                  flush=True)
+                        elif abs(float(d_along)) > d_along_max:
                             print(f"[swing-reject] env={i} seed={cell.seeds[i]} "
                                   f"d_along={float(d_along):+.4f} outside the object's half-extent "
                                   f"{d_along_max:.4f}; swing update skipped", flush=True)
+                        else:
+                            b1 = update_from_swing(b1, d_along, SIGMA_ALONG, g_hold, p_tip_o)
                 else:
                     print(f"[no-update] env={i} seed={cell.seeds[i]} arm={cell.arms[i]} "
                           f"gate={gate} first_lift_ok={bool(g1['ok'][i])} "

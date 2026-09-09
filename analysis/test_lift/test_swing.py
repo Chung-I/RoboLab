@@ -4,8 +4,8 @@
 import numpy as np
 import pytest
 
-from analysis.test_lift.swing import (along_gravity_from_swing, swing_axis_o, tilt_about_axis,
-                                      tilt_from_wrench_trace)
+from analysis.test_lift.swing import (along_gravity_from_swing, axis_fraction, swing_axis_o,
+                                      tilt_about_axis, tilt_from_wrench_trace)
 
 
 def _rot(axis, a):
@@ -36,3 +36,15 @@ def test_wrench_tilt_side_measurement():
     trace = np.zeros((T, 6)); trace[:, 3] = np.linspace(tau0, tau0 * np.cos(phi), T)   # torque about x decays
     assert np.isclose(np.degrees(tilt_from_wrench_trace(trace, ax)), 20, atol=1e-6)
     assert np.isnan(tilt_from_wrench_trace(np.zeros((T, 6)), ax))
+
+
+def test_axis_fraction_separates_a_pendulum_swing_from_an_off_axis_one():
+    """1.0 when the object turns about the finger axis, 0.0 when it turns perpendicular to it."""
+    ax = np.array([1.0, 0, 0]); R0 = np.eye(3)
+    assert np.isclose(axis_fraction(R0, _rot(ax, np.deg2rad(20)), ax), 1.0, atol=1e-9)
+    assert np.isclose(axis_fraction(R0, _rot(ax, -np.deg2rad(20)), ax), 1.0, atol=1e-9)
+    assert np.isclose(axis_fraction(R0, _rot([0.0, 1, 0], np.deg2rad(20)), ax), 0.0, atol=1e-9)
+    assert axis_fraction(R0, R0, ax) == 0.0                      # no rotation at all
+    # A 45 deg mix of the two axes splits the rotation vector evenly.
+    mixed = _rot(np.array([1.0, 1.0, 0.0]), np.deg2rad(20))
+    assert np.isclose(axis_fraction(R0, mixed, ax), np.sqrt(0.5), atol=1e-9)
