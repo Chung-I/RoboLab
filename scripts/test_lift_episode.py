@@ -2,6 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Test-lift v0 episode driver (docs/studies/2026-09-08-test-lift-v0-plan.md, Task 8).
 
+This driver stays on the **v0 belief pipeline** on purpose: a density mass prior,
+``update_allowed(ok1, ...)`` and no swing update. ``scripts/test_lift_batch.py`` is the v3
+reference (no first-grasp mass prior, the ``held`` gate, ``belief.update_from_swing``) and is
+where every study number comes from; this one is kept for recording an episode ``--video``.
+
 Phases: approach -> close -> test-lift 2 cm -> hold -> wrench -> belief update -> decide
         (advance: lift clear | abort: set down, re-rank, regrasp once) -> log.
 

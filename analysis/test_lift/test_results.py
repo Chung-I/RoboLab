@@ -7,11 +7,14 @@ import pytest
 
 from analysis.test_lift.episode_log import EPISODE_KEYS, write_episode
 from analysis.test_lift.results import (aggregate, e1_perp_error, e2_matrix, pool_by_arm,
-                                         to_markdown)
+                                         to_markdown, was_updated)
 
 
-def _episode(path, arm, c_true, c_post, final_ok, n_grasps, m_prior=1.0, m_post=1.2, mass_true=0.5):
+def _episode(path, arm, c_true, c_post, final_ok, n_grasps, m_prior=1.0, m_post=1.2, mass_true=0.5,
+             held1=None):
     d = {k: np.zeros(1) for k in EPISODE_KEYS}
+    if held1 is not None:                       # v3 logs it; v0/v1 files do not
+        d["held1"] = bool(held1)
     d.update(object="banana", arm=arm, yaw_fix="z90", mass_true=mass_true,
              grasps_o=np.zeros((2, 4, 4)), confs=np.zeros(2),
              com_true_o=np.array(c_true), c_prior_o=np.zeros(3), c_post_o=np.array(c_post),
@@ -138,3 +141,28 @@ def test_e2_matrix_keeps_the_cells_apart(tmp_path):
     assert cells == ["banana/off_x02cm", "banana/off_y02cm"]
     assert rows[0]["banana/off_x02cm"] == 1.0 and rows[0]["banana/off_y02cm"] == 0.0
     assert pool_by_arm(str(tmp_path))[0]["e2_final_rate"] == 0.5
+
+
+def test_was_updated_does_not_count_a_skipped_nan_prior_update(tmp_path):
+    """v3 has no mass prior, so a SKIPPED update leaves m_post and m_prior both nan -- and
+    `nan != nan` used to count that episode as updated (n_updated = n)."""
+    nan = float("nan")
+    d = tmp_path / "banana" / "off_x04cm" / "belief"
+    d.mkdir(parents=True)
+    # held: the update ran, m_post is the measured mass. Not held: both stay nan.
+    _episode(d / "seed_0.npz", "belief", [0.04, 0, 0], [0.039, 0, 0], True, 2,
+             m_prior=nan, m_post=0.4, held1=True)
+    _episode(d / "seed_1.npz", "belief", [0.04, 0, 0], [0.0, 0, 0], False, 2,
+             m_prior=nan, m_post=nan, held1=False)
+    # A held lift whose update was refused for another reason still has no mass.
+    _episode(d / "seed_2.npz", "belief", [0.04, 0, 0], [0.0, 0, 0], False, 2,
+             m_prior=nan, m_post=nan, held1=True)
+    rows = aggregate(str(tmp_path))
+    assert rows[0]["n"] == 3 and rows[0]["n_updated"] == 1
+    assert pool_by_arm(str(tmp_path))[0]["n_updated"] == 1
+
+
+def test_was_updated_falls_back_to_the_v0_comparison_without_held1():
+    assert was_updated({"m_prior": 1.0, "m_post": 1.2}) is True
+    assert was_updated({"m_prior": 1.0, "m_post": 1.0}) is False
+    assert was_updated({"m_prior": np.array(1.0), "m_post": np.array(1.2), "held1": np.array(False)}) is False

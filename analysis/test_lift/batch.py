@@ -91,7 +91,16 @@ FINGER_JOINTS = ("panda_finger_joint1", "panda_finger_joint2")
 
 # ---------------------------------------------------------------------------------------
 # Measurement noise of the wrench update, and the gate that decides whether the update may
-# run at all. Both drivers import these, so the filter they run is the same filter.
+# run at all. Both drivers import these constants.
+#
+# They no longer run the same FILTER, though. As of v3 the reference belief pipeline is
+# ``scripts/test_lift_batch.py`` alone: no mass prior at the first grasp
+# (``belief.prior_from_points(mass_prior=False)``), :func:`update_allowed` gated on ``held``
+# rather than ``real_hold``, and the swing update on top (``belief.update_from_swing``).
+# ``scripts/test_lift_episode.py`` deliberately keeps the v0 pipeline -- density mass prior,
+# ``update_allowed(ok1, ...)``, no swing -- because its only remaining job is recording an
+# episode ``--video``, and porting v3 into it would double the surface with no study reading
+# it. Every study number comes from the batched driver.
 # ---------------------------------------------------------------------------------------
 #: Force-channel measurement variance (N^2). 0.05 N standard deviation on each component of
 #: the hand-frame force, which is the scale of the bias-subtraction residual measured in

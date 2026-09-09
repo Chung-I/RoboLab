@@ -744,24 +744,37 @@ def main():
                       f"held={bool(g1['held'][i])} tilt_gt={float(g1['tilt'][i]):.1f} "
                       f"phi_gt={float(np.degrees(phi)):+.1f} frac={swing_frac:.2f} "
                       f"tilt_wrench={tilt_wrench:.1f} d_along={d_along:+.4f}", flush=True)
-            logs[i].update(tilt_wrench1=tilt_wrench, d_along1=float(d_along),
-                           swing_axis_frac1=(float(swing_frac) if bool(g1["swung"][i])
+            # Both are logged for EVERY env, swung or not: the v3 analysis needs the whole
+            # distribution of the swing geometry, not only the tail that crossed TILT_MAX_DEG.
+            # swing_axis_frac1 is nan only when there is no rotation to take a direction from
+            # (|rv| < 1e-6 rad, where axis_fraction itself returns 0.0 by convention);
+            # batch.tilt_deg IS |rv| in degrees, so the test below is that same threshold.
+            logs[i].update(tilt_wrench1=tilt_wrench, d_along1=float(d_along), phi1=float(phi),
+                           swing_axis_frac1=(float(swing_frac)
+                                             if np.deg2rad(float(g1["tilt"][i])) >= 1e-6
                                              else float("nan")))
             # PLAUSIBILITY GATE on the swing measurement, measured on the mug smoke (task-2
             # report): the mug's real swings rotate the object about an axis that is NOT the
             # finger axis (total tilt 22.8 deg, but only 1.7-2.4 deg of it about axis_o), so
             # along_gravity_from_swing divides a small torque by tan(2 deg) and returns
             # d_along = 0.34 m for an object whose largest half-extent is 0.058 m. Feeding that
-            # to update_from_swing with sigma = 5 mm dragged c_post to -0.27 m along z. A CoM
-            # cannot lie outside the object's own extent, so the update is skipped when the
-            # measurement says it does. The RAW d_along1 is still logged either way, so the
-            # v3 analysis can study the measurement itself.
+            # to update_from_swing with sigma = 5 mm dragged c_post to -0.27 m along z.
+            #
+            # The bound: the CoM lies inside the object's own axis-aligned bounding box, whose
+            # half-widths are half_extent_o[i]. d_along is a distance along gravity, which in the
+            # object frame can point along any of the three axes, so the LARGEST half-width is
+            # the only direction-free bound that can never reject a physically possible value.
+            # It is deliberately loose -- it catches "0.34 m on a 0.058 m mug", not a merely
+            # wrong-by-a-centimetre reading. The RAW d_along1 is logged whether or not the update
+            # runs, so the v3 analysis can still study the measurement itself.
             d_along_max = float(np.max(half_extent_o[i]))
 
             # Only a real hold carries the object's load. A failed test-lift measures an empty
             # gripper and a partly supported object under-reports its weight; either drives the
-            # Kalman mass mean negative. Leaving the posterior equal to the prior is how
-            # results.py tells an update from a skip, with no extra log key.
+            # Kalman mass mean negative. A skip leaves the posterior equal to the prior;
+            # ``results.was_updated`` reads ``held1`` plus a finite ``m_post`` to tell the two
+            # apart, because without a mass prior both m_prior and m_post are nan on a skip and
+            # v0/v1's ``m_post != m_prior`` test would call every skipped episode updated.
             b1 = b0
             # `head_filter` runs the SAME gated analytic update as `belief` -- it has to, the
             # head's z_post column was built with that gate (dataset.build_dataset), so an
@@ -896,9 +909,10 @@ def main():
             logs[i]["idx_second"] = int(i2)
 
         # ---- branch block, stage B: grasp 2 for the aborting envs, idle hold for the rest ----
-        # The grasp-2 wrench windows are stepped but not recorded: the schema keeps grasp 1's
-        # traces only, exactly as the single-env driver does (it passes an empty log dict to
-        # its second run_grasp).
+        # run_batched_grasp records grasp 2's wrench windows and lift trace like grasp 1's, but
+        # nothing here reads them: the log schema keeps grasp 1's traces only (the single-env
+        # driver does the same, passing an empty log dict to its second run_grasp). Only
+        # ``g2["ok"]`` is used, as ``second_lift_ok``.
         g2 = run_batched_grasp(rb, env, cell, tgt2, "g2", idle_mask=advance, idle_tgt=clear1)
         clear2 = np.stack([lifted_target(tgt2[i], CLEAR_DZ) for i in range(N)])
         rb.step(np.where(advance[:, None], clear1, clear2), np.full(N, CLOSE), MOVE_STEPS)

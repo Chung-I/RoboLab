@@ -28,6 +28,22 @@ def e1_perp_error(c_est, c_true, g_o) -> float:
     return float(np.linalg.norm(err - np.dot(err, g) * g))
 
 
+def was_updated(e) -> bool:
+    """Did this episode's belief actually take a wrench update?
+
+    v0/v1 answered ``m_post != m_prior``, which breaks in v3: the first grasp has NO mass prior
+    (``prior_from_points(mass_prior=False)``), so a SKIPPED update leaves ``m_post`` and
+    ``m_prior`` both nan -- and ``nan != nan`` is True, which counted every skipped episode as
+    updated. In v3 the driver logs ``held1``, and the update runs exactly when the test-lift held
+    (``batch.update_allowed``), so an episode is updated iff ``held1`` is True AND ``m_post`` came
+    out finite. Files without ``held1`` are v0/v1 logs, which had a finite prior; they keep the
+    old comparison.
+    """
+    if "held1" not in e:
+        return float(e["m_post"]) != float(e["m_prior"])
+    return bool(np.ravel(e["held1"])[0]) and bool(np.isfinite(float(e["m_post"])))
+
+
 def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
     """Group episode logs under `root` by (object, offset, arm) and compute the E1/E2/E3 table.
 
@@ -41,7 +57,8 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
     same offset. The suffix is parsed into the `mass_kg` column; when it is absent, `mass_kg`
     is the mean of the episodes' own `mass_true`.
 
-    Adds `n_updated` (episodes whose `m_post != m_prior`) and `e1_post_cm_updated` (E1 post
+    Adds `n_updated` (episodes the belief update actually ran on, :func:`was_updated`)
+    and `e1_post_cm_updated` (E1 post
     error over updated episodes only, NaN if none) on top of the base columns.
     """
     groups = defaultdict(list)
@@ -56,7 +73,7 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
         m = _OFFSET_DIR_RE.match(off)
         axis, mag = m.group(1), int(m.group(2))
         mass_kg = float(m.group(3)) if m.group(3) else float(np.mean([float(e["mass_true"]) for e in eps]))
-        updated = [e for e in eps if float(e["m_post"]) != float(e["m_prior"])]
+        updated = [e for e in eps if was_updated(e)]
         rows.append(dict(
             object=obj, offset_cm=mag, offset_axis=axis, mass_kg=mass_kg, arm=arm, n=len(eps),
             e1_prior_cm=100 * np.mean([e1_perp_error(e["c_prior_o"], e["com_true_o"], g_o) for e in eps]),
@@ -91,7 +108,7 @@ def pool_by_arm(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
         per[arm].append(read_episode(path))
     rows = []
     for arm, eps in per.items():
-        updated = [e for e in eps if float(e["m_post"]) != float(e["m_prior"])]
+        updated = [e for e in eps if was_updated(e)]
         rows.append(dict(
             arm=arm, n=len(eps),
             e2_final_rate=float(np.mean([bool(e["final_ok"]) for e in eps])),
