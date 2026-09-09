@@ -17,6 +17,12 @@ from analysis.test_lift.episode_log import read_episode
 # Examples: off_x02cm, off_x04cm_m1.5kg.
 # Pre-Task-9-fix-round-1 logs used the axis-less off_<2-digit magnitude>cm and are skipped by
 # aggregate() (they collided across axes -- see task-9-report.md concern 1 / fix round 1).
+#: Ruling 6 of v3: the swing update runs only when the settle->hold rotation is predominantly
+#: about the finger axis, which is the pendulum model's assumption. Mirrors
+#: ``scripts/test_lift_batch.py``'s ``SWING_AXIS_FRAC_MIN``; kept here so the aggregator can
+#: count the episodes the driver actually updated without importing the Isaac driver.
+SWING_AXIS_FRAC_MIN = 0.8
+
 _OFFSET_DIR_RE = re.compile(r"^off_([a-z])(\d{2})cm(?:_m(\d+(?:\.\d+)?)kg)?$")
 
 
@@ -26,6 +32,39 @@ def e1_perp_error(c_est, c_true, g_o) -> float:
     g = g / np.linalg.norm(g)
     err = np.asarray(c_est, dtype=float) - np.asarray(c_true, dtype=float)
     return float(np.linalg.norm(err - np.dot(err, g) * g))
+
+
+def e1_along_error(c_est, c_true, g_o) -> float:
+    """Magnitude of the gravity-PARALLEL part of the CoM estimation error.
+
+    The complement of :func:`e1_perp_error`, and the number v3 exists to move. A static hold
+    identifies only the two components of the CoM perpendicular to gravity (the torque about
+    the fingertips is ``r x m g``, which is blind to the component along ``g``), so
+    ``e1_perp_error`` is what the wrench update can shrink and this is what it cannot. Only
+    the swing update (:mod:`analysis.test_lift.swing`) can move it, so reporting the two
+    separately is what says whether the swing evidence did anything.
+    """
+    g = np.asarray(g_o, dtype=float)
+    g = g / np.linalg.norm(g)
+    err = np.asarray(c_est, dtype=float) - np.asarray(c_true, dtype=float)
+    return float(abs(np.dot(err, g)))
+
+
+def swing_update_fired(e) -> bool:
+    """Did this episode's belief take the SWING update (Ruling 6 of v3)?
+
+    The driver applies it only when all three hold: the test-lift ``held1``, the settle->hold
+    rotation was predominantly about the finger axis (``swing_axis_frac1 >= 0.8``, the
+    pendulum model's own assumption), and the resulting along-gravity distance came out finite
+    (``d_along1``; it is nan when ``|phi|`` is below ``MIN_SWING_DEG`` or the lift did not
+    hold). v0/v1 files carry none of these keys and never took a swing update.
+    """
+    for k in ("held1", "swing_axis_frac1", "d_along1"):
+        if k not in e:
+            return False
+    return (bool(np.ravel(e["held1"])[0])
+            and float(np.ravel(e["swing_axis_frac1"])[0]) >= SWING_AXIS_FRAC_MIN
+            and bool(np.isfinite(float(np.ravel(e["d_along1"])[0]))))
 
 
 def was_updated(e) -> bool:
@@ -60,6 +99,20 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
     Adds `n_updated` (episodes the belief update actually ran on, :func:`was_updated`)
     and `e1_post_cm_updated` (E1 post
     error over updated episodes only, NaN if none) on top of the base columns.
+
+    v3 adds five more columns, all of them about evidence the static hold cannot supply:
+
+    * `e1_prior_along_cm` / `e1_along_cm` -- the gravity-PARALLEL CoM error
+      (:func:`e1_along_error`) before and after the update. `e1_prior_cm` / `e1_post_cm` stay
+      the gravity-perpendicular ones. The wrench update can only move the perpendicular part,
+      so `e1_along_cm` is the column the swing update has to move to have done anything.
+    * `n_swung` -- episodes whose test-lift rotated the object past `TILT_MAX_DEG` (`swung1`).
+    * `n_swing_updates` -- of those, the ones the driver actually fed to
+      `belief.update_from_swing` (:func:`swing_update_fired`, i.e. Ruling 6's axis-fraction
+      gate and a finite `d_along1`). `n_swung - n_swing_updates` is how often the pendulum
+      assumption failed.
+    * `m_post_err_kg` -- mean `|m_post - mass_true|` over the updated episodes, NaN if none.
+      With no mass prior (v3 §14) this is the mass estimate's whole error, not a shrinkage.
     """
     groups = defaultdict(list)
     for path in sorted(glob.glob(os.path.join(root, "*", "off_*", "*", "seed_*.npz"))):
@@ -85,6 +138,12 @@ def aggregate(root: str, g_o=np.array([0.0, 0.0, -1.0])) -> list[dict]:
             n_updated=len(updated),
             e1_post_cm_updated=(100 * np.mean([e1_perp_error(e["c_post_o"], e["com_true_o"], g_o) for e in updated])
                                  if updated else float("nan")),
+            e1_prior_along_cm=100 * np.mean([e1_along_error(e["c_prior_o"], e["com_true_o"], g_o) for e in eps]),
+            e1_along_cm=100 * np.mean([e1_along_error(e["c_post_o"], e["com_true_o"], g_o) for e in eps]),
+            n_swung=sum(1 for e in eps if "swung1" in e and bool(np.ravel(e["swung1"])[0])),
+            n_swing_updates=sum(1 for e in eps if swing_update_fired(e)),
+            m_post_err_kg=(float(np.mean([abs(float(e["m_post"]) - float(e["mass_true"])) for e in updated]))
+                           if updated else float("nan")),
         ))
     rows.sort(key=lambda r: (r["object"], r["offset_axis"], r["offset_cm"], r["mass_kg"], r["arm"]))
     return rows
