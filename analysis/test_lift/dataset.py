@@ -36,6 +36,11 @@ from analysis.test_lift.rerank import GraspParams, fingertip_points
 
 SPLITS = ("train", "val", "test")
 
+#: ``sigma_c_frac`` for ``prior_from_points`` (belief.py default). A module constant so the
+#: value passed into the fit and the value recorded in ``prior.json`` cannot drift apart --
+#: before this, ``prior.json`` wrote a literal ``0.3`` that no consumer actually read.
+PRIOR_SIGMA_C_FRAC = 0.3
+
 
 def moments(b: GaussianBelief) -> np.ndarray:
     """(m_mean, log sqrt(m_var), c_mean[3], log sqrt(diag c_cov)[3]) -> (8,)."""
@@ -200,7 +205,8 @@ def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
         e_g[i] = emb_cache[obj][cand_id]
 
         if obj not in prior_cache:
-            prior_cache[obj] = prior_from_points(points_cache[obj], **prior_kwargs)
+            prior_cache[obj] = prior_from_points(points_cache[obj],
+                                                 sigma_c_frac=PRIOR_SIGMA_C_FRAC, **prior_kwargs)
         prior = prior_cache[obj]
         centroid = centroid_cache[obj]
         z_prior[i] = moments_centered(prior, centroid) if centroid_relative else moments(prior)
@@ -251,7 +257,7 @@ def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
 
     if fitted_prior:
         prior_meta = dict(rho0=prior_kwargs["rho0"], sigma_m_frac=prior_kwargs["sigma_m_frac"],
-                          sigma_c_frac=0.3, centroid_relative=bool(centroid_relative),
+                          sigma_c_frac=PRIOR_SIGMA_C_FRAC, centroid_relative=bool(centroid_relative),
                           fitted_on=fitted_on)
         with open(os.path.join(out_dir or ".", "prior.json"), "w") as f:
             json.dump(prior_meta, f, indent=2)

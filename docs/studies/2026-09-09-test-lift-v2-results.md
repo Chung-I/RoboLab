@@ -101,9 +101,10 @@ copy inside the *models* directory. Every number in this document does.
 
 **φ is retired from the v2 arm list, not from the code.** The plan drops `head_phi` because
 v1 §1 finding 3 measured φ moving the CoM error the wrong way (E1 2.500 → 5.443 cm). The
-`SystemExit("head_phi is retired in v2")` guard lives in the driver head path, which is Task
-3's Step 2 — the `GATE PASS` branch. On the `GATE FAIL` branch that branch is skipped, so
-`scripts/test_lift_batch.py` is **unchanged** and still accepts `head_phi`. φ is still
+`SystemExit("head_phi is retired in v2")` guard would live in the driver head path, which is
+Task 3's Step 2 — the `GATE PASS` branch. Task 3 took the `GATE FAIL` branch instead, so that
+Step 2 code was never run and the guard was never written. `scripts/test_lift_batch.py` is
+**unchanged** and still accepts `head_phi`. φ is still
 trained (it is part of `scripts/test_lift_train.py`) and its numbers appear in §4 for
 completeness. No v2 arm was run.
 
@@ -322,7 +323,7 @@ quoted in v1 results §5.
 | φ NLL | val | −11.02 | −11.59 | −11.63 |
 | φ NLL | test | 152.07 | 215.44 | 271.59 |
 | analytic filter NLL | val | 26.71 | 16.16 | 31.91 |
-| analytic filter NLL | test | **661.83** | **0.28** | 67.70 |
+| analytic filter NLL | test | 661.83 | 0.28 | 67.70 |
 | **Gate 2** — φ NLL ≤ analytic | val / test | pass / pass | pass / fail | pass / fail |
 | best epoch / epochs run | — | 34 / 55 | 24 / 45 | 29 / 50 |
 
@@ -330,24 +331,38 @@ quoted in v1 results §5.
 
 Three things to read out of this table, and one not to.
 
-- **Gate 1 does not move.** Held-out ECE stays in the 0.28–0.39 band in three regimes out of
-  four for every fit. The centroid fix improves held-out ECE in the `prior` regime
-  (0.415 → 0.279) and the `true` regime (0.337 → 0.303), and costs the `post` regime
-  (0.047 → 0.125). It also costs a little val calibration in every regime. The head remains
+- **Gate 1 does not move, and the two fixes do not move it the same way.** Held-out ECE stays
+  in the 0.28–0.39 band in three regimes out of four for every fit. Attributed per column,
+  using the prior-only build to isolate the prior fix from the centroid fix layered on top of
+  it: in `prior`, test ECE goes 0.415 (v1) → 0.317 (prior fix only) → 0.279 (+ centroid fix) —
+  a 0.136 total gain, of which 0.098 is the prior fix and 0.038 is the centroid fix. In `true`,
+  it goes 0.337 → 0.390 → 0.303 — the prior fix alone makes it worse, and the centroid fix
+  reverses that, ending 0.034 better than v1. In `post`, it goes 0.047 → 0.139 → 0.125 — the
+  damage is the prior fix's (it nearly triples held-out ECE here), and the centroid fix
+  repairs part of it (0.139 → 0.125) without reaching v1's level. It also costs val
+  calibration in most regimes, but not every one: `true` improves against v1 (0.0729 → 0.0712)
+  rather than costing calibration, and `post`'s val ECE improves from the prior-only fit
+  forward (0.051 → 0.046), even though it stays worse than v1 (0.040). The head remains
   calibrated in-distribution and uncalibrated on a new object.
 - **The A2 check is unchanged in substance.** In-distribution the head is a far better grasp
   scorer than the frozen confidence it warm-started from (≈ +0.31 AUROC in all three fits).
   On the cube all three sit at 0.52–0.55 against the confidence's 0.567 — at or below chance
   separation, with the head behind. This is the quantitative form of §5's argmax instability.
-- **The `post` regime's held-out ECE is the one regime the centroid fix hurt,** and v1 caveat
-  6 says why the regime is weak in the first place: the mug's `lift_ok` rate is 0.025, so most
-  training posteriors are priors. That caveat is untouched by v2.
+- **`post` is still the weakest regime against v1, and the damage is the prior fix's, not the
+  centroid fix's** (attributed above). v1 caveat 6 says why the regime is weak in the first
+  place: the mug's `lift_ok` rate is 0.025, so most training posteriors are priors. That
+  caveat is untouched by v2.
 - **Do not read Gate 2 across columns.** The analytic filter's own held-out NLL is 0.28,
-  67.70 and 661.83 in the three fits — three orders of magnitude — because the NLL is
-  evaluated on whichever coordinates that build uses. φ's held-out NLL falls monotonically
-  (271.59 → 215.44 → 152.07) but the reference it is compared against moves far more, so v2's
-  `phi_nll_le_analytic: true` on test is not evidence that φ learned to transfer. This is why
-  φ stays out of the v2 arm list on the v1 measurement (§2), not on this gate.
+  67.70 and 661.83 in the three fits — three orders of magnitude — for two reasons, not one.
+  First, the NLL is evaluated on whichever coordinates that build uses. Second, the fitted
+  `sigma_m_frac` rescales the reference distribution on its own, independent of the
+  coordinates: v1 and the prior-only fit share the same coordinates (both body-frame, not
+  centroid-relative) and still differ 67.70 vs 0.28, because `sigma_m_frac` is fitted to
+  0.7305 in the prior-only build against v1's fixed 0.5. φ's held-out NLL falls monotonically
+  (271.59 → 215.44 → 152.07) but the reference it is compared against moves far more on both
+  counts, so v2's `phi_nll_le_analytic: true` on test is not evidence that φ learned to
+  transfer. This is why φ stays out of the v2 arm list on the v1 measurement (§2), not on this
+  gate.
 
 ---
 
@@ -466,18 +481,25 @@ are now right, and the belief still does not transfer.
    candidate index. v1 caveat 4 stands in full: seeds do not vary the candidate set, so every
    arm is deterministic in its first-grasp choice and the seed spread understates run-to-run
    variance.
-4. **The pre-registered gate rule was wrong, and here is the corrected one.** The rule
-   `r_prior >= r_unknown AND r_true >= r_unknown` compares the belief pick only against the
-   head's own no-belief pick, so it is satisfied when both are 0.000 (§5.1) and it is hardest
-   to satisfy exactly when the head's baseline is good. **For v3, pre-register:**
+4. **The pre-registered gate rule was wrong. Below is a PROPOSED v3 pre-registration, not a
+   corrected result.** The rule `r_prior >= r_unknown AND r_true >= r_unknown` compares the
+   belief pick only against the head's own no-belief pick, so it is satisfied when both are
+   0.000 (§5.1) and it is hardest to satisfy exactly when the head's baseline is good. The
+   proposal below is written now, after the v2 outcome is already known, so it carries none of
+   a genuine pre-registration's protection against hindsight bias. It needs review by someone
+   other than this document's author, and it must be pre-registered before v3's Task 2 runs —
+   not adopted on the strength of this document alone:
 
-   > In at least 3 of the 4 cells, `r_prior >= r_A0`, where `r_A0` is the labelled `final_ok`
-   > rate of the GraspGenX top-1 candidate for that object. Report `r_unknown >= r_A0`
-   > alongside as a separate check on the head itself, and report all four rates per cell.
+   > PROPOSED, pending review, not yet pre-registered. In at least 3 of the 4 cells,
+   > `r_prior >= r_A0`, where `r_A0` is the labelled `final_ok` rate of the GraspGenX top-1
+   > candidate for that object. Report `r_unknown >= r_A0` alongside as a separate check on
+   > the head itself, and report all four rates per cell.
 
-   Applied retrospectively to the three runs here, `r_A0 = 1.000` and `r_prior = 0.000`
-   everywhere, so v1, prior-only and v2 all score **0 of 4**. The corrected rule would have
-   failed v2 without needing a ruling.
+   Applied retrospectively to the three runs here (a sanity check on the proposal, not a
+   pre-registered result), `r_A0 = 1.000` and `r_prior = 0.000` everywhere, so v1, prior-only
+   and v2 all score **0 of 4**. The proposed rule would have failed v2 without needing a
+   ruling — which is exactly why it needs review before it is trusted: a rule written to match
+   a known outcome is easy to get right after the fact.
 5. **One training seed.** `SEED = 0` throughout, as in v1. §5.2 shows the argmax moving
    between three fits that differ only in the belief representation, so a seed sweep is now a
    precondition for any claim about which candidate a conditioning picks — not an optional
@@ -535,11 +557,13 @@ In priority order, each pointing at a section above.
    argmax that moves between retrains. A pairwise or listwise loss over the candidates of a
    given `(object, θ)` optimises the quantity the arms actually consume. This also makes the
    ECE gate secondary — calibration is not what an argmax needs.
-4. **Keep the CPU gate, with the corrected rule of §7 caveat 4.** The gate worked: it cost
-   minutes, it caught that the belief pick fails on labelled data, and it stopped a 7-minute
-   Isaac run whose result the labels already contained. Its only defect was the reference
-   point. Pre-register `r_prior >= r_A0` in at least 3 of 4 cells, report `r_unknown` and
-   `r_true` beside it, and require a seed sweep behind each rate.
+4. **Keep the CPU gate, with the proposed rule of §7 caveat 4 — reviewed and pre-registered
+   before v3 runs, not adopted as written here.** The gate worked: it cost minutes, it caught
+   that the belief pick fails on labelled data, and it stopped a 7-minute Isaac run whose
+   result the labels already contained. Its only defect was the reference point. Have the
+   proposal (`r_prior >= r_A0` in at least 3 of 4 cells, `r_unknown` and `r_true` reported
+   beside it, a seed sweep behind each rate) reviewed by someone other than this document's
+   author, then pre-register it before v3's Task 2 runs.
 5. **Do not run another belief arm until a correct belief separates from no belief.** v1 §11
    item 1, unchanged and still blocking. §3 shows A5 (the head at the authored θ) reaching
    1.000 in two cells and 0.000 in the other two for v2. Until the oracle beats the

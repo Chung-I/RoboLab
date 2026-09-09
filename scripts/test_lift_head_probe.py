@@ -205,7 +205,8 @@ def main(argv=None):
         prior_cfg = json.load(f)
     centroid_relative = (a.centroid_relative if a.centroid_relative is not None
                         else bool(prior_cfg.get("centroid_relative", True)))
-    prior = prior_from_points(points_o, rho0=prior_cfg["rho0"], sigma_m_frac=prior_cfg["sigma_m_frac"])
+    prior = prior_from_points(points_o, rho0=prior_cfg["rho0"], sigma_m_frac=prior_cfg["sigma_m_frac"],
+                              sigma_c_frac=prior_cfg.get("sigma_c_frac", 0.3))
     centroid = points_o.mean(axis=0) if centroid_relative else None
 
     print(f"object={a.object} n_candidates={len(confs)} D={e_g.shape[1]}")
