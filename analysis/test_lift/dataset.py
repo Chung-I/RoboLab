@@ -26,6 +26,7 @@ import json
 import os
 
 import numpy as np
+from scipy.spatial import ConvexHull
 
 from analysis.test_lift.batch import HOLD_STEPS, R_F, R_TAU, update_allowed
 from analysis.test_lift.belief import GaussianBelief, prior_from_points, update_from_wrench
@@ -44,6 +45,37 @@ def moments(b: GaussianBelief) -> np.ndarray:
         np.asarray(b.c_mean, dtype=float),
         np.log(np.sqrt(np.diag(c_cov))),
     ])
+
+
+def moments_centered(b: GaussianBelief, centroid: np.ndarray) -> np.ndarray:
+    """Identical to ``moments(b)`` except elements 2:5 are ``b.c_mean - centroid``.
+
+    v1 caveat 9 (docs/studies/2026-09-09-test-lift-v1-results.md §9): the objects' body-frame
+    origins sit in different places relative to their geometry, so a raw ``c_mean`` puts the
+    CoM off the training manifold for reasons that are pure asset convention, not physics.
+    Subtracting each object's own point-cloud centroid makes the column mean-zero and
+    comparable across objects.
+    """
+    z = moments(b)
+    z[2:5] = np.asarray(b.c_mean, dtype=float) - np.asarray(centroid, dtype=float)
+    return z
+
+
+def fit_density_prior(masses: np.ndarray, volumes: np.ndarray) -> dict:
+    """Fit a single (rho0, sigma_m_frac) density prior from observed (mass, hull volume)
+    pairs, meant to be called on TRAIN rows only.
+
+    ``rho0`` is the median density; ``sigma_m_frac`` is set so the resulting 1-sigma mass band
+    covers the central 90% of the training densities, and never shrinks below v1's fixed 0.5.
+    """
+    masses = np.asarray(masses, dtype=float)
+    volumes = np.asarray(volumes, dtype=float)
+    densities = masses / volumes
+    rho0 = float(np.median(densities))
+    p95 = float(np.percentile(densities, 95))
+    p5 = float(np.percentile(densities, 5))
+    sigma_m_frac = max(0.5, (p95 - p5) / (2.0 * rho0))
+    return dict(rho0=rho0, sigma_m_frac=sigma_m_frac)
 
 
 def trace_to_object_frame(wrench_trace_h, wrench_bias_h, T_hand_hold, T_obj_hold) -> np.ndarray:
@@ -102,11 +134,44 @@ def _drop_objects(tbl: dict, exclude_objects) -> dict:
 
 def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
                   holdout_objects: tuple[str, ...],
-                  exclude_objects: tuple[str, ...] = ()) -> dict:
+                  exclude_objects: tuple[str, ...] = (),
+                  centroid_relative: bool = True,
+                  fitted_prior: bool = True) -> dict:
     tbl = _drop_objects(load_labels(labels_root), exclude_objects)
     n = len(tbl["lift_ok"])
     params = GraspParams()
     candidates_dir = _candidates_dir(labels_root)
+
+    # Split is needed up front (not just at the end) so a fitted prior can be fit on TRAIN
+    # rows only, before the per-row loop below ever reads it.
+    split = split_assign(tbl["object"], tbl["theta_id"], tbl["cand_id"], holdout_objects)
+
+    out_dir = os.path.dirname(out_npz)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    # Per-object centroid and hull volume, computed once (each object's candidates npz is
+    # loaded here and nowhere else -- prior_cache below reuses points_cache).
+    points_cache: dict[str, np.ndarray] = {}
+    centroid_cache: dict[str, np.ndarray] = {}
+    volume_cache: dict[str, float] = {}
+    for obj in sorted(set(str(o) for o in tbl["object"])):
+        with np.load(os.path.join(candidates_dir, f"{obj}.npz"), allow_pickle=False) as z:
+            points_cache[obj] = np.asarray(z["points_o"], dtype=float)
+        centroid_cache[obj] = points_cache[obj].mean(axis=0)
+        volume_cache[obj] = float(ConvexHull(points_cache[obj]).volume)
+
+    prior_kwargs = dict(rho0=600.0, sigma_m_frac=0.5)  # v1 defaults (prior_from_points)
+    fitted_on: list[str] = []
+    if fitted_prior:
+        train_mask = split == "train"
+        if train_mask.any():
+            objects_arr = np.asarray([str(o) for o in tbl["object"]])
+            masses = np.asarray(tbl["mass"], dtype=float)[train_mask]
+            volumes = np.array([volume_cache[o] for o in objects_arr[train_mask]], dtype=float)
+            fit = fit_density_prior(masses, volumes)
+            prior_kwargs = dict(rho0=fit["rho0"], sigma_m_frac=fit["sigma_m_frac"])
+            fitted_on = sorted(set(objects_arr[train_mask].tolist()))
 
     emb_cache: dict[str, np.ndarray] = {}
     prior_cache: dict[str, GaussianBelief] = {}
@@ -135,11 +200,10 @@ def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
         e_g[i] = emb_cache[obj][cand_id]
 
         if obj not in prior_cache:
-            with np.load(os.path.join(candidates_dir, f"{obj}.npz"), allow_pickle=False) as z:
-                points_o = z["points_o"]
-            prior_cache[obj] = prior_from_points(points_o)
+            prior_cache[obj] = prior_from_points(points_cache[obj], **prior_kwargs)
         prior = prior_cache[obj]
-        z_prior[i] = moments(prior)
+        centroid = centroid_cache[obj]
+        z_prior[i] = moments_centered(prior, centroid) if centroid_relative else moments(prior)
 
         with np.load(path, allow_pickle=False) as z:
             wrench_trace_h = z["wrench_trace_h"]
@@ -159,24 +223,21 @@ def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
         if update_allowed(bool(tbl["lift_ok"][i]), f_o_mean, prior.m_mean):
             _, _, p_hand_o = wrench_hand_to_object(np.zeros(3), np.zeros(3), T_hand_hold, T_obj_hold)
             post = update_from_wrench(prior, f_o_mean, tau_o_mean, p_hand_o, g_hat, R_F, R_TAU)
-            z_post[i] = moments(post)
+            z_post[i] = moments_centered(post, centroid) if centroid_relative else moments(post)
         else:
             z_post[i] = z_prior[i]
 
         mass = float(tbl["mass"][i])
         com_o = np.asarray(tbl["com_o"][i], dtype=float)
         theta[i] = np.concatenate([[mass], com_o])
-        z_true[i] = moments(GaussianBelief(m_mean=mass, m_var=1e-6, c_mean=com_o, c_cov=1e-6 * np.eye(3)))
+        true_belief = GaussianBelief(m_mean=mass, m_var=1e-6, c_mean=com_o, c_cov=1e-6 * np.eye(3))
+        z_true[i] = (moments_centered(true_belief, centroid) if centroid_relative
+                    else moments(true_belief))
 
     if e_g is None:  # no rows at all
         e_g = np.zeros((0, 0), dtype=np.float32)
         D = 0
 
-    split = split_assign(tbl["object"], tbl["theta_id"], tbl["cand_id"], holdout_objects)
-
-    out_dir = os.path.dirname(out_npz)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
     # Ruling 13: y is final_ok (the clear lift held), NOT the 2 cm test-lift outcome.
     y = np.asarray(tbl["final_ok"], dtype=bool)
     y_testlift = np.asarray(tbl["lift_ok"], dtype=bool)
@@ -188,14 +249,22 @@ def build_dataset(labels_root: str, embeddings_dir: str, out_npz: str,
              trace_o=trace_o, p_tip_o=p_tip_o, g_hat_o=g_hat_o,
              theta=theta, object=tbl["object"], split=split)
 
+    if fitted_prior:
+        prior_meta = dict(rho0=prior_kwargs["rho0"], sigma_m_frac=prior_kwargs["sigma_m_frac"],
+                          sigma_c_frac=0.3, centroid_relative=bool(centroid_relative),
+                          fitted_on=fitted_on)
+        with open(os.path.join(out_dir or ".", "prior.json"), "w") as f:
+            json.dump(prior_meta, f, indent=2)
+
     meta = _build_metadata(tbl["object"], split, holdout_objects, D,
-                           exclude_objects, y, y_testlift)
+                           exclude_objects, y, y_testlift, centroid_relative, fitted_prior)
     with open(_meta_path(out_npz), "w") as f:
         json.dump(meta, f, indent=2)
     return meta
 
 
-def _build_metadata(objects, split, holdout, D, exclude=(), y=None, y_testlift=None) -> dict:
+def _build_metadata(objects, split, holdout, D, exclude=(), y=None, y_testlift=None,
+                    centroid_relative=None, fitted_prior=None) -> dict:
     objects = np.asarray(objects)
     split = np.asarray(split)
     n_per_split, objects_per_split, rate_per_split = {}, {}, {}
@@ -216,6 +285,8 @@ def _build_metadata(objects, split, holdout, D, exclude=(), y=None, y_testlift=N
                                 and len(np.asarray(y_testlift)) else None),
         split_rule=("test = holdout objects; among the rest, val if "
                     "(theta_id * 1000003 + cand_id) % 5 == 0 else train"),
+        centroid_relative=(bool(centroid_relative) if centroid_relative is not None else None),
+        fitted_prior=(bool(fitted_prior) if fitted_prior is not None else None),
     )
 
 
@@ -227,10 +298,18 @@ def main(argv=None):
     ap.add_argument("--holdout", nargs="*", default=())
     ap.add_argument("--exclude", nargs="*", default=(),
                     help="objects to drop entirely (v1 passes cracker_box; Ruling 14)")
+    ap.add_argument("--centroid-relative", dest="centroid_relative", action="store_true",
+                    default=True, help="moments carry c_mean - object centroid (default)")
+    ap.add_argument("--no-centroid-relative", dest="centroid_relative", action="store_false",
+                    help="moments carry the raw (un-centred) c_mean, v1 behaviour")
+    ap.add_argument("--fitted-prior", dest="fitted_prior", action="store_true", default=True,
+                    help="fit rho0/sigma_m_frac on TRAIN rows and write prior.json (default)")
+    ap.add_argument("--no-fitted-prior", dest="fitted_prior", action="store_false",
+                    help="use v1's fixed rho0=600.0, sigma_m_frac=0.5")
     args = ap.parse_args(argv)
 
     meta = build_dataset(args.labels, args.embeddings, args.out, tuple(args.holdout),
-                         tuple(args.exclude))
+                         tuple(args.exclude), args.centroid_relative, args.fitted_prior)
     print(f"D={meta['D']} label={meta['label']} excluded={meta['exclude']}")
     for s in SPLITS:
         print(f"{s}: n={meta['n'][s]} objects={meta['objects'][s]} "

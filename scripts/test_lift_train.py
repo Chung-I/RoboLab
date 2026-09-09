@@ -26,6 +26,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 import sys
 
 import numpy as np
@@ -347,7 +348,17 @@ def main(argv=None):
     ap.add_argument("--freeze-deep-layers", action="store_true",
                     help="ECE-gate fallback: train only layer 1 + the belief path")
     ap.add_argument("--ece-gate", type=float, default=0.05)
+    ap.add_argument("--require-prior", action="store_true",
+                    help="fail loudly if the dataset's directory has no prior.json to copy")
     args = ap.parse_args(argv)
+
+    # v2 Task 1: prior.json (rho0, sigma_m_frac, centroid_relative, ...) lives beside the
+    # dataset it was fitted from; the training run's --out must carry a copy so Task 3's
+    # inference path never has to re-derive it. Checked before training so a missing prior
+    # fails loudly without wasting the 1-2 min training run.
+    prior_src = os.path.join(os.path.dirname(os.path.abspath(args.dataset)), "prior.json")
+    if args.require_prior and not os.path.exists(prior_src):
+        raise SystemExit(f"--require-prior set but {prior_src} does not exist")
 
     torch.manual_seed(SEED)
     np.random.seed(SEED)
@@ -364,6 +375,8 @@ def main(argv=None):
     report = build_report(data, head, latent, phi, head_info, phi_info, args)
 
     os.makedirs(args.out, exist_ok=True)
+    if os.path.exists(prior_src):
+        shutil.copy(prior_src, os.path.join(args.out, "prior.json"))
     torch.save(head.state_dict(), os.path.join(args.out, "head.pt"))
     torch.save(latent.state_dict(), os.path.join(args.out, "latent.pt"))
     torch.save(phi.state_dict(), os.path.join(args.out, "phi.pt"))

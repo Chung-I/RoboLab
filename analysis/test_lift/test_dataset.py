@@ -3,12 +3,17 @@
 """Tests for the v1 dataset join: belief moments and object-disjoint splits (Task 7)."""
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
 from analysis.test_lift.batch import HOLD_STEPS
 from analysis.test_lift.belief import GaussianBelief
-from analysis.test_lift.dataset import build_dataset, moments, split_assign, trace_to_object_frame
+from analysis.test_lift.dataset import (
+    build_dataset, fit_density_prior, moments, moments_centered, split_assign,
+    trace_to_object_frame,
+)
 from analysis.test_lift.frames import object_load_from_measured
 
 
@@ -130,3 +135,52 @@ def test_exclude_defaults_to_nothing(tmp_path):
     out = str(tmp_path / "ds.npz")
     meta = build_dataset(labels, emb, out, holdout_objects=("drop",))
     assert meta["exclude"] == [] and meta["n"]["test"] == 4
+
+
+# ----------------------------------------------------------------------------- v2: centroid-relative moments + fitted prior
+
+
+def test_moments_centered_shifts_only_the_com_mean():
+    b = GaussianBelief(m_mean=0.8, m_var=0.04, c_mean=np.array([0.01, 0.03, 0.0]), c_cov=np.diag([1e-4, 4e-4, 9e-4]))
+    z = moments(b); zc = moments_centered(b, np.array([0.01, 0.03, 0.0]))
+    assert np.allclose(zc[2:5], 0.0) and np.allclose(zc[:2], z[:2]) and np.allclose(zc[5:], z[5:])
+
+
+def test_fit_density_prior_is_the_median_density_with_a_wide_band():
+    masses = np.array([0.4, 0.8, 1.5, 0.4, 0.8, 1.5]); volumes = np.array([1e-3] * 3 + [2e-3] * 3)
+    p = fit_density_prior(masses, volumes)
+    assert np.isclose(p["rho0"], np.median(masses / volumes))
+    assert p["sigma_m_frac"] >= 0.5
+
+
+def test_build_dataset_flags_change_z_prior_and_write_prior_json(tmp_path):
+    """Reuse the tiny synthetic tree. With centroid_relative=False the prior's CoM mean must
+    still equal the raw (un-centred) hull centroid of the object's points; with the defaults
+    (centroid_relative=True, fitted_prior=True) that same column collapses to zero and
+    prior.json lands beside the dataset with a positive fitted density."""
+    labels, emb = _tiny_tree(tmp_path)
+    candidates_dir = tmp_path / "candidates"
+
+    out_raw = str(tmp_path / "ds_raw.npz")
+    build_dataset(labels, emb, out_raw, holdout_objects=(),
+                 centroid_relative=False, fitted_prior=False)
+    with np.load(out_raw, allow_pickle=False) as d:
+        objects_raw = d["object"].astype(str)
+        z_prior_raw = d["z_prior"]
+    for obj in set(objects_raw.tolist()):
+        with np.load(candidates_dir / f"{obj}.npz", allow_pickle=False) as z:
+            centroid = z["points_o"].mean(axis=0)
+        rows = objects_raw == obj
+        assert np.allclose(z_prior_raw[rows][:, 2:5], centroid)
+    assert not (tmp_path / "prior.json").exists()
+
+    out_default = str(tmp_path / "ds_default.npz")
+    build_dataset(labels, emb, out_default, holdout_objects=())
+    with np.load(out_default, allow_pickle=False) as d:
+        z_prior_default = d["z_prior"]
+    assert np.allclose(z_prior_default[:, 2:5], 0.0, atol=1e-9)
+
+    prior_path = tmp_path / "prior.json"
+    assert prior_path.exists()
+    prior = json.loads(prior_path.read_text())
+    assert prior["rho0"] > 0 and prior["centroid_relative"] is True
