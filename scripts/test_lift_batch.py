@@ -144,6 +144,14 @@ parser.add_argument("--label-all", action="store_true",
                     help="label mode: env i executes candidate START+i under one theta; all envs advance")
 parser.add_argument("--theta-id", type=int, default=-1)
 parser.add_argument("--cand-range", type=int, nargs=2, default=None, metavar=("START", "END"))
+parser.add_argument("--grasp-noise", type=float, nargs=2, default=[0.0, 0.0], metavar=("POS_STD_M", "ROT_STD_DEG"),
+                    help="label mode: grasp execution noise. Each candidate's grasp pose is perturbed in the "
+                         "object frame before execution: translation ~ N(0, POS_STD^2 I3), rotation = axis-angle "
+                         "with a uniform random axis and angle ~ N(0, ROT_STD^2) about the grasp origin. "
+                         "0 0 (default) = no perturbation, the pre-noise behaviour.")
+parser.add_argument("--noise-seed", type=int, default=0,
+                    help="grasp-noise seed; the draw for one label is seeded by (noise_seed, theta_id, cand_id), "
+                         "so it does not depend on how the candidate range is chunked")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = False   # no episode in this driver reads an image; see the docstring
@@ -480,7 +488,36 @@ def head_belief(arm: str, prior_or_post, m_true, c_true):
     return prior_or_post                  # head_filter / head_phi: prior, then their posterior
 
 
+def grasp_noise_draw(grasp_o, pos_std_m, rot_std_deg, noise_seed, theta_id, cand_id):
+    """Perturb one 4x4 grasp pose in the object frame (the ``--grasp-noise`` model).
+
+    The rng is ``default_rng([noise_seed, theta_id, cand_id])``: one independent, reproducible
+    stream per label, whatever chunk the candidate falls in. Draw order is fixed: axis (3
+    normals, normalised), angle (1 normal), translation (3 normals). The rotation acts about the
+    grasp frame's own origin with its axis expressed in the object frame:
+    ``R' = R_delta @ R``, ``p' = p + dpos``.
+    Returns ``(grasp_executed_o, dpos_o, axis_o, angle_deg)``.
+    """
+    rng = np.random.default_rng([int(noise_seed), int(theta_id), int(cand_id)])
+    axis = rng.standard_normal(3)
+    axis /= np.linalg.norm(axis)
+    angle_deg = float(rng.standard_normal()) * float(rot_std_deg)
+    dpos = rng.standard_normal(3) * float(pos_std_m)
+    th = np.radians(angle_deg)
+    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    R_delta = np.eye(3) + np.sin(th) * K + (1 - np.cos(th)) * (K @ K)       # Rodrigues
+    G = np.array(grasp_o, dtype=float, copy=True)
+    G[:3, :3] = R_delta @ G[:3, :3]
+    G[:3, 3] = G[:3, 3] + dpos
+    return G, dpos, axis, angle_deg
+
+
 def main():
+    grasp_noise_on = any(float(v) != 0.0 for v in args.grasp_noise)
+    if grasp_noise_on and not args.label_all:
+        raise SystemExit("--grasp-noise is implemented for --label-all only")
+    if any(float(v) < 0.0 for v in args.grasp_noise):
+        raise SystemExit(f"--grasp-noise stds must be >= 0, got {args.grasp_noise}")
     head_arms_used = [a for a in args.arms if a in HEAD_ARMS] if not args.label_all else []
     if head_arms_used:
         missing = [f for f, v in (("--models-dir", args.models_dir),
@@ -526,7 +563,7 @@ def main():
             os.makedirs(os.path.join(cell_dir, arm), exist_ok=True)
         postfix = f"_TLB_{args.object}_{cell_name}"
     set_output_dir(cell_dir)
-    print(f"[cell] out_dir={cell_dir}", flush=True)
+    print(f"[cell] out_dir={cell_dir} grasp_noise={args.grasp_noise} noise_seed={args.noise_seed}", flush=True)
 
     # The scene pose is deterministic in v0 (register_test_lift_env's docstring): the env
     # seed does not move the object, and seed variation enters through GraspGen sampling and
@@ -672,7 +709,18 @@ def main():
             else:
                 i1 = select_first(cell.arms[i], grasps_o, confs, b0, args.mass, c_true,
                                   gravity_in_object_frame(T_obj[i]), params, rngs[i])
-            tgt1[i] = hand_target(grasps_o[i1], T_obj[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
+            g_exec, noise_log = grasps_o[i1], {}
+            if grasp_noise_on:
+                # Execution noise only: the executed hand target moves, while every logged
+                # diagnostic (grasps_o, the swing geometry below) keeps the nominal candidate.
+                g_exec, dpos, axis, ang = grasp_noise_draw(grasps_o[i1], args.grasp_noise[0], args.grasp_noise[1],
+                                                           args.noise_seed, args.theta_id, i1)
+                noise_log = dict(grasp_noise_pos_std_m=float(args.grasp_noise[0]),
+                                 grasp_noise_rot_std_deg=float(args.grasp_noise[1]),
+                                 noise_seed=int(args.noise_seed), grasp_noise_dpos_o=dpos,
+                                 grasp_noise_axis_o=axis, grasp_noise_angle_deg=float(ang),
+                                 grasp_executed_o=g_exec)
+            tgt1[i] = hand_target(g_exec, T_obj[i], rb.origins[i], args.yaw_fix, args.grasp_depth_offset)
             b0s.append(b0)
             i1s.append(int(i1))
             logs.append(dict(object=args.object, arm=cell.arms[i], mass_true=args.mass, com_true_o=c_true,
@@ -685,7 +733,7 @@ def main():
                              theta_id=int(args.theta_id), cand_id=int(i1),
                              pad=bool(pad[i]) if args.label_all else False,
                              rest_z=float(T_obj[i][2, 3] - rb.origins[i][2]),
-                             rest_delta_xyz=rest_delta[i]))
+                             rest_delta_xyz=rest_delta[i], **noise_log))
         print(f"[table] z_table={np.round(cell.z_table, 4).tolist()} "
               f"obj_rest_z={np.round(T_obj[:, 2, 3], 4).tolist()}", flush=True)
 
