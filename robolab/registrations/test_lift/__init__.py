@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Env registration for the test-lift v0 study: Franka Panda hand, absolute-pose IK, pinned object physics."""
 import copy
+import os
 
 from isaaclab.utils import configclass
 
@@ -53,6 +54,9 @@ def register_test_lift_env(task_file: str, object_name: str, mass_kg: float,
     PD at stiffness 2e3 the clamp force on a 7 cm object is ~70 N per finger unless the
     limit caps it, so values below ~70 N are what weaken the grasp. `None` keeps the cfg.
     """
+    # Corpus study: generic_test_lift_task.py reads its object from this variable when the
+    # factory imports it (below). The per-object task files ignore it.
+    os.environ["ROBOLAB_TEST_LIFT_OBJECT"] = object_name
     # Proprio observations are not required for v0: the episode driver reads
     # robot.data directly, and no policy in this study consumes observations.
     if with_camera:
