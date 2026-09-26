@@ -251,3 +251,30 @@ Early observations (20 objects; these may change when the sweep ends):
   catalog mass. Check `held` before a study uses an object.
 - The hammer and cracker_box findings come from dumps and labels. No video was recorded: the
   geometry (tip-to-object distance) settles the question without one.
+
+## Final verdict by lift outcome (user ruling, 2026-09-27)
+
+**Ruling:** only a successful lift counts. A grasp succeeds when `final_ok` is true: the object is held through the
+15 cm clear lift. Reach and close-on-air are diagnostics, not criteria. An object passes when at least 3 of its
+checked grasps succeed at the default theta.
+
+Command (after the sweep finished at 03:28, 120 of 120 objects):
+
+```bash
+python3 scripts/test_lift_corpus_reverdict.py --out output/test_lift/corpus --min-lifts 3
+```
+
+Output: `output/test_lift/corpus/results_lift.csv`.
+
+**Result: 86 of 120 PASS.** The old reach rule passed 69.
+- PASS by dataset: hope 27, vomp 14, ycb 13, hot3d 10, fruits_veggies 8, handal 7, objaverse 5, basic 2.
+- FAIL reasons: 18 objects have no candidate after the on-object filter (thin spoons and scissors: every grasp
+  hits the table), 13 objects lift fewer than 3 of their grasps, 3 asset files are missing.
+- Objects that the reach rule rejected but that lift: `hammer_2` (6/32), `cordless_drill` (3/32),
+  `measuring_spoon` (7/11), `soft_scrub` (14/32), `jello` (10/32), `measuring_cups` (3/12).
+- The bowls and the brick lift (19/32, 19/32, 28/32). The earlier "held 0 %" came from `held1`, the stricter
+  2 cm test-lift hold gate among reached grasps, not from the full lift.
+
+**Known gap:** the catalog pre-filter (smallest dimension ≤ 8 cm) excluded all three mugs (`ycb` mug 8.1 cm,
+`hot3d` mug 9.1 cm, `ceramic_mug` 8.4 cm). A mug is graspable by its handle or rim, and the v1 mug works. The
+filter should use a graspable-part width, not the whole-body smallest dimension, before the next sweep.
