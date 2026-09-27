@@ -5,7 +5,10 @@
     --check speed   --file NPZ     projected sweep time from a v5 output file
 """
 import argparse
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--check", required=True, choices=["theta", "physics", "speed"])
@@ -29,11 +32,18 @@ import numpy as np  # noqa: E402
 def check_theta():
     import torch
 
-    from robolab.tasks.test_lift.generic_scene import build
+    from robolab.tasks.test_lift.generic_scene import build, root_pose_and_points
     from robolab.tasks.test_lift.theta_physical import draw_thetas, voxel_model
     from robolab.tasks.test_lift.v5_env import build_v5_env, object_mesh, object_usd, readback
     spec = build(args.object)
-    v, f, scale = object_mesh(object_usd(spec))
+    usd = object_usd(spec)
+    v, f, scale = object_mesh(usd)
+    _, _, pts = root_pose_and_points(usd)          # the frame of the candidate files' points_o
+    frame_ok = (f.shape[1] == 3 and len(f) > 0 and np.allclose(v.min(0), pts.min(0), atol=1e-4)
+                and np.allclose(v.max(0), pts.max(0), atol=1e-4))
+    print(f"[check theta] mesh frame vs root_pose_and_points: {'PASS' if frame_ok else 'FAIL'} "
+          f"(faces={len(f)}, bbox mesh {np.round(v.min(0), 4).tolist()}..{np.round(v.max(0), 4).tolist()}, "
+          f"points {np.round(pts.min(0), 4).tolist()}..{np.round(pts.max(0), 4).tolist()})", flush=True)
     vm = voxel_model(v, f)
     th = draw_thetas(vm, 64, seed=0)
     env = build_v5_env(args.object, th, np.arange(64), scale=scale)
