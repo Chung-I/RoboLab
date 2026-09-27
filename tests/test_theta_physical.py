@@ -82,3 +82,4 @@ def test_atomic_write(tmp_path):  # spec test 5
     atomic_savez(p, a=np.arange(3))
     assert np.load(p)["a"].tolist() == [0, 1, 2]
     assert not [f for f in os.listdir(tmp_path) if f.endswith(".tmp.npz")]
+

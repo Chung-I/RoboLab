@@ -1,0 +1,129 @@
+"""Test-lift v5 env: one θ per env written into the USD before the sim starts; recorder off."""
+
+from __future__ import annotations
+
+import numpy as np
+
+_PRE_RESET = []
+
+
+def object_usd(spec: dict) -> str:
+    """The object USD that ``generic_scene.build`` actually loaded (its override when one was written)."""
+    import os
+
+    from robolab.tasks.test_lift.generic_scene import REPO_ROOT
+    return spec["override_usd"] or os.path.join(REPO_ROOT, spec["entry"]["usd_path"])
+
+
+def object_mesh(usd_path):
+    """Triangulated collision mesh of the asset root, in the root's rotated frame at world scale."""
+    from pxr import Gf, Usd, UsdGeom
+
+    from robolab.tasks.test_lift.generic_scene import _open
+    st, root = _open(usd_path)
+    xc = UsdGeom.XformCache(Usd.TimeCode.Default())
+    M = xc.GetLocalToWorldTransform(root)
+    scale = np.array(Gf.Transform(M).GetScale(), float)
+    inv = M.RemoveScaleShear().GetInverse()
+    verts, faces, off = [], [], 0
+    for p in Usd.PrimRange(root, Usd.TraverseInstanceProxies()):
+        if not p.IsA(UsdGeom.Mesh):
+            continue
+        mesh = UsdGeom.Mesh(p)
+        if mesh.GetPurposeAttr().Get() not in (None, UsdGeom.Tokens.default_):
+            continue
+        pts = mesh.GetPointsAttr().Get()
+        counts = mesh.GetFaceVertexCountsAttr().Get()
+        idx = mesh.GetFaceVertexIndicesAttr().Get()
+        if not pts or not counts:
+            continue
+        m2r = xc.GetLocalToWorldTransform(p) * inv          # mesh -> root rotated frame, world scale
+        v = np.array([m2r.Transform(Gf.Vec3d(*q)) for q in pts], float)
+        k = 0
+        for c in counts:                                     # fan triangulation
+            for j in range(1, c - 1):
+                faces.append((off + idx[k], off + idx[k + j], off + idx[k + j + 1]))
+            k += c
+        verts.append(v)
+        off += len(v)
+    return np.concatenate(verts), np.asarray(faces, int), scale
+
+
+def _install_pre_reset_hook():
+    import isaaclab.sim as sim_utils
+    cls = sim_utils.SimulationContext
+    if getattr(cls, "_v5_hooked", False):
+        return
+    orig = cls.reset
+
+    def reset(self, *a, **k):
+        while _PRE_RESET:
+            _PRE_RESET.pop(0)()
+        return orig(self, *a, **k)
+
+    cls.reset = reset
+    cls._v5_hooked = True
+
+
+def _write_mass_api(obj_key: str, n_envs: int, thetas, theta_idx, scale):
+    import omni.usd
+    from pxr import Gf, UsdPhysics
+    stage = omni.usd.get_context().get_stage()
+    s = np.asarray(scale, float)
+    for e in range(n_envs):
+        th = thetas[int(theta_idx[e])]
+        prim = stage.GetPrimAtPath(f"/World/envs/env_{e}/scene/{obj_key}")
+        if not prim.IsValid():
+            raise RuntimeError(f"object prim missing for env {e}")
+        api = UsdPhysics.MassAPI.Apply(prim)
+        w, V = np.linalg.eigh(th["inertia"])
+        if np.linalg.det(V) < 0:
+            V[:, 0] *= -1
+        q = _mat_to_quat(V)
+        api.CreateMassAttr().Set(float(th["mass"]))
+        api.CreateCenterOfMassAttr().Set(Gf.Vec3f(*(np.asarray(th["com"]) / s)))   # local, unscaled
+        api.CreateDiagonalInertiaAttr().Set(Gf.Vec3f(*w))
+        api.CreatePrincipalAxesAttr().Set(Gf.Quatf(float(q[0]), Gf.Vec3f(*q[1:])))
+
+
+def _mat_to_quat(R):
+    """Rotation matrix -> (w, x, y, z)."""
+    t = np.trace(R)
+    if t > 0:
+        s = 0.5 / np.sqrt(t + 1.0)
+        return np.array([0.25 / s, (R[2, 1] - R[1, 2]) * s, (R[0, 2] - R[2, 0]) * s, (R[1, 0] - R[0, 1]) * s])
+    i = int(np.argmax(np.diag(R)))
+    j, k = (i + 1) % 3, (i + 2) % 3
+    s = 2.0 * np.sqrt(1.0 + R[i, i] - R[j, j] - R[k, k])
+    q = np.zeros(4)
+    q[0] = (R[k, j] - R[j, k]) / s
+    q[1 + i] = 0.25 * s
+    q[1 + j] = (R[j, i] + R[i, j]) / s
+    q[1 + k] = (R[k, i] + R[i, k]) / s
+    return q
+
+
+def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0, scale=(1.0, 1.0, 1.0)):
+    from robolab.core.environments.config import parse_env_cfg
+    from robolab.core.environments.runtime import create_env
+    from robolab.registrations.test_lift import register_test_lift_env
+
+    n_envs = len(theta_idx)
+    env_name, _events = register_test_lift_env("generic_test_lift_task.py", obj_key, 0.5, (0.0, 0.0, 0.0),
+                                               postfix=f"_V5_{obj_key}", seed=seed, with_camera=False)
+    env_cfg = parse_env_cfg(env_name, device=device, seed=seed, num_envs=n_envs, use_fabric=True)
+    env_cfg.scene.replicate_physics = False
+    _install_pre_reset_hook()
+    _PRE_RESET.append(lambda: _write_mass_api(obj_key, n_envs, thetas, theta_idx, scale))
+    env, _ = create_env(env_cfg, device=device, seed=seed, num_envs=n_envs, use_fabric=True)
+    for meth in ("record_pre_step", "record_post_step", "record_post_physics_decimation_step"):
+        if hasattr(env.recorder_manager, meth):
+            setattr(env.recorder_manager, meth, lambda *a, **k: None)
+    return env
+
+
+def readback(env, obj_key: str) -> dict:
+    view = env.scene[obj_key].root_physx_view
+    return dict(mass=view.get_masses().cpu().numpy().reshape(-1),
+                com=view.get_coms().cpu().numpy().reshape(len(env.scene.env_origins), -1)[:, :3],
+                inertia=view.get_inertias().cpu().numpy().reshape(-1, 3, 3))
