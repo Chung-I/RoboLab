@@ -26,6 +26,7 @@ parser.add_argument("--object", default="sugar_box")
 parser.add_argument("--num-envs", type=int, default=64)
 parser.add_argument("--steps", type=int, default=60)
 parser.add_argument("--warmup", type=int, default=10)
+parser.add_argument("--no-recorder", action="store_true", help="replace the recorder manager's per-step calls with no-ops")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = False
@@ -75,6 +76,10 @@ def main():
     origins = env.scene.env_origins
     pose = torch.cat([robot.data.body_pos_w[:, hand] - origins, robot.data.body_quat_w[:, hand]], dim=1)
     action = torch.cat([pose, torch.ones((args.num_envs, 1), device=env.device)], dim=1)
+    if args.no_recorder:
+        for meth in ("record_pre_step", "record_post_step", "record_post_physics_decimation_step"):
+            if hasattr(env.recorder_manager, meth):
+                setattr(env.recorder_manager, meth, lambda *a, **k: None)
     for _ in range(args.warmup):
         env.step(action)
 
@@ -105,7 +110,7 @@ def main():
     except Exception as e:  # noqa: BLE001
         warp_device = f"error: {e}"
     per_step = {k: 1000 * v / args.steps for k, v in sorted(TIMES.items(), key=lambda kv: -kv[1])}
-    report = dict(num_envs=args.num_envs, steps=args.steps, boot_s=round(boot_s, 1),
+    report = dict(num_envs=args.num_envs, no_recorder=args.no_recorder, steps=args.steps, boot_s=round(boot_s, 1),
                   ms_per_env_step=round(1000 * total / args.steps, 2),
                   accounted_ms=round(sum(per_step.values()), 2), parts_ms_per_step={k: round(v, 3) for k, v in per_step.items()},
                   calls_per_step={k: CALLS[k] / args.steps for k in CALLS}, cpu_governor=governor(),
