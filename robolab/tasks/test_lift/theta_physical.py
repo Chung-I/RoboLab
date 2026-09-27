@@ -1,0 +1,141 @@
+"""Physically based (mass, CoM, inertia) draws for test-lift v5 (docs/studies/2026-09-28-test-lift-v5-labels-spec.md).
+
+The object is a solid voxel model of its collision mesh. A draw is a density field over the voxels; mass, CoM and
+the full inertia tensor are integrated from it, so they are consistent and the CoM lies inside the object.
+Modes follow the daily-logs P7 study's ingest/part_density.py (parts there, voxels here). SI units throughout.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+import numpy as np
+import trimesh
+
+MODES = ("uniform", "lognormal", "heavy_end", "insert")
+MODE_P = (0.20, 0.25, 0.30, 0.25)
+RHO0_RANGE = (300.0, 2500.0)       # kg/m^3 (0.3 .. 2.5 g/cm^3)
+INSERT_RHO = (2700.0, 7800.0)      # aluminium .. steel
+MASS_RANGE = (0.05, 2.5)           # kg
+RHO_MAX = 8000.0                   # kg/m^3
+MAX_TRIES = 50
+
+
+@dataclass
+class VoxelModel:
+    centers: np.ndarray            # (N, 3) m, object frame
+    voxel_volume: float            # m^3
+    pitch: float                   # m
+    hull_fallback: bool
+
+    @property
+    def extent(self) -> float:
+        return float(np.max(self.centers.max(0) - self.centers.min(0)) + self.pitch)
+
+
+def voxel_model(vertices, faces, pitch: float | None = None) -> VoxelModel:
+    mesh = trimesh.Trimesh(np.asarray(vertices, float), np.asarray(faces, int), process=True)
+    hull_fallback = not mesh.is_watertight
+    if hull_fallback:
+        mesh = mesh.convex_hull
+    ext = float(np.max(mesh.extents))
+    pitch = float(pitch) if pitch else min(0.002, ext / 100.0)
+    # Voxel centres at half-pitch offsets, kept when inside the (watertight) mesh. trimesh's
+    # surface voxelization puts centres ON the boundary and overcounts the volume (+10.7 % on a
+    # 10 x 6 x 4 cm box at 2 mm).
+    lo, hi = mesh.bounds
+    axes = [np.arange(lo[i] + pitch / 2, hi[i], pitch) for i in range(3)]
+    grid = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
+    centers = grid[mesh.contains(grid)]
+    if len(centers) == 0:
+        raise RuntimeError("voxelization produced no voxels")
+    return VoxelModel(centers=centers, voxel_volume=pitch ** 3, pitch=pitch, hull_fallback=hull_fallback)
+
+
+def mass_properties(vm: VoxelModel, rho, include_cube: bool = True) -> dict:
+    dm = np.asarray(rho, float) * vm.voxel_volume
+    m = float(dm.sum())
+    com = (dm[:, None] * vm.centers).sum(0) / m
+    d = vm.centers - com
+    r2 = (d * d).sum(1)
+    inertia = (dm[:, None, None] * (r2[:, None, None] * np.eye(3) - d[:, :, None] * d[:, None, :])).sum(0)
+    if include_cube:
+        inertia += np.eye(3) * m * vm.pitch ** 2 / 6.0     # each voxel's own cube inertia
+    return dict(mass=m, com=com, inertia=inertia)
+
+
+def _smooth_field(vm: VoxelModel, rng, length: float, n_features: int = 64) -> np.ndarray:
+    """A zero-mean, unit-variance smooth random field (random Fourier features, Gaussian kernel)."""
+    w = rng.normal(0.0, 1.0 / length, size=(n_features, 3))
+    b = rng.uniform(0, 2 * np.pi, n_features)
+    g = np.sqrt(2.0 / n_features) * np.cos(vm.centers @ w.T + b).sum(1)
+    return (g - g.mean()) / (g.std() + 1e-12)
+
+
+def _density(vm: VoxelModel, rng, mode: str):
+    rho0 = float(np.exp(rng.uniform(*np.log(RHO0_RANGE))))
+    ext = vm.extent
+    params = dict(rho0=rho0)
+    if mode == "uniform":
+        rho = np.full(len(vm.centers), rho0)
+    elif mode == "lognormal":
+        sigma = np.log(25.0) / (2 * 1.645)                  # 5–95 % ratio ≈ 25
+        rho = rho0 * np.exp(sigma * _smooth_field(vm, rng, 0.3 * ext))
+        params.update(sigma=sigma, length=0.3 * ext)
+    elif mode == "heavy_end":
+        centroid = vm.centers.mean(0)
+        dist = np.linalg.norm(vm.centers - centroid, axis=1)
+        anchor = vm.centers[int(np.argmax(dist))] if rng.random() < 0.7 else vm.centers[rng.integers(len(vm.centers))]
+        radius = rng.uniform(0.15, 0.35) * ext
+        ratio = float(np.exp(rng.uniform(np.log(3), np.log(10))))
+        rho = np.where(np.linalg.norm(vm.centers - anchor, axis=1) <= radius, rho0 * ratio, rho0)
+        params.update(anchor=anchor.tolist(), radius=radius, ratio=ratio)
+    elif mode == "insert":
+        rho = np.full(len(vm.centers), rho0)
+        n_ins = int(rng.integers(1, 3))
+        centers, radii = [], []
+        lo, hi = vm.centers.min(0), vm.centers.max(0)
+        for _ in range(n_ins):
+            for _ in range(MAX_TRIES):
+                r = rng.uniform(0.10, 0.25) * ext
+                c = vm.centers[rng.integers(len(vm.centers))]
+                inside = np.linalg.norm(vm.centers - c, axis=1) <= r
+                if np.all(c - r >= lo - 1e-9) and np.all(c + r <= hi + 1e-9) and inside.sum() > 0:
+                    break
+            else:
+                r, inside = vm.pitch, np.linalg.norm(vm.centers - c, axis=1) <= vm.pitch
+            rho = np.where(inside, float(rng.uniform(*INSERT_RHO)), rho)
+            centers.append(c.tolist())
+            radii.append(float(r))
+        params.update(n_inserts=n_ins, centers=centers, radii=radii)
+    else:
+        raise ValueError(mode)
+    params["rho_max"] = float(rho.max())
+    return rho, params
+
+
+def draw_theta(vm: VoxelModel, rng, mode: str | None = None) -> dict:
+    mode = mode or str(rng.choice(MODES, p=MODE_P))
+    for _ in range(MAX_TRIES):
+        rho, params = _density(vm, rng, mode)
+        props = mass_properties(vm, rho)
+        if MASS_RANGE[0] <= props["mass"] <= MASS_RANGE[1] and params["rho_max"] <= RHO_MAX:
+            return dict(mode=mode, rho0=params["rho0"], params=params, **props)
+    raise RuntimeError(f"no {mode} draw within limits after {MAX_TRIES} tries (volume {len(vm.centers) * vm.voxel_volume:.3e} m^3)")
+
+
+def draw_thetas(vm: VoxelModel, n: int, seed: int) -> list[dict]:
+    rng = np.random.default_rng(seed)
+    return [draw_theta(vm, rng) for _ in range(n)]
+
+
+def env_layout(n_theta: int, n_cand: int):
+    k = np.arange(n_theta * n_cand)
+    return k // n_cand, k % n_cand
+
+
+def atomic_savez(path: str, **arrays) -> None:
+    tmp = path[:-4] + f".{os.getpid()}.tmp.npz"
+    np.savez_compressed(tmp, **arrays)
+    os.replace(tmp, path)
