@@ -11,7 +11,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--check", required=True, choices=["theta", "physics", "speed"])
+parser.add_argument("--check", required=True, choices=["theta", "physics", "speed", "convergence"])
+parser.add_argument("--files", nargs="*", default=None, help="--check convergence: same-pairs v5 files, coarsest to finest")
 parser.add_argument("--object", default="sugar_box")
 parser.add_argument("--file", default=None)
 parser.add_argument("--n-objects", type=int, default=98)
@@ -177,7 +178,41 @@ def check_speed(path):
           f"(upper bound: wall time grows sub-linearly with envs)", flush=True)
 
 
+def torque_residual(z) -> tuple[np.ndarray, np.ndarray]:
+    """Per env: (|measured torque - torque of the weight at the true CoM| at the end of the top hold, free flag)."""
+    top = z["trace_phase"] == "top_hold"
+    free = z["final_ok"] & ~supported_trace(z)[:, top].any(1)
+    ti = z["theta_idx"]
+    Th = _T(z["trace_hand_pose_w"][:, top][:, -1])
+    To = _T(z["trace_obj_pose_w"][:, top][:, -1])
+    w = z["trace_wrench_h"][:, top].mean(1) - z["wrench_bias_h"]
+    F, tau = w[:, :3], w[:, 3:]
+    c_w = np.einsum("eij,ej->ei", To[:, :3, :3], z["theta_com"][ti]) + To[:, :3, 3]
+    c_h = np.einsum("eji,ej->ei", Th[:, :3, :3], c_w - Th[:, :3, 3])
+    return np.linalg.norm(tau - np.cross(c_h, F), axis=1), free
+
+
+def check_convergence(paths) -> None:
+    """Same (θ, candidate) pairs simulated at increasing fidelity: outcome agreement with the finest file, residuals."""
+    zs = [np.load(p, allow_pickle=True) for p in paths]
+    ref = zs[-1]
+    for p, z in zip(paths, zs):
+        if not (np.array_equal(z["theta_idx"], ref["theta_idx"]) and np.array_equal(z["cand_idx"], ref["cand_idx"])):
+            raise SystemExit(f"{p}: different (theta, cand) pairs from {paths[-1]}")
+        res, free = torque_residual(z)
+        agree = float(np.mean(z["final_ok"] == ref["final_ok"]))
+        agree_h = float(np.mean(z["held1"] == ref["held1"]))
+        print(f"[convergence] {os.path.basename(os.path.dirname(p)):28s} final_ok {int(z['final_ok'].sum()):4d}/{len(res)} "
+              f"agree-with-finest {agree:.3f} | held1 {int(z['held1'].sum()):4d} agree {agree_h:.3f} | residual (free) "
+              f"median {1000 * np.median(res[free]) if free.any() else float('nan'):.2f} p90 "
+              f"{1000 * np.percentile(res[free], 90) if free.any() else float('nan'):.2f} mN*m | "
+              f"{1000 * float(z['loop_s']) / int(z['control_steps']):.0f} ms/step", flush=True)
+
+
 if __name__ == "__main__":
+    if args.check == "convergence":
+        check_convergence(args.files)
+        sys.exit(0)
     if args.check == "theta":
         check_theta()
         app.close()

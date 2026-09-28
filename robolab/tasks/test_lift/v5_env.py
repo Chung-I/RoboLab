@@ -120,6 +120,12 @@ def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0
         ap = env_cfg.scene.robot.spawn.articulation_props
         ap.solver_position_iteration_count, ap.solver_velocity_iteration_count = (int(robot_solver_iters[0]),
                                                                                   int(robot_solver_iters[1]))
+        # RoboLab caps the whole scene at 32 / 1 (core/environments/base.py); raise the cap when asked for more
+        px = env_cfg.sim.physx
+        for cap, want in (("max_position_iteration_count", robot_solver_iters[0]),
+                          ("max_velocity_iteration_count", robot_solver_iters[1])):
+            if hasattr(px, cap):
+                setattr(px, cap, max(int(getattr(px, cap)), int(want)))
     if video_target is not None:
         # diagnostic video: a close-up camera per env, looking at video_target (env-local, m) from the front-right
         import isaaclab.sim as sim_utils
