@@ -104,7 +104,8 @@ def _mat_to_quat(R):
 
 
 def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0, scale=(1.0, 1.0, 1.0),
-                 physics_hz: float | None = None, contact_links: list[str] | None = None):
+                 physics_hz: float | None = None, contact_links: list[str] | None = None,
+                 video_target=None):
     from robolab.core.environments.config import parse_env_cfg
     from robolab.core.environments.runtime import create_env
     from robolab.registrations.test_lift import register_test_lift_env
@@ -114,6 +115,21 @@ def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0
                                                postfix=f"_V5_{obj_key}", seed=seed, with_camera=False)
     env_cfg = parse_env_cfg(env_name, device=device, seed=seed, num_envs=n_envs, use_fabric=True)
     env_cfg.scene.replicate_physics = False
+    if video_target is not None:
+        # diagnostic video: a close-up camera per env, looking at video_target (env-local, m) from the front-right
+        import isaaclab.sim as sim_utils
+        from isaaclab.sensors import TiledCameraCfg
+        tgt = np.asarray(video_target, float)
+        eye = tgt + np.array([0.45, -0.40, 0.30])
+        fwd = (tgt - eye) / np.linalg.norm(tgt - eye)
+        left = np.cross([0.0, 0.0, 1.0], fwd)
+        left /= np.linalg.norm(left)
+        up = np.cross(fwd, left)
+        q = _mat_to_quat(np.stack([fwd, left, up], axis=1))   # world convention: +X forward, +Z up
+        env_cfg.scene.v5_cam = TiledCameraCfg(
+            prim_path="{ENV_REGEX_NS}/v5_cam", height=480, width=640, data_types=["rgb"],
+            spawn=sim_utils.PinholeCameraCfg(focal_length=18.0, focus_distance=0.8, horizontal_aperture=20.955),
+            offset=TiledCameraCfg.OffsetCfg(pos=tuple(eye), rot=tuple(float(x) for x in q), convention="world"))
     if contact_links:
         # diagnostic: contact forces on the object from each named robot link (force_matrix_w, one column per link)
         from isaaclab.sensors import ContactSensorCfg

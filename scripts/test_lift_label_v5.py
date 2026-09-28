@@ -33,12 +33,14 @@ parser.add_argument("--cands-dir", default="output/test_lift/corpus/cands")
 parser.add_argument("--out", default="output/test_lift/v5")
 parser.add_argument("--pairs-file", default=None, help="diagnostic: npz with theta_idx, cand_idx arrays (env layout override)")
 parser.add_argument("--contact-links", nargs="*", default=None, help="diagnostic: log object contact force from these robot links")
+parser.add_argument("--video", default=None, help="diagnostic: directory for one MP4 per env (close-up camera; use few envs)")
+parser.add_argument("--video-labels", default=None, help="optional npz with a string array `label`, one per env, drawn on the frames")
 parser.add_argument("--physics-hz", type=float, default=240.0,
                     help="physics rate; the control rate stays 15 Hz. 240 Hz: at the env default 120 Hz the hold wrench is\n"
                          "biased by coarse contacts (hammer_2 CoM within 2 mm 67 %% -> 100 %% at 240 Hz) and outcomes shift")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-args.enable_cameras = False
+args.enable_cameras = bool(args.video)
 app = AppLauncher(args).app
 
 import numpy as np  # noqa: E402
@@ -90,10 +92,14 @@ class VecRobot:
         g = np.asarray(grips, dtype=np.float32).reshape(self.n, 1)
         return torch.as_tensor(np.concatenate([t, g], axis=1), device=self.env.device, dtype=torch.float32)
 
+    on_step = None   # optional callback after every control step (video capture)
+
     def step(self, targets7, grips, n):
         a = self._action(targets7, grips)
         for _ in range(n):
             self.env.step(a)
+            if self.on_step:
+                self.on_step()
         self.n_steps += n
 
     def wrench_window(self, targets7, grips, n):
@@ -101,6 +107,8 @@ class VecRobot:
         ws = []
         for _ in range(n):
             self.env.step(a)
+            if self.on_step:
+                self.on_step()
             ws.append(self.wrench())
         self.n_steps += n
         trace = np.stack(ws, axis=1).astype(np.float32)
@@ -196,9 +204,14 @@ def main():
           flush=True)
 
     env = build_v5_env(key, thetas, theta_idx, scale=scale, physics_hz=args.physics_hz,
-                      contact_links=args.contact_links)
+                      contact_links=args.contact_links,
+                      video_target=(np.asarray(spec["pos"], float) + [0, 0, 0.06]) if args.video else None)
     env.reset()
     rb = VecRobot(env)
+    frames = []
+    if args.video:
+        cam = env.scene["v5_cam"]
+        rb.on_step = lambda: frames.append(cam.data.output["rgb"][..., :3].cpu().numpy().copy())
     n_trace = sum(n for _, n in TRACE_SEGMENTS) * int(env.cfg.decimation)
     rec = TraceRecorder(env, key, rb.hand, n_trace)
     t_loop = time.time()
@@ -278,7 +291,39 @@ def main():
     print(f"[v5] done object={key} envs={E} held1={int(held1.sum())} final_ok={int(final_ok.sum())} "
           f"control_steps={rb.n_steps} loop={loop_s:.1f}s ({1000 * loop_s / rb.n_steps:.1f} ms/step) "
           f"wall={time.time() - t_start:.1f}s -> {out}", flush=True)
+    if args.video:
+        write_videos(frames, args.video, key, theta_idx, cand_idx, thetas)
     env.close()
+
+
+def write_videos(frames, out_dir, key, theta_idx, cand_idx, thetas):
+    """One H.264 MP4 per env from the per-control-step frames (15 fps), with a text label."""
+    import subprocess
+
+    import cv2
+    os.makedirs(out_dir, exist_ok=True)
+    labels = np.load(args.video_labels)["label"] if args.video_labels else None
+    arr = np.stack(frames, axis=1)                                   # (E, T, H, W, 3)
+    for e in range(arr.shape[0]):
+        th = thetas[int(theta_idx[e])]
+        text = f"{key} env{e} theta{int(theta_idx[e])} cand{int(cand_idx[e])} {th['mode']} {th['mass']:.3f} kg"
+        if labels is not None:
+            text += f" | {labels[e]}"
+        raw = os.path.join(out_dir, f"{key}_env{e:02d}.raw.mp4")
+        h, w = arr.shape[2:4]
+        vw = cv2.VideoWriter(raw, cv2.VideoWriter_fourcc(*"mp4v"), 15, (w, h))
+        for t in range(arr.shape[1]):
+            img = cv2.cvtColor(np.ascontiguousarray(arr[e, t]), cv2.COLOR_RGB2BGR)
+            cv2.putText(img, text, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(img, f"t={t / 15:5.2f}s", (8, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            vw.write(img)
+        vw.release()
+        final = raw.replace(".raw.mp4", ".mp4")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", raw, "-c:v", "libx264", "-pix_fmt", "yuv420p", final],
+                       check=False)
+        if os.path.exists(final):
+            os.remove(raw)
+    print(f"[v5] videos -> {out_dir} ({arr.shape[0]} envs, {arr.shape[1]} frames)", flush=True)
 
 
 if __name__ == "__main__":
