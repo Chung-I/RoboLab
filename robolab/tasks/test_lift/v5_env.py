@@ -105,7 +105,8 @@ def _mat_to_quat(R):
 
 def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0, scale=(1.0, 1.0, 1.0),
                  physics_hz: float | None = None, contact_links: list[str] | None = None,
-                 video_target=None, robot_solver_iters: tuple[int, int] | None = None):
+                 video_target=None, robot_solver_iters: tuple[int, int] | None = None,
+                 gpu_found_lost_pairs: int | None = None):
     from robolab.core.environments.config import parse_env_cfg
     from robolab.core.environments.runtime import create_env
     from robolab.registrations.test_lift import register_test_lift_env
@@ -115,6 +116,10 @@ def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0
                                                postfix=f"_V5_{obj_key}", seed=seed, with_camera=False)
     env_cfg = parse_env_cfg(env_name, device=device, seed=seed, num_envs=n_envs, use_fabric=True)
     env_cfg.scene.replicate_physics = False
+    if gpu_found_lost_pairs is not None:
+        # PhysX drops new contact pairs when this buffer overflows ("will miss interactions"); at 1,536 envs the
+        # objects then fall through the table (2026-09-29: default 2**21, PhysX asked for up to 1.28e8)
+        env_cfg.sim.physx.gpu_found_lost_pairs_capacity = int(gpu_found_lost_pairs)
     if robot_solver_iters is not None:
         # diagnostic: PhysX solver iterations of the robot articulation (default 8 position, 0 velocity)
         ap = env_cfg.scene.robot.spawn.articulation_props

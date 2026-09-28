@@ -40,6 +40,8 @@ parser.add_argument("--video-labels", default=None, help="optional npz with a st
 parser.add_argument("--robot-solver-iters", type=int, nargs=2, default=[32, 1], metavar=("POS", "VEL"),
                     help="robot articulation solver iterations. 32 1 (RoboLab scene cap): outcomes agree 93-98 %% with 8 0\n"
                          "and the wrist torque residual is 2-7x lower (convergence study 2026-09-28)")
+parser.add_argument("--gpu-found-lost-pairs", type=int, default=None,
+                    help="PhysX gpu_found_lost_pairs_capacity (Isaac Lab default 2**21 overflows at 1,536 envs)")
 parser.add_argument("--physics-hz", type=float, default=240.0,
                     help="physics rate; the control rate stays 15 Hz. 240 Hz: at the env default 120 Hz the hold wrench is\n"
                          "biased by coarse contacts (hammer_2 CoM within 2 mm 67 %% -> 100 %% at 240 Hz) and outcomes shift")
@@ -200,6 +202,7 @@ def main():
 
     env = build_v5_env(key, thetas, theta_idx, scale=scale, physics_hz=args.physics_hz,
                       contact_links=args.contact_links, robot_solver_iters=args.robot_solver_iters,
+                      gpu_found_lost_pairs=args.gpu_found_lost_pairs,
                       video_target=(np.asarray(spec["pos"], float) + [0, 0, 0.06]) if args.video else None)
     env.reset()
     rb = VecRobot(env)
