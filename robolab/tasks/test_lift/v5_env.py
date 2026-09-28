@@ -103,7 +103,8 @@ def _mat_to_quat(R):
     return q
 
 
-def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0, scale=(1.0, 1.0, 1.0)):
+def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0, scale=(1.0, 1.0, 1.0),
+                 physics_hz: float | None = None):
     from robolab.core.environments.config import parse_env_cfg
     from robolab.core.environments.runtime import create_env
     from robolab.registrations.test_lift import register_test_lift_env
@@ -113,6 +114,12 @@ def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0
                                                postfix=f"_V5_{obj_key}", seed=seed, with_camera=False)
     env_cfg = parse_env_cfg(env_name, device=device, seed=seed, num_envs=n_envs, use_fabric=True)
     env_cfg.scene.replicate_physics = False
+    if physics_hz:
+        # keep the control rate: decimation scales with the physics rate
+        control_dt = env_cfg.sim.dt * env_cfg.decimation
+        env_cfg.sim.dt = 1.0 / float(physics_hz)
+        env_cfg.decimation = int(round(control_dt * float(physics_hz)))
+        env_cfg.sim.render_interval = env_cfg.decimation
     _install_pre_reset_hook()
     _PRE_RESET.append(lambda: _write_mass_api(obj_key, n_envs, thetas, theta_idx, scale))
     env, _ = create_env(env_cfg, device=device, seed=seed, num_envs=n_envs, use_fabric=True)

@@ -31,6 +31,7 @@ parser.add_argument("--theta-seed", type=int, default=0)
 parser.add_argument("--noise-seed", type=int, default=5)
 parser.add_argument("--cands-dir", default="output/test_lift/corpus/cands")
 parser.add_argument("--out", default="output/test_lift/v5")
+parser.add_argument("--physics-hz", type=float, default=None, help="physics rate; the control rate stays 15 Hz (default: the env cfg, 120 Hz)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = False
@@ -178,7 +179,7 @@ def main():
           f"hull_fallback={vm.hull_fallback} scale={np.round(scale, 4).tolist()} prep={time.time() - t_start:.1f}s",
           flush=True)
 
-    env = build_v5_env(key, thetas, theta_idx, scale=scale)
+    env = build_v5_env(key, thetas, theta_idx, scale=scale, physics_hz=args.physics_hz)
     env.reset()
     rb = VecRobot(env)
     n_trace = sum(n for _, n in TRACE_SEGMENTS) * int(env.cfg.decimation)
