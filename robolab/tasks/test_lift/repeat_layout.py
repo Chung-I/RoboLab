@@ -35,3 +35,10 @@ def repeat_pairs(n_cand: int) -> dict:
     t, c, r = np.meshgrid(np.array(THETA_SEL), np.arange(n_cand), np.arange(N_REP), indexing="ij")
     r = r.ravel()
     return dict(theta_idx=t.ravel(), cand_idx=c.ravel(), repeat_idx=r, noise_rep=np.array(NOISE_REP)[r])
+
+
+def off_table(T_obj_settle, env_origins, z_rest: float, tol: float = 0.05) -> np.ndarray:
+    """True where the settled object is more than `tol` below its rest height (env-local): it fell off or through
+    the table before the grasp. 2026-09-29: PhysX found-lost-pair overflow sent ~78 % of objects to the floor."""
+    z = np.asarray(T_obj_settle, float)[:, 2, 3] - np.asarray(env_origins, float)[:, 2]
+    return z < float(z_rest) - float(tol)

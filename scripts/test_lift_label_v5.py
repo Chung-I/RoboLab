@@ -40,7 +40,7 @@ parser.add_argument("--video-labels", default=None, help="optional npz with a st
 parser.add_argument("--robot-solver-iters", type=int, nargs=2, default=[32, 1], metavar=("POS", "VEL"),
                     help="robot articulation solver iterations. 32 1 (RoboLab scene cap): outcomes agree 93-98 %% with 8 0\n"
                          "and the wrist torque residual is 2-7x lower (convergence study 2026-09-28)")
-parser.add_argument("--gpu-found-lost-pairs", type=int, default=None,
+parser.add_argument("--gpu-found-lost-pairs", type=int, default=2 ** 27,
                     help="PhysX gpu_found_lost_pairs_capacity (Isaac Lab default 2**21 overflows at 1,536 envs)")
 parser.add_argument("--physics-hz", type=float, default=240.0,
                     help="physics rate; the control rate stays 15 Hz. 240 Hz: at the env default 120 Hz the hold wrench is\n"
@@ -60,7 +60,7 @@ from analysis.test_lift.batch import (CLEAR_DZ, CLEAR_OK_FRAC, CLOSE, GRASP_DEPT
 from analysis.test_lift.frames import T_to_pose7, lifted_target, pose7_to_T, pregrasp_target  # noqa: E402
 from robolab.tasks.test_lift.generic_scene import build  # noqa: E402
 from robolab.tasks.test_lift.theta_physical import atomic_savez, draw_thetas, env_layout, voxel_model  # noqa: E402
-from robolab.tasks.test_lift.repeat_layout import grasp_noise_draw  # noqa: E402
+from robolab.tasks.test_lift.repeat_layout import grasp_noise_draw, off_table  # noqa: E402
 from robolab.tasks.test_lift.v5_env import build_v5_env, object_mesh, object_usd  # noqa: E402
 
 POS_STD, ROT_STD = 0.003, 2.0
@@ -223,6 +223,9 @@ def main():
     rb.settle(SETTLE_STEPS // 2)
     T_obj = np.stack([pose7_to_T(p) for p in obj_pose_w(env, key)])
     R_settle = [T_obj[e][:3, :3].copy() for e in range(E)]
+    off = off_table(T_obj, rb.origins, T_rest[2, 3])
+    if off.any():
+        print(f"[v5] WARNING off_table={int(off.sum())}/{E} objects below their rest height before the grasp", flush=True)
     z_table = np.array([float(((T_obj[e][:3, :3] @ points_o.T).T + T_obj[e][:3, 3])[:, 2].min()) for e in range(E)])
 
     g_exec = np.zeros((E, 4, 4))
@@ -280,7 +283,7 @@ def main():
         theta_profile=args.theta_profile, theta_seed=args.theta_seed,
         theta_params_json=json.dumps([t["params"] for t in thetas], default=float),
         hull_fallback=vm.hull_fallback, voxel_pitch=vm.pitch, n_voxels=len(vm.centers), scale=scale,
-        theta_idx=theta_idx, cand_idx=cand_idx, repeat_idx=repeat_idx, noise_rep=noise_rep, grasps_o=grasps, points_o=points_o, grasp_executed_o=g_exec,
+        theta_idx=theta_idx, cand_idx=cand_idx, repeat_idx=repeat_idx, noise_rep=noise_rep, off_table=off, grasps_o=grasps, points_o=points_o, grasp_executed_o=g_exec,
         rise1=rise1, tilt1=tilt1, held1=held1, swung1=swung1, first_lift_ok=held1 & ~swung1, final_ok=final_ok,
         rise_final=rise_final, gap1=gap1, wrench_bias_h=bias, wrench_bias_trace_h=bias_trace, wrench_hold_h=w_hold,
         wrench_trace_h=hold_trace, lift_trace_h=lift_trace, T_hand_hold=T_hand_hold, T_obj_hold=T_obj_hold,

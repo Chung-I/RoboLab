@@ -51,3 +51,11 @@ def test_pairs_small_candidate_set():
 
 def test_theta_sel_is_fixed():
     assert THETA_SEL == tuple(sorted(int(x) for x in np.random.default_rng(1).choice(64, 8, replace=False)))
+
+
+def test_off_table_flags_fallen_objects():
+    from robolab.tasks.test_lift.repeat_layout import off_table
+    T = np.broadcast_to(np.eye(4), (3, 4, 4)).copy()
+    origins = np.array([[0, 0, 0], [10, 0, 0], [20, 0, 0.0]])
+    T[:, :3, 3] = origins + [[0.55, 0, 0.021], [0.55, 0, -0.649], [0.56, 0.01, 0.025]]
+    assert off_table(T, origins, z_rest=0.021).tolist() == [False, True, False]
