@@ -58,26 +58,11 @@ from analysis.test_lift.batch import (CLEAR_DZ, CLEAR_OK_FRAC, CLOSE, GRASP_DEPT
 from analysis.test_lift.frames import T_to_pose7, lifted_target, pose7_to_T, pregrasp_target  # noqa: E402
 from robolab.tasks.test_lift.generic_scene import build  # noqa: E402
 from robolab.tasks.test_lift.theta_physical import atomic_savez, draw_thetas, env_layout, voxel_model  # noqa: E402
+from robolab.tasks.test_lift.repeat_layout import grasp_noise_draw  # noqa: E402
 from robolab.tasks.test_lift.v5_env import build_v5_env, object_mesh, object_usd  # noqa: E402
 
 POS_STD, ROT_STD = 0.003, 2.0
 TRACE_SEGMENTS = (("test_lift", LIFT_STEPS), ("hold", HOLD_STEPS), ("full_lift", MOVE_STEPS), ("top_hold", HOLD_STEPS))
-
-
-def grasp_noise_draw(grasp_o, pos_std_m, rot_std_deg, noise_seed, theta_id, cand_id):
-    """Copied unchanged from scripts/test_lift_batch.py (that script parses arguments at import)."""
-    rng = np.random.default_rng([int(noise_seed), int(theta_id), int(cand_id)])
-    axis = rng.standard_normal(3)
-    axis /= np.linalg.norm(axis)
-    angle_deg = float(rng.standard_normal()) * float(rot_std_deg)
-    dpos = rng.standard_normal(3) * float(pos_std_m)
-    th = np.radians(angle_deg)
-    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
-    R_delta = np.eye(3) + np.sin(th) * K + (1 - np.cos(th)) * (K @ K)       # Rodrigues
-    G = np.array(grasp_o, dtype=float, copy=True)
-    G[:3, :3] = R_delta @ G[:3, :3]
-    G[:3, 3] = G[:3, 3] + dpos
-    return G, dpos, axis, angle_deg
 
 
 class VecRobot:
@@ -200,9 +185,14 @@ def main():
     vm = voxel_model(v, f)
     thetas = draw_thetas(vm, args.n_theta, seed=args.theta_seed, profile=args.theta_profile)
     theta_idx, cand_idx = env_layout(args.n_theta, C)
+    repeat_idx = noise_rep = np.zeros(len(theta_idx), int)
     if args.pairs_file:
         pz = np.load(args.pairs_file)
         theta_idx, cand_idx = np.asarray(pz["theta_idx"], int), np.asarray(pz["cand_idx"], int)
+        if "repeat_idx" in pz.files:
+            repeat_idx, noise_rep = np.asarray(pz["repeat_idx"], int), np.asarray(pz["noise_rep"], int)
+        else:
+            repeat_idx = noise_rep = np.zeros(len(theta_idx), int)
     E = len(theta_idx)
     print(f"[v5] object={key} C={C} n_theta={args.n_theta} envs={E} voxels={len(vm.centers)} "
           f"hull_fallback={vm.hull_fallback} scale={np.round(scale, 4).tolist()} prep={time.time() - t_start:.1f}s",
@@ -236,7 +226,7 @@ def main():
     tgt = np.zeros((E, 7))
     for e in range(E):
         j, c = int(theta_idx[e]), int(cand_idx[e])
-        g_exec[e] = grasp_noise_draw(grasps[c], POS_STD, ROT_STD, args.noise_seed, j, c)[0]
+        g_exec[e] = grasp_noise_draw(grasps[c], POS_STD, ROT_STD, args.noise_seed, j, c, rep=int(noise_rep[e]))[0]
         tgt[e] = hand_target(g_exec[e], T_obj[e], rb.origins[e], "z90", GRASP_DEPTH_OFFSET)
     pre = np.stack([pregrasp_target(t, STANDOFF) for t in tgt])
     up = np.stack([lifted_target(t, LIFT_DZ) for t in tgt])
@@ -287,7 +277,7 @@ def main():
         theta_profile=args.theta_profile, theta_seed=args.theta_seed,
         theta_params_json=json.dumps([t["params"] for t in thetas], default=float),
         hull_fallback=vm.hull_fallback, voxel_pitch=vm.pitch, n_voxels=len(vm.centers), scale=scale,
-        theta_idx=theta_idx, cand_idx=cand_idx, grasps_o=grasps, points_o=points_o, grasp_executed_o=g_exec,
+        theta_idx=theta_idx, cand_idx=cand_idx, repeat_idx=repeat_idx, noise_rep=noise_rep, grasps_o=grasps, points_o=points_o, grasp_executed_o=g_exec,
         rise1=rise1, tilt1=tilt1, held1=held1, swung1=swung1, first_lift_ok=held1 & ~swung1, final_ok=final_ok,
         rise_final=rise_final, gap1=gap1, wrench_bias_h=bias, wrench_bias_trace_h=bias_trace, wrench_hold_h=w_hold,
         wrench_trace_h=hold_trace, lift_trace_h=lift_trace, T_hand_hold=T_hand_hold, T_obj_hold=T_obj_hold,
