@@ -73,7 +73,105 @@ def check_theta():
     env.close()
 
 
+G = 9.81
+
+
+def _T(pose7):
+    """(..., 7) pose [x y z qw qx qy qz] -> (..., 4, 4)."""
+    p = np.asarray(pose7, float)
+    w, x, y, z = p[..., 3], p[..., 4], p[..., 5], p[..., 6]
+    R = np.stack([np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
+                  np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
+                  np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1)], -2)
+    T = np.zeros(p.shape[:-1] + (4, 4))
+    T[..., :3, :3], T[..., :3, 3], T[..., 3, 3] = R, p[..., :3], 1.0
+    return T
+
+
+def supported_trace(z) -> np.ndarray:
+    """(E, S) bool: the object's lowest surface point is within 0.5 mm of the table top."""
+    T = _T(z["trace_obj_pose_w"])                                   # (E, S, 4, 4)
+    pts = np.asarray(z["points_o"], float)
+    zmin = np.einsum("esj,pj->esp", T[..., 2, :3], pts).min(-1) + T[..., 2, 3]
+    return zmin - z["z_table"][:, None] < 5e-4
+
+
+def check_physics(path) -> bool:
+    from scipy.spatial import Delaunay
+    z = np.load(path, allow_pickle=True)
+    phase = z["trace_phase"]
+    m = z["theta_mass"][z["theta_idx"]]
+    com_true = z["theta_com"][z["theta_idx"]]
+    sup = supported_trace(z)
+    bias = z["wrench_bias_h"]
+    ok_all = True
+
+    # check 3: free during the whole top hold -> |F| = m g and the lever-arm CoM matches θ
+    top = phase == "top_hold"
+    free_top = z["final_ok"] & ~sup[:, top].any(1)
+    w = z["trace_wrench_h"][:, top].mean(1) - bias
+    F, tau = w[:, :3], w[:, 3:]
+    ratio = np.linalg.norm(F, axis=1) / (m * G)
+    Th = _T(z["trace_hand_pose_w"][:, top][:, -1])
+    To = _T(z["trace_obj_pose_w"][:, top][:, -1])
+    r_h = np.cross(F, tau) / np.maximum((F * F).sum(1), 1e-12)[:, None]
+    T_oh = np.linalg.inv(To) @ Th
+    r_o = np.einsum("eij,ej->ei", T_oh[:, :3, :3], r_h) + T_oh[:, :3, 3]
+    g_o = np.einsum("eji,j->ei", To[:, :3, :3], np.array([0, 0, -1.0]))
+    perp = lambda v: v - (v * g_o).sum(1, keepdims=True) * g_o  # noqa: E731
+    com_err = np.linalg.norm(perp(r_o) - perp(com_true), axis=1)
+    n = int(free_top.sum())
+    frac_ratio = float(np.mean((ratio[free_top] > 0.97) & (ratio[free_top] < 1.03))) if n else float("nan")
+    frac_com = float(np.mean(com_err[free_top] < 0.002)) if n else float("nan")
+    c3 = n > 0 and frac_ratio >= 0.95 and frac_com >= 0.95
+    print(f"[check physics 3] free at top: {n}/{len(m)} | |F|/mg in [0.97,1.03]: {frac_ratio:.3f} | "
+          f"lever-arm CoM within 2 mm: {frac_com:.3f} (median {1000 * np.median(com_err[free_top]) if n else float('nan'):.2f} mm)"
+          f" -> {'PASS' if c3 else 'FAIL'}", flush=True)
+    ok_all &= c3
+
+    # check 4: at the first-rung hold, pose-based support vs the v4 load rule, on lifted envs
+    hold = phase == "hold"
+    h_idx = np.flatnonzero(hold)
+    sup_hold = sup[:, h_idx[len(h_idx) // 2:]].any(1)
+    r1 = np.linalg.norm(z["wrench_hold_h"][:, :3] - bias[:, :3], axis=1) / (m * G)
+    v4_sup = ~((r1 > 0.95) & (r1 < 1.05))
+    lifted = z["rise1"] > 0.002
+    agree = float(np.mean(sup_hold[lifted] == v4_sup[lifted])) if lifted.any() else float("nan")
+    c4 = lifted.any() and agree >= 0.90
+    print(f"[check physics 4] lifted {int(lifted.sum())}/{len(m)} | pose-supported {int(sup_hold[lifted].sum())} "
+          f"v4-supported {int(v4_sup[lifted].sum())} | agreement {agree:.3f} -> {'PASS' if c4 else 'FAIL'}", flush=True)
+    ok_all &= c4
+
+    # check 6: plausible densities, CoM inside the hull
+    vol = float(z["n_voxels"]) * float(z["voxel_pitch"]) ** 3
+    dens = z["theta_mass"] / vol
+    inside = Delaunay(np.asarray(z["points_o"], float)).find_simplex(z["theta_com"]) >= 0
+    c6 = bool(np.all((dens >= 300) & (dens <= 8000)) and inside.all())
+    print(f"[check physics 6] mean density {dens.min() / 1000:.2f}-{dens.max() / 1000:.2f} g/cm3 | CoM inside hull "
+          f"{int(inside.sum())}/{len(inside)} -> {'PASS' if c6 else 'FAIL'}", flush=True)
+    ok_all &= c6
+    print(f"[check physics] {path}: {'PASS' if ok_all else 'FAIL'}", flush=True)
+    return ok_all
+
+
+def check_speed(path):
+    import glob
+    z = np.load(path, allow_pickle=True)
+    E = len(z["theta_idx"])
+    print(f"[check speed] {path}: envs={E} control_steps={int(z['control_steps'])} loop={float(z['loop_s']):.1f}s "
+          f"({1000 * float(z['loop_s']) / int(z['control_steps']):.1f} ms/step) wall={float(z['wall_s']):.1f}s", flush=True)
+    counts = [min(24, len(np.load(f)["confs"])) for f in glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                                                                  "output/test_lift/corpus/cands/*.npz"))]
+    per_env = float(z["wall_s"]) / E
+    print(f"[check speed] projected sweep ({len(counts)} objects, linear in envs): {per_env * 64 * sum(counts) / 3600:.2f} h "
+          f"(upper bound: wall time grows sub-linearly with envs)", flush=True)
+
+
 if __name__ == "__main__":
     if args.check == "theta":
         check_theta()
         app.close()
+    elif args.check == "physics":
+        sys.exit(0 if check_physics(args.file) else 1)
+    else:
+        check_speed(args.file)
