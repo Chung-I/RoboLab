@@ -35,6 +35,8 @@ parser.add_argument("--pairs-file", default=None, help="diagnostic: npz with the
 parser.add_argument("--contact-links", nargs="*", default=None, help="diagnostic: log object contact force from these robot links")
 parser.add_argument("--video", default=None, help="diagnostic: directory for one MP4 per env (close-up camera; use few envs)")
 parser.add_argument("--video-labels", default=None, help="optional npz with a string array `label`, one per env, drawn on the frames")
+parser.add_argument("--robot-solver-iters", type=int, nargs=2, default=None, metavar=("POS", "VEL"),
+                    help="diagnostic: robot articulation solver iterations (env default 8 0)")
 parser.add_argument("--physics-hz", type=float, default=240.0,
                     help="physics rate; the control rate stays 15 Hz. 240 Hz: at the env default 120 Hz the hold wrench is\n"
                          "biased by coarse contacts (hammer_2 CoM within 2 mm 67 %% -> 100 %% at 240 Hz) and outcomes shift")
@@ -204,7 +206,7 @@ def main():
           flush=True)
 
     env = build_v5_env(key, thetas, theta_idx, scale=scale, physics_hz=args.physics_hz,
-                      contact_links=args.contact_links,
+                      contact_links=args.contact_links, robot_solver_iters=args.robot_solver_iters,
                       video_target=(np.asarray(spec["pos"], float) + [0, 0, 0.06]) if args.video else None)
     env.reset()
     rb = VecRobot(env)
