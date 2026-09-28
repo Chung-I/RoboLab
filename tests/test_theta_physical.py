@@ -83,3 +83,10 @@ def test_atomic_write(tmp_path):  # spec test 5
     assert np.load(p)["a"].tolist() == [0, 1, 2]
     assert not [f for f in os.listdir(tmp_path) if f.endswith(".tmp.npz")]
 
+
+
+def test_voxel_model_needs_embree(monkeypatch):
+    # Without Embree, mesh.contains falls back to a pure-Python ray test that takes hours on real meshes.
+    monkeypatch.setattr(trimesh.ray, "has_embree", False)
+    with pytest.raises(RuntimeError, match="embree"):
+        voxel_model(*box_mesh())

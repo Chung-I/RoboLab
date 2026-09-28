@@ -35,6 +35,9 @@ class VoxelModel:
 
 
 def voxel_model(vertices, faces, pitch: float | None = None) -> VoxelModel:
+    if not trimesh.ray.has_embree:
+        raise RuntimeError("voxel_model needs trimesh's embree ray engine (pip install embreex); "
+                           "the pure-Python fallback of mesh.contains takes hours on real meshes")
     mesh = trimesh.Trimesh(np.asarray(vertices, float), np.asarray(faces, int), process=True)
     hull_fallback = not mesh.is_watertight
     if hull_fallback:
