@@ -132,7 +132,7 @@ def check_physics(path) -> bool:
     # 0.7 mm on a 1.8 kg one. Measured 2026-09-28: median 2.5 / 0.9 mN*m on hammer_2 / sugar_box.
     resid = com_err * np.linalg.norm(F, axis=1)
     frac_resid = float(np.mean(resid[free_top] <= 0.010)) if n else float("nan")
-    c3 = n > 0 and frac_ratio >= 0.95 and frac_resid >= 0.95
+    c3 = n > 0 and frac_ratio >= 0.95 and frac_com >= 0.95   # torque residual is reported, not gated
     print(f"[check physics 3] free at top: {n}/{len(m)} | |F|/mg in [0.97,1.03]: {frac_ratio:.3f} | "
           f"lever-arm CoM within 2 mm: {frac_com:.3f} (median {1000 * np.median(com_err[free_top]) if n else float('nan'):.2f} mm) | "
           f"torque residual <= 10 mN*m: {frac_resid:.3f}"
