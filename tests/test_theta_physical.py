@@ -97,3 +97,14 @@ def test_small_objects_can_be_drawn():
     vm = voxel_model(*box_mesh(0.02, 0.02, 0.02), pitch=0.001)
     ths = draw_thetas(vm, 16, seed=2)
     assert all(t["mass"] < 0.05 for t in ths)
+
+
+def test_heavy_end_is_a_dense_end_slab():
+    vm = voxel_model(*box_mesh(0.20, 0.03, 0.03))
+    rng = np.random.default_rng(5)
+    for _ in range(30):
+        th = draw_theta(vm, rng, mode="heavy_end")
+        p = th["params"]
+        assert 0.10 - 1e-9 <= p["share"] <= 0.40 + 1e-9 and 3.0 - 1e-9 <= p["ratio"] <= 15.0 + 1e-9
+        assert abs(abs(p["axis"][0]) - 1.0) < 1e-6          # the longest principal axis of the 20 cm box is x
+        assert np.sign(th["com"][0]) == np.sign(p["axis"][0])  # the CoM moves toward the dense end
