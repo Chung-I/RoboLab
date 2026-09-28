@@ -104,7 +104,7 @@ def _mat_to_quat(R):
 
 
 def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0, scale=(1.0, 1.0, 1.0),
-                 physics_hz: float | None = None):
+                 physics_hz: float | None = None, contact_links: list[str] | None = None):
     from robolab.core.environments.config import parse_env_cfg
     from robolab.core.environments.runtime import create_env
     from robolab.registrations.test_lift import register_test_lift_env
@@ -114,6 +114,12 @@ def build_v5_env(obj_key: str, thetas, theta_idx, device="cuda:0", seed: int = 0
                                                postfix=f"_V5_{obj_key}", seed=seed, with_camera=False)
     env_cfg = parse_env_cfg(env_name, device=device, seed=seed, num_envs=n_envs, use_fabric=True)
     env_cfg.scene.replicate_physics = False
+    if contact_links:
+        # diagnostic: contact forces on the object from each named robot link (force_matrix_w, one column per link)
+        from isaaclab.sensors import ContactSensorCfg
+        env_cfg.scene.object_contact = ContactSensorCfg(
+            prim_path=f"{{ENV_REGEX_NS}}/scene/{obj_key}", history_length=1,
+            filter_prim_paths_expr=[f"{{ENV_REGEX_NS}}/robot/{link}" for link in contact_links])
     if physics_hz:
         # keep the control rate: decimation scales with the physics rate
         control_dt = env_cfg.sim.dt * env_cfg.decimation

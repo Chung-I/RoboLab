@@ -31,6 +31,8 @@ parser.add_argument("--theta-seed", type=int, default=0)
 parser.add_argument("--noise-seed", type=int, default=5)
 parser.add_argument("--cands-dir", default="output/test_lift/corpus/cands")
 parser.add_argument("--out", default="output/test_lift/v5")
+parser.add_argument("--pairs-file", default=None, help="diagnostic: npz with theta_idx, cand_idx arrays (env layout override)")
+parser.add_argument("--contact-links", nargs="*", default=None, help="diagnostic: log object contact force from these robot links")
 parser.add_argument("--physics-hz", type=float, default=240.0,
                     help="physics rate; the control rate stays 15 Hz. 240 Hz: at the env default 120 Hz the hold wrench is\n"
                          "biased by coarse contacts (hammer_2 CoM within 2 mm 67 %% -> 100 %% at 240 Hz) and outcomes shift")
@@ -135,6 +137,9 @@ class TraceRecorder:
         self.hand_pose = torch.zeros((n_substeps, E, 7), device=dev)
         self.obj_pose = torch.zeros((n_substeps, E, 7), device=dev)
         self.phase, self.k, self.on, self.segment = [], 0, False, ""
+        self.contact = env.scene.sensors.get("object_contact") if hasattr(env.scene, "sensors") else None
+        self.contact_f = (torch.zeros((n_substeps, E, len(self.contact.cfg.filter_prim_paths_expr), 3), device=dev)
+                          if self.contact is not None else None)
         orig = env.scene.update
 
         def update(dt):
@@ -146,6 +151,8 @@ class TraceRecorder:
                 self.hand_pose[self.k, :, :3] = self.robot.data.body_pos_w[:, self.hand]
                 self.hand_pose[self.k, :, 3:] = self.robot.data.body_quat_w[:, self.hand]
                 self.obj_pose[self.k] = self.obj.data.root_pose_w
+                if self.contact is not None:
+                    self.contact_f[self.k] = self.contact.data.force_matrix_w[:, 0]
                 self.phase.append(self.segment)
                 self.k += 1
 
@@ -154,8 +161,12 @@ class TraceRecorder:
     def arrays(self):
         k = self.k
         to = lambda t: t[:k].permute(1, 0, 2).contiguous().cpu().numpy().astype(np.float32)  # noqa: E731
-        return dict(trace_wrench_h=to(self.wrench), trace_hand_pose_w=to(self.hand_pose),
-                    trace_obj_pose_w=to(self.obj_pose), trace_phase=np.array(self.phase))
+        out = dict(trace_wrench_h=to(self.wrench), trace_hand_pose_w=to(self.hand_pose),
+                   trace_obj_pose_w=to(self.obj_pose), trace_phase=np.array(self.phase))
+        if self.contact is not None:
+            out["trace_contact_link_f_w"] = self.contact_f[:k].permute(1, 0, 2, 3).contiguous().cpu().numpy()
+            out["contact_links"] = np.array(self.contact.cfg.filter_prim_paths_expr)
+        return out
 
 
 def obj_pose_w(env, key):
@@ -176,12 +187,16 @@ def main():
     vm = voxel_model(v, f)
     thetas = draw_thetas(vm, args.n_theta, seed=args.theta_seed)
     theta_idx, cand_idx = env_layout(args.n_theta, C)
+    if args.pairs_file:
+        pz = np.load(args.pairs_file)
+        theta_idx, cand_idx = np.asarray(pz["theta_idx"], int), np.asarray(pz["cand_idx"], int)
     E = len(theta_idx)
     print(f"[v5] object={key} C={C} n_theta={args.n_theta} envs={E} voxels={len(vm.centers)} "
           f"hull_fallback={vm.hull_fallback} scale={np.round(scale, 4).tolist()} prep={time.time() - t_start:.1f}s",
           flush=True)
 
-    env = build_v5_env(key, thetas, theta_idx, scale=scale, physics_hz=args.physics_hz)
+    env = build_v5_env(key, thetas, theta_idx, scale=scale, physics_hz=args.physics_hz,
+                      contact_links=args.contact_links)
     env.reset()
     rb = VecRobot(env)
     n_trace = sum(n for _, n in TRACE_SEGMENTS) * int(env.cfg.decimation)
