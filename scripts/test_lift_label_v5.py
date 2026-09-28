@@ -28,6 +28,8 @@ parser.add_argument("--object", required=True)
 parser.add_argument("--n-theta", type=int, default=64)
 parser.add_argument("--n-cand", type=int, default=24)
 parser.add_argument("--theta-seed", type=int, default=0)
+parser.add_argument("--theta-profile", default="default", choices=("default", "hard"),
+                    help="θ distribution: default, or hard = 60 % heavy ends with density ratio 3-30")
 parser.add_argument("--noise-seed", type=int, default=5)
 parser.add_argument("--cands-dir", default="output/test_lift/corpus/cands")
 parser.add_argument("--out", default="output/test_lift/v5")
@@ -196,7 +198,7 @@ def main():
     spec = build(key)
     v, f, scale = object_mesh(object_usd(spec))
     vm = voxel_model(v, f)
-    thetas = draw_thetas(vm, args.n_theta, seed=args.theta_seed)
+    thetas = draw_thetas(vm, args.n_theta, seed=args.theta_seed, profile=args.theta_profile)
     theta_idx, cand_idx = env_layout(args.n_theta, C)
     if args.pairs_file:
         pz = np.load(args.pairs_file)
@@ -282,6 +284,7 @@ def main():
         object=key, theta_mass=np.array([t["mass"] for t in thetas]), theta_com=np.array([t["com"] for t in thetas]),
         theta_inertia=np.array([t["inertia"] for t in thetas]), theta_mode=np.array([t["mode"] for t in thetas]),
         theta_rho0=np.array([t["rho0"] for t in thetas]),
+        theta_profile=args.theta_profile, theta_seed=args.theta_seed,
         theta_params_json=json.dumps([t["params"] for t in thetas], default=float),
         hull_fallback=vm.hull_fallback, voxel_pitch=vm.pitch, n_voxels=len(vm.centers), scale=scale,
         theta_idx=theta_idx, cand_idx=cand_idx, grasps_o=grasps, points_o=points_o, grasp_executed_o=g_exec,

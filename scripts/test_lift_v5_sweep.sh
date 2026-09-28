@@ -3,6 +3,7 @@
 # One Isaac process per object, one at a time (one GPU per user on cml hosts). Resumable: an object whose
 # <out>/<obj>.npz exists is skipped (the driver writes atomically, so a crash leaves no partial file).
 #   OBJECTS="sugar_box hammer_2" scripts/test_lift_v5_sweep.sh output/test_lift/v5
+#   EXTRA_ARGS="--theta-profile hard --theta-seed 1" adds driver flags
 set -uo pipefail
 cd "$(dirname "$0")/.."
 OUT=${1:-output/test_lift/v5}
@@ -15,7 +16,7 @@ echo "[v5-sweep] start $(date '+%F %T') out=$OUT objects=$(echo $OBJECTS | wc -w
 for obj in $OBJECTS; do
   if [[ -f "$OUT/$obj.npz" ]]; then echo "[skip] $obj"; continue; fi
   echo "=== $(date +%T) $obj ==="
-  timeout 3600 .venv/bin/python -u scripts/test_lift_label_v5.py --object "$obj" --out "$OUT" --headless \
+  timeout 3600 .venv/bin/python -u scripts/test_lift_label_v5.py --object "$obj" --out "$OUT" --headless ${EXTRA_ARGS:-} \
     < /dev/null > "$LOGS/$obj.log" 2>&1
   # Isaac's shutdown resets the exit code, so success is judged by the output file (written atomically).
   if [[ -f "$OUT/$obj.npz" ]]; then grep -h "^\[v5\] done" "$LOGS/$obj.log"

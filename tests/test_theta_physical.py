@@ -108,3 +108,14 @@ def test_heavy_end_is_a_dense_end_slab():
         assert 0.10 - 1e-9 <= p["share"] <= 0.40 + 1e-9 and 3.0 - 1e-9 <= p["ratio"] <= 15.0 + 1e-9
         assert abs(abs(p["axis"][0]) - 1.0) < 1e-6          # the longest principal axis of the 20 cm box is x
         assert np.sign(th["com"][0]) == np.sign(p["axis"][0])  # the CoM moves toward the dense end
+
+
+def test_hard_profile_more_and_denser_heavy_ends():
+    vm = voxel_model(*box_mesh(0.20, 0.03, 0.03))
+    ths = draw_thetas(vm, 400, seed=4, profile="hard")
+    modes = [t["mode"] for t in ths]
+    assert 0.53 < modes.count("heavy_end") / 400 < 0.67
+    ratios = [t["params"]["ratio"] for t in ths if t["mode"] == "heavy_end"]
+    assert min(ratios) >= 3.0 - 1e-9 and max(ratios) <= 30.0 + 1e-9 and max(ratios) > 20.0
+    a, b = draw_thetas(vm, 5, seed=4), draw_thetas(vm, 5, seed=4, profile="default")  # default unchanged
+    assert [t["mass"] for t in a] == [t["mass"] for t in b] and [t["mode"] for t in a] == [t["mode"] for t in b]

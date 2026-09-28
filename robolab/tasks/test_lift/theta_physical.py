@@ -15,6 +15,9 @@ import trimesh
 
 MODES = ("uniform", "lognormal", "heavy_end", "insert")
 MODE_P = (0.20, 0.25, 0.30, 0.25)
+# "hard" (2026-09-28, shared-policy follow-up): more and denser heavy ends, where the CoM should matter most.
+PROFILES = {"default": dict(mode_p=MODE_P, heavy_ratio=(3.0, 15.0)),
+            "hard": dict(mode_p=(0.10, 0.15, 0.60, 0.15), heavy_ratio=(3.0, 30.0))}
 RHO0_RANGE = (300.0, 2500.0)       # kg/m^3 (0.3 .. 2.5 g/cm^3)
 INSERT_RHO = (2700.0, 7800.0)      # aluminium .. steel
 MASS_RANGE = (0.01, 2.5)           # kg (0.05 was infeasible for 8–40 cm^3 objects: crabbypenholder, lychee01, measuring_spoon)
@@ -76,7 +79,7 @@ def _smooth_field(vm: VoxelModel, rng, length: float, n_features: int = 64) -> n
     return (g - g.mean()) / (g.std() + 1e-12)
 
 
-def _density(vm: VoxelModel, rng, mode: str):
+def _density(vm: VoxelModel, rng, mode: str, heavy_ratio=(3.0, 15.0)):
     rho0 = float(np.exp(rng.uniform(*np.log(RHO0_RANGE))))
     ext = vm.extent
     params = dict(rho0=rho0)
@@ -95,7 +98,7 @@ def _density(vm: VoxelModel, rng, mode: str):
         t = d @ axis
         share = float(rng.uniform(0.10, 0.40))
         cut = float(np.quantile(t, 1.0 - share))
-        ratio = float(np.exp(rng.uniform(np.log(3), np.log(15))))
+        ratio = float(np.exp(rng.uniform(np.log(heavy_ratio[0]), np.log(heavy_ratio[1]))))
         rho = np.where(t >= cut, rho0 * ratio, rho0)
         params.update(axis=axis.tolist(), share=share, cut=cut, ratio=ratio)
     elif mode == "insert":
@@ -126,19 +129,20 @@ def _density(vm: VoxelModel, rng, mode: str):
     return rho, params
 
 
-def draw_theta(vm: VoxelModel, rng, mode: str | None = None) -> dict:
-    mode = mode or str(rng.choice(MODES, p=MODE_P))
+def draw_theta(vm: VoxelModel, rng, mode: str | None = None, profile: str = "default") -> dict:
+    prof = PROFILES[profile]
+    mode = mode or str(rng.choice(MODES, p=prof["mode_p"]))
     for _ in range(MAX_TRIES):
-        rho, params = _density(vm, rng, mode)
+        rho, params = _density(vm, rng, mode, prof["heavy_ratio"])
         props = mass_properties(vm, rho)
         if MASS_RANGE[0] <= props["mass"] <= MASS_RANGE[1]:
             return dict(mode=mode, rho0=params["rho0"], params=params, **props)
     raise RuntimeError(f"no {mode} draw within limits after {MAX_TRIES} tries (volume {len(vm.centers) * vm.voxel_volume:.3e} m^3)")
 
 
-def draw_thetas(vm: VoxelModel, n: int, seed: int) -> list[dict]:
+def draw_thetas(vm: VoxelModel, n: int, seed: int, profile: str = "default") -> list[dict]:
     rng = np.random.default_rng(seed)
-    return [draw_theta(vm, rng) for _ in range(n)]
+    return [draw_theta(vm, rng, profile=profile) for _ in range(n)]
 
 
 def env_layout(n_theta: int, n_cand: int):
