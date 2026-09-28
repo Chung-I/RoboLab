@@ -114,6 +114,10 @@ def _density(vm: VoxelModel, rng, mode: str):
         params.update(n_inserts=n_ins, centers=centers, radii=radii)
     else:
         raise ValueError(mode)
+    # Clip at RHO_MAX instead of rejecting the whole draw: the lognormal field's peak voxel (~3 sigma) and a
+    # heavy_end ratio of up to 10 over rho0 up to 2.5 g/cm^3 exceed 8 g/cm^3 on most draws otherwise.
+    params["clipped_frac"] = float(np.mean(rho > RHO_MAX))
+    rho = np.minimum(rho, RHO_MAX)
     params["rho_max"] = float(rho.max())
     return rho, params
 
@@ -123,7 +127,7 @@ def draw_theta(vm: VoxelModel, rng, mode: str | None = None) -> dict:
     for _ in range(MAX_TRIES):
         rho, params = _density(vm, rng, mode)
         props = mass_properties(vm, rho)
-        if MASS_RANGE[0] <= props["mass"] <= MASS_RANGE[1] and params["rho_max"] <= RHO_MAX:
+        if MASS_RANGE[0] <= props["mass"] <= MASS_RANGE[1]:
             return dict(mode=mode, rho0=params["rho0"], params=params, **props)
     raise RuntimeError(f"no {mode} draw within limits after {MAX_TRIES} tries (volume {len(vm.centers) * vm.voxel_volume:.3e} m^3)")
 
