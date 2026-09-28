@@ -90,3 +90,10 @@ def test_voxel_model_needs_embree(monkeypatch):
     monkeypatch.setattr(trimesh.ray, "has_embree", False)
     with pytest.raises(RuntimeError, match="embree"):
         voxel_model(*box_mesh())
+
+
+def test_small_objects_can_be_drawn():
+    # 2 x 2 x 2 cm = 8 cm^3: at most 20 g even at 2.5 g/cm^3 (a spoon, a lychee); must not be rejected
+    vm = voxel_model(*box_mesh(0.02, 0.02, 0.02), pitch=0.001)
+    ths = draw_thetas(vm, 16, seed=2)
+    assert all(t["mass"] < 0.05 for t in ths)

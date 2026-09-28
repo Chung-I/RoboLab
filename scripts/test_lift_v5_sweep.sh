@@ -16,7 +16,9 @@ for obj in $OBJECTS; do
   if [[ -f "$OUT/$obj.npz" ]]; then echo "[skip] $obj"; continue; fi
   echo "=== $(date +%T) $obj ==="
   timeout 3600 .venv/bin/python -u scripts/test_lift_label_v5.py --object "$obj" --out "$OUT" --headless \
-    < /dev/null > "$LOGS/$obj.log" 2>&1 || echo "[FAIL] $obj (exit $?)"
-  grep -h "^\[v5\] done" "$LOGS/$obj.log" || true
+    < /dev/null > "$LOGS/$obj.log" 2>&1
+  # Isaac's shutdown resets the exit code, so success is judged by the output file (written atomically).
+  if [[ -f "$OUT/$obj.npz" ]]; then grep -h "^\[v5\] done" "$LOGS/$obj.log"
+  else echo "[FAIL] $obj: $(grep -h -m1 "Error" "$LOGS/$obj.log" | cut -c1-160)"; fi
 done
 echo "[v5-sweep] done $(date '+%F %T')"

@@ -17,7 +17,7 @@ MODES = ("uniform", "lognormal", "heavy_end", "insert")
 MODE_P = (0.20, 0.25, 0.30, 0.25)
 RHO0_RANGE = (300.0, 2500.0)       # kg/m^3 (0.3 .. 2.5 g/cm^3)
 INSERT_RHO = (2700.0, 7800.0)      # aluminium .. steel
-MASS_RANGE = (0.05, 2.5)           # kg
+MASS_RANGE = (0.01, 2.5)           # kg (0.05 was infeasible for 8–40 cm^3 objects: crabbypenholder, lychee01, measuring_spoon)
 RHO_MAX = 8000.0                   # kg/m^3
 MAX_TRIES = 50
 
