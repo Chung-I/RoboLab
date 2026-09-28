@@ -74,6 +74,10 @@ def check_theta():
 
 
 G = 9.81
+#: The object counts as resting on the table when its lowest SAMPLED surface point is within this height. 1.0 mm:
+#: on hammer_2 the resting contacts sit 0.55-0.63 mm above the table (the pivot edge lies between the 2048 samples,
+#: plus the PhysX contact offset), so 0.5 mm called them free; agreement with the load rule is flat from 1 to 5 mm.
+SUPPORT_TOL_M = 1e-3
 
 
 def _T(pose7):
@@ -89,11 +93,11 @@ def _T(pose7):
 
 
 def supported_trace(z) -> np.ndarray:
-    """(E, S) bool: the object's lowest surface point is within 0.5 mm of the table top."""
+    """(E, S) bool: the object's lowest sampled surface point is within SUPPORT_TOL_M of the table top."""
     T = _T(z["trace_obj_pose_w"])                                   # (E, S, 4, 4)
     pts = np.asarray(z["points_o"], float)
     zmin = np.einsum("esj,pj->esp", T[..., 2, :3], pts).min(-1) + T[..., 2, 3]
-    return zmin - z["z_table"][:, None] < 5e-4
+    return zmin - z["z_table"][:, None] < SUPPORT_TOL_M
 
 
 def check_physics(path) -> bool:
