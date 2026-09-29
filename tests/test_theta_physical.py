@@ -119,3 +119,27 @@ def test_hard_profile_more_and_denser_heavy_ends():
     assert min(ratios) >= 3.0 - 1e-9 and max(ratios) <= 30.0 + 1e-9 and max(ratios) > 20.0
     a, b = draw_thetas(vm, 5, seed=4), draw_thetas(vm, 5, seed=4, profile="default")  # default unchanged
     assert [t["mass"] for t in a] == [t["mass"] for t in b] and [t["mode"] for t in a] == [t["mode"] for t in b]
+
+
+def test_voxel_model_ignores_global_random_state(monkeypatch):
+    # trimesh re-tests ambiguous points (rays through edges) along np.random.random(3), the global state
+    # (trimesh/ray/ray_util.py). A stand-in with the same dependence must not change the voxels.
+    real = trimesh.Trimesh.contains
+
+    def contains_with_global_rng(self, points):
+        inside = real(self, points)
+        flip = np.random.random(len(points)) < 0.01  # like re-testing 1 % of points in a random direction
+        return np.where(flip, ~inside, inside)
+
+    monkeypatch.setattr(trimesh.Trimesh, "contains", contains_with_global_rng)
+    v, f = box_mesh()
+    np.random.seed(1)
+    a = voxel_model(v, f).centers
+    np.random.seed(2)
+    b = voxel_model(v, f).centers
+    assert a.shape == b.shape and np.array_equal(a, b)
+    np.random.seed(7)
+    expected = np.random.random()
+    np.random.seed(7)
+    voxel_model(v, f)
+    assert np.random.random() == expected  # the caller's global state is left as it was

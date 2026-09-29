@@ -37,6 +37,9 @@ class VoxelModel:
         return float(np.max(self.centers.max(0) - self.centers.min(0)) + self.pitch)
 
 
+CONTAINS_SEED = 0
+
+
 def voxel_model(vertices, faces, pitch: float | None = None) -> VoxelModel:
     if not trimesh.ray.has_embree:
         raise RuntimeError("voxel_model needs trimesh's embree ray engine (pip install embreex); "
@@ -53,7 +56,16 @@ def voxel_model(vertices, faces, pitch: float | None = None) -> VoxelModel:
     lo, hi = mesh.bounds
     axes = [np.arange(lo[i] + pitch / 2, hi[i], pitch) for i in range(3)]
     grid = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
-    centers = grid[mesh.contains(grid)]
+    # trimesh re-tests points whose ray hits an edge along np.random.random(3), numpy's GLOBAL state
+    # (trimesh/ray/ray_util.py). Unseeded, the voxels (and through rejection sampling every later θ) changed from run
+    # to run on watertight meshes (2026-09-29: bin_a03 95,008-95,402 voxels). Seed it for this call, then restore it.
+    state = np.random.get_state()
+    np.random.seed(CONTAINS_SEED)
+    try:
+        inside = mesh.contains(grid)
+    finally:
+        np.random.set_state(state)
+    centers = grid[inside]
     if len(centers) == 0:
         raise RuntimeError("voxelization produced no voxels")
     return VoxelModel(centers=centers, voxel_volume=pitch ** 3, pitch=pitch, hull_fallback=hull_fallback)
