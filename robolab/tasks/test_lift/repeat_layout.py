@@ -42,3 +42,16 @@ def off_table(T_obj_settle, env_origins, z_rest: float, tol: float = 0.05) -> np
     the table before the grasp. 2026-09-29: PhysX found-lost-pair overflow sent ~78 % of objects to the floor."""
     z = np.asarray(T_obj_settle, float)[:, 2, 3] - np.asarray(env_origins, float)[:, 2]
     return z < float(z_rest) - float(tol)
+
+
+def rep_blocks(n_cand: int, n_rep: int = 20, n_theta: int = 8, max_envs: int = 1536) -> list[list[int]]:
+    """Split noise draws 0..n_rep-1 into blocks so one Isaac process holds at most max_envs envs."""
+    per = max(1, max_envs // (n_theta * n_cand))
+    return [list(range(i, min(i + per, n_rep))) for i in range(0, n_rep, per)]
+
+
+def wrist_pairs(n_cand: int, thetas, reps) -> dict:
+    """Chosen θ × all grasps × the given repeats; repeat r uses noise draw r (draw 0 = the original v5 stream)."""
+    t, c, r = np.meshgrid(np.asarray(thetas, int), np.arange(n_cand), np.asarray(reps, int), indexing="ij")
+    r = r.ravel()
+    return dict(theta_idx=t.ravel(), cand_idx=c.ravel(), repeat_idx=r, noise_rep=r.copy())

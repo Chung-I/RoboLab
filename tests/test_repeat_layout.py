@@ -59,3 +59,18 @@ def test_off_table_flags_fallen_objects():
     origins = np.array([[0, 0, 0], [10, 0, 0], [20, 0, 0.0]])
     T[:, :3, 3] = origins + [[0.55, 0, 0.021], [0.55, 0, -0.649], [0.56, 0.01, 0.025]]
     assert off_table(T, origins, z_rest=0.021).tolist() == [False, True, False]
+
+
+def test_blocks_cover_all_draws_once():
+    from robolab.tasks.test_lift.repeat_layout import rep_blocks
+    for C in (1, 7, 9, 24):
+        b = rep_blocks(C)
+        flat = [r for blk in b for r in blk]
+        assert sorted(flat) == list(range(20)) and all(8 * C * len(blk) <= 1536 for blk in b)
+
+
+def test_wrist_pairs_layout():
+    from robolab.tasks.test_lift.repeat_layout import wrist_pairs
+    p = wrist_pairs(3, [2, 9, 40, 41, 50, 51, 60, 63], [5, 6])
+    assert len(p["theta_idx"]) == 8 * 3 * 2 and set(p["theta_idx"]) == {2, 9, 40, 41, 50, 51, 60, 63}
+    assert np.array_equal(p["noise_rep"], p["repeat_idx"]) and set(p["repeat_idx"]) == {5, 6}
