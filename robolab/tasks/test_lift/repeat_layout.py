@@ -51,7 +51,9 @@ def rep_blocks(n_cand: int, n_rep: int = 20, n_theta: int = 8, max_envs: int = 1
 
 
 def wrist_pairs(n_cand: int, thetas, reps) -> dict:
-    """Chosen θ × all grasps × the given repeats; repeat r uses noise draw r (draw 0 = the original v5 stream)."""
+    """Chosen θ × all grasps × the given repeats; repeat r uses noise draw r. Draw 0 uses the same seed list as the
+    v5 labels, but it does not reproduce their outcomes: outcomes vary with the batch, and on some objects the θ draws
+    themselves differ between runs (2026-09-29, daily-logs README "Does the wrist reading add value?")."""
     t, c, r = np.meshgrid(np.asarray(thetas, int), np.arange(n_cand), np.asarray(reps, int), indexing="ij")
     r = r.ravel()
     return dict(theta_idx=t.ravel(), cand_idx=c.ravel(), repeat_idx=r, noise_rep=r.copy())
